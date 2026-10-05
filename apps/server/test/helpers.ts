@@ -33,6 +33,15 @@ export class Client {
     return { status: res.status, json: json as any, headers: res.headers };
   }
 
+  /** POST raw bytes, as the browser does for file uploads. */
+  async upload(path: string, bytes: Uint8Array) {
+    const headers: Record<string, string> = { "content-type": "application/octet-stream" };
+    if (this.cookie) headers.cookie = this.cookie;
+    const res = await this.app.request(path, { method: "POST", headers, body: new Uint8Array(bytes) });
+    const json = res.headers.get("content-type")?.includes("json") ? await res.json() : null;
+    return { status: res.status, json: json as any, headers: res.headers };
+  }
+
   get(path: string) {
     return this.request("GET", path);
   }

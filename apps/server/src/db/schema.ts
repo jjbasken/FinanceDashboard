@@ -74,6 +74,10 @@ export const accounts = sqliteTable(
     closed: flag("closed"),
     sortOrder: integer("sort_order").notNull().default(0),
     gnucashGuid: text("gnucash_guid"),
+    /** Set when an import created this row, so the import can be undone. */
+    importBatchId: integer("import_batch_id").references((): AnySQLiteColumn => importBatches.id, {
+      onDelete: "set null",
+    }),
     createdBy: integer("created_by").references(() => users.id),
     updatedBy: integer("updated_by").references(() => users.id),
     createdAt: createdAt(),
@@ -95,6 +99,10 @@ export const payees = sqliteTable(
     name: text("name").notNull(),
     /** Set for the one payee per account that represents "Transfer: <account>". */
     transferAccountId: integer("transfer_account_id").references(() => accounts.id, { onDelete: "cascade" }),
+    /** Set when an import created this row, so the import can be undone. */
+    importBatchId: integer("import_batch_id").references((): AnySQLiteColumn => importBatches.id, {
+      onDelete: "set null",
+    }),
     createdAt: createdAt(),
   },
   (t) => [
@@ -114,6 +122,10 @@ export const categoryGroups = sqliteTable(
     isIncome: flag("is_income"),
     hidden: flag("hidden"),
     sortOrder: integer("sort_order").notNull().default(0),
+    /** Set when an import created this row, so the import can be undone. */
+    importBatchId: integer("import_batch_id").references((): AnySQLiteColumn => importBatches.id, {
+      onDelete: "set null",
+    }),
     createdAt: createdAt(),
   },
   (t) => [index("category_groups_household_idx").on(t.householdId)],
@@ -132,6 +144,10 @@ export const categories = sqliteTable(
     name: text("name").notNull(),
     hidden: flag("hidden"),
     sortOrder: integer("sort_order").notNull().default(0),
+    /** Set when an import created this row, so the import can be undone. */
+    importBatchId: integer("import_batch_id").references((): AnySQLiteColumn => importBatches.id, {
+      onDelete: "set null",
+    }),
     createdAt: createdAt(),
   },
   (t) => [index("categories_group_idx").on(t.groupId)],
@@ -167,6 +183,10 @@ export const transactions = sqliteTable(
     transferId: integer("transfer_id").references((): AnySQLiteColumn => transactions.id, { onDelete: "set null" }),
     /** Stable id from an import source (e.g. a GnuCash GUID) so re-imports are idempotent. */
     importedId: text("imported_id"),
+    /** Set when an import created this row; undoing the import deletes it. */
+    importBatchId: integer("import_batch_id").references((): AnySQLiteColumn => importBatches.id, {
+      onDelete: "cascade",
+    }),
     createdBy: integer("created_by").references(() => users.id),
     updatedBy: integer("updated_by").references(() => users.id),
     createdAt: createdAt(),
@@ -178,6 +198,7 @@ export const transactions = sqliteTable(
     index("transactions_category_idx").on(t.categoryId),
     index("transactions_payee_idx").on(t.payeeId),
     uniqueIndex("transactions_imported_id_unique").on(t.householdId, t.importedId),
+    index("transactions_import_batch_idx").on(t.importBatchId),
   ],
 );
 
@@ -201,4 +222,57 @@ export const budgetMonths = sqliteTable(
     uniqueIndex("budget_months_category_month_unique").on(t.categoryId, t.month),
     index("budget_months_household_month_idx").on(t.householdId, t.month),
   ],
+);
+
+/** One run of an importer. Undoing it deletes what it created and lets it be imported again. */
+export const importBatches = sqliteTable(
+  "import_batches",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    householdId: integer("household_id")
+      .notNull()
+      .references(() => households.id),
+    source: text("source", { enum: ["gnucash"] }).notNull(),
+    fileName: text("file_name").notNull(),
+    transactionCount: integer("transaction_count").notNull().default(0),
+    createdBy: integer("created_by").references(() => users.id),
+    createdAt: createdAt(),
+    undoneAt: text("undone_at"),
+  },
+  (t) => [index("import_batches_household_idx").on(t.householdId)],
+);
+
+/**
+ * Source records (e.g. GnuCash transaction GUIDs) that an import has already brought in, so a
+ * re-import skips them even if the user has since edited or deleted the result.
+ */
+export const importedRecords = sqliteTable(
+  "imported_records",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    householdId: integer("household_id")
+      .notNull()
+      .references(() => households.id),
+    batchId: integer("batch_id")
+      .notNull()
+      .references(() => importBatches.id, { onDelete: "cascade" }),
+    externalId: text("external_id").notNull(),
+  },
+  (t) => [uniqueIndex("imported_records_external_unique").on(t.householdId, t.externalId)],
+);
+
+/** How each source account was mapped last time, so re-imports suggest the same thing. */
+export const importMappings = sqliteTable(
+  "import_mappings",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    householdId: integer("household_id")
+      .notNull()
+      .references(() => households.id),
+    externalId: text("external_id").notNull(),
+    /** A GnucashMapping, with new accounts and categories resolved to their ids. */
+    mapping: text("mapping", { mode: "json" }).notNull(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("import_mappings_external_unique").on(t.householdId, t.externalId)],
 );

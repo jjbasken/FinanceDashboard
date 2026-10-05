@@ -9,13 +9,14 @@ import { SESSION_TTL_MS, validateSession } from "./auth/sessions";
 export const SESSION_COOKIE = "fd_session";
 
 /**
- * CSRF defence: browsers can't send cross-site application/json requests without a
- * CORS preflight (which we never grant), so require JSON bodies on every mutation.
+ * CSRF defence: browsers can't send cross-site application/json (or application/octet-stream)
+ * requests without a CORS preflight, which we never grant. So every mutation must use one of
+ * those; octet-stream is for file uploads.
  */
 export const requireJsonForMutations = createMiddleware<AppEnv>(async (c, next) => {
   if (!["GET", "HEAD", "OPTIONS"].includes(c.req.method)) {
-    const type = c.req.header("content-type") ?? "";
-    if (!type.toLowerCase().startsWith("application/json")) {
+    const type = (c.req.header("content-type") ?? "").toLowerCase();
+    if (!type.startsWith("application/json") && !type.startsWith("application/octet-stream")) {
       throw new HTTPException(415, { message: "Expected application/json" });
     }
   }

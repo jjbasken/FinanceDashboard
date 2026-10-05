@@ -8,6 +8,7 @@ import { accountRoutes } from "./routes/accounts";
 import { budgetRoutes } from "./routes/budget";
 import { categoryRoutes } from "./routes/categories";
 import { householdRoutes } from "./routes/household";
+import { importRoutes } from "./routes/import";
 import { payeeRoutes } from "./routes/payees";
 import { transactionRoutes } from "./routes/transactions";
 import { requireJsonForMutations, sessionMiddleware } from "./middleware";
@@ -48,6 +49,7 @@ export function createApp({ db, secureCookies = false }: AppOptions) {
   app.route("/api/categories", categoryRoutes);
   app.route("/api/payees", payeeRoutes);
   app.route("/api/budget", budgetRoutes);
+  app.route("/api/import", importRoutes);
 
   app.notFound((c) => c.json({ error: "Not found" }, 404));
   app.onError((err, c) => {
