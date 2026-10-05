@@ -3,6 +3,7 @@ import { useAuthStatus } from "./auth";
 import { AppShell } from "./components/AppShell";
 import { AccountPage } from "./pages/AccountPage";
 import { BudgetPage } from "./pages/BudgetPage";
+import { ImportPage } from "./pages/ImportPage";
 import { AcceptInvitePage } from "./pages/AcceptInvitePage";
 import { LoginPage } from "./pages/LoginPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
@@ -41,6 +42,7 @@ export function App() {
         <Route path="/reports" element={<PlaceholderPage title="Reports" milestone="Reports" />} />
         <Route path="/investments" element={<PlaceholderPage title="Investments" milestone="Investments" />} />
         <Route path="/accounts/:id" element={<AccountPage />} />
+        <Route path="/import" element={<ImportPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/budget" replace />} />
       </Route>

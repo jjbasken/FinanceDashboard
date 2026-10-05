@@ -1,6 +1,7 @@
 import type { InviteInfo } from "@fd/shared";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
+import { Link } from "react-router";
 import { api } from "../api";
 import { useAuthStatus } from "../auth";
 import { CategoriesCard } from "../components/CategoriesCard";
@@ -71,6 +72,15 @@ export function SettingsPage() {
               )}
             </div>
           )}
+        </section>
+        <section className="card">
+          <h2>Import</h2>
+          <p className="muted">Bring in your history from a GnuCash book, or add new transactions from it later.</p>
+          <div>
+            <Link className="btn" to="/import">
+              Import from GnuCash
+            </Link>
+          </div>
         </section>
         <CategoriesCard />
       </div>

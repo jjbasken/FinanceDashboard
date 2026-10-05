@@ -5,6 +5,7 @@ import { createApp } from "./app";
 import { openDb } from "./db";
 import { purgeExpiredSessions } from "./auth/sessions";
 import { seedOwnerFromEnv } from "./seed";
+import { MAX_UPLOAD_BYTES } from "./routes/import";
 
 const port = Number(process.env.PORT ?? 3000);
 const dataDir = resolve(process.env.DATA_DIR ?? join(import.meta.dir, "../../../data"));
@@ -39,4 +40,5 @@ if (existsSync(join(webDist, "index.html"))) {
 
 console.log(`Finance Dashboard listening on http://localhost:${port} (data: ${dataDir})`);
 
-export default { port, fetch: app.fetch };
+// Leave room for GnuCash book uploads.
+export default { port, fetch: app.fetch, maxRequestBodySize: MAX_UPLOAD_BYTES + 1024 * 1024 };

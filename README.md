@@ -2,7 +2,7 @@
 
 A self-hosted family finance manager: Actual Budget-style envelope budgeting, investment tracking, and GnuCash import, with a separate login for each household member.
 
-> **Status:** milestones 1–3 are done: scaffold and auth; the core ledger (accounts, categories, payees, and a keyboard-driven register with transfers, splits and reconciliation); and the envelope budget (monthly grid with Actual-style rollover). GnuCash import, investments and reports are coming in later milestones.
+> **Status:** milestones 1–4 are done: scaffold and auth; the core ledger (accounts, categories, payees, and a keyboard-driven register with transfers, splits and reconciliation); the monthly budget; and the GnuCash importer. Investments and reports are coming in later milestones.
 
 ## Stack
 
@@ -33,7 +33,18 @@ bun run db:generate
 
 Migrations are stored in `apps/server/drizzle/` and run automatically when the server starts.
 
-## Production (Docker)
+## Importing from GnuCash
+
+Go to **Settings → Import from GnuCash** and upload a **copy** of your book saved in the sqlite3 format. (In GnuCash, use File → Save As… and set the data format to "sqlite3". XML books aren't supported.) Before anything is saved, you can review how each GnuCash account maps:
+
+- Bank, cash, credit card, asset and liability accounts become accounts. You choose whether each one is on budget.
+- Income and expense accounts become categories. For example, `Expenses:Auto:Fuel` becomes the group "Auto" and the category "Fuel". Accounts that match an existing category name use that category.
+- Equity is treated as opening balances. `Imbalance-*` and `Orphan-*` accounts are skipped, so their share of a transaction is imported as uncategorized.
+- Stock and mutual fund holdings are skipped for now. Only the cash side of buys, sells and dividends is imported; shares and prices will come with investment support.
+
+The preview shows how many transactions will be imported and compares each account's balance with GnuCash's. You can import the same book again later: only transactions you haven't imported yet are added, and your previous mapping is remembered. A transaction you deleted here is not brought back. Each import can be undone from the same page.
+
+
 
 ```sh
 cd docker
