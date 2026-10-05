@@ -23,6 +23,7 @@ describe("parseCents", () => {
 test("formatCents", () => {
   expect(formatCents(123456)).toBe("$1,234.56");
   expect(formatCents(-5)).toBe("-$0.05");
+  expect(formatCents(-0)).toBe("$0.00");
 });
 
 test("rationalToCents rounds half away from zero", () => {

@@ -108,7 +108,7 @@ export const createCategoryInput = z.object({
   name: nameSchema,
 });
 export const updateCategoryInput = z
-  .object({ name: nameSchema, groupId: idSchema, hidden: z.boolean(), sortOrder: z.number().int() })
+  .object({ name: nameSchema, groupId: idSchema, hidden: z.boolean(), rollover: z.boolean(), sortOrder: z.number().int() })
   .partial();
 
 export type CreateCategoryGroupInput = z.infer<typeof createCategoryGroupInput>;
@@ -121,6 +121,8 @@ export interface Category {
   groupId: number;
   name: string;
   hidden: boolean;
+  /** Unspent money stays in the category next month (otherwise it returns to To Budget). */
+  rollover: boolean;
   sortOrder: number;
 }
 

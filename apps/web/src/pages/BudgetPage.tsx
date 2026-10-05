@@ -93,6 +93,8 @@ function ToBudget(props: { budget: BudgetMonth }) {
         <dd>{formatCents(b.fromLastMonth)}</dd>
         <dt>Income this month</dt>
         <dd>{formatCents(b.income)}</dd>
+        <dt>Unspent last month</dt>
+        <dd>{formatCents(b.lastMonthLeftover)}</dd>
         <dt>Overspent last month</dt>
         <dd>{formatCents(b.lastMonthOverspent)}</dd>
         <dt>Budgeted this month</dt>
@@ -105,7 +107,8 @@ function ToBudget(props: { budget: BudgetMonth }) {
 function ActivityDialog(props: { month: string; category: BudgetCategory; onClose: () => void }) {
   const items = useQuery({
     queryKey: ["budget", props.month, "activity", props.category.id],
-    queryFn: () => api.get<CategoryActivityItem[]>(`/budget/${props.month}/categories/${props.category.id}/transactions`),
+    queryFn: () =>
+      api.get<CategoryActivityItem[]>(`/budget/${props.month}/categories/${props.category.id}/transactions`),
   });
   return (
     <Dialog
@@ -289,7 +292,9 @@ export function BudgetPage() {
         </button>
         <button
           className="link-button"
-          onClick={() => edit.mutate({ method: "patch", path: `/categories/groups/${g.id}`, body: { hidden: !g.hidden } })}
+          onClick={() =>
+            edit.mutate({ method: "patch", path: `/categories/groups/${g.id}`, body: { hidden: !g.hidden } })
+          }
         >
           {g.hidden ? "Show" : "Hide"}
         </button>
@@ -297,7 +302,7 @@ export function BudgetPage() {
     );
   }
 
-  function categoryActions(c: BudgetCategory) {
+  function categoryActions(c: BudgetCategory, income = false) {
     return (
       <span className="row-actions-inline">
         <button
@@ -315,6 +320,21 @@ export function BudgetPage() {
         >
           {c.hidden ? "Show" : "Hide"}
         </button>
+        {!income && (
+          <button
+            className="link-button"
+            title={
+              c.rollover
+                ? "Unspent money stays in this category next month"
+                : "Unspent money goes back to To Budget next month"
+            }
+            onClick={() =>
+              edit.mutate({ method: "patch", path: `/categories/${c.id}`, body: { rollover: !c.rollover } })
+            }
+          >
+            {c.rollover ? "Stop rolling over" : "Roll over"}
+          </button>
+        )}
       </span>
     );
   }
@@ -354,7 +374,8 @@ export function BudgetPage() {
           className="btn"
           disabled={copyLast.isPending}
           onClick={() => {
-            if (data?.budgeted && !confirm(`Replace this month's budget with ${formatMonth(addMonths(month, -1))}'s?`)) return;
+            if (data?.budgeted && !confirm(`Replace this month's budget with ${formatMonth(addMonths(month, -1))}'s?`))
+              return;
             copyLast.mutate();
           }}
         >
@@ -371,17 +392,23 @@ export function BudgetPage() {
         </button>
       </div>
 
-      {(budget.error ?? mutationError) && <p className="error-text page-error">{(budget.error ?? mutationError)!.message}</p>}
+      {(budget.error ?? mutationError) && (
+        <p className="error-text page-error">{(budget.error ?? mutationError)!.message}</p>
+      )}
       {data && data.uncategorized > 0 && (
         <p className="notice">
-          {data.uncategorized} transaction{data.uncategorized === 1 ? "" : "s"} this month {data.uncategorized === 1 ? "needs" : "need"} a
-          category. Search an account's register for “uncategorized” to find {data.uncategorized === 1 ? "it" : "them"}.
+          {data.uncategorized} transaction{data.uncategorized === 1 ? "" : "s"} this month{" "}
+          {data.uncategorized === 1 ? "needs" : "need"} a category. Search an account's register for “uncategorized” to
+          find {data.uncategorized === 1 ? "it" : "them"}.
         </p>
       )}
 
       {!data && !budget.error && <p className="muted page-error">Loading…</p>}
       {data && (
-        <div className={budget.isPlaceholderData ? "budget-grid stale" : "budget-grid"} onDragLeave={() => setDropTarget(null)}>
+        <div
+          className={budget.isPlaceholderData ? "budget-grid stale" : "budget-grid"}
+          onDragLeave={() => setDropTarget(null)}
+        >
           <div className="budget-row budget-head">
             <div>Category</div>
             <div className="amount">Budgeted</div>
@@ -428,13 +455,22 @@ export function BudgetPage() {
                       ⋮⋮
                     </span>
                     <span className="truncate">{c.name}</span>
+                    {c.rollover && (
+                      <span className="rollover-mark" title="Rolls over: unspent money stays in this category">
+                        ↻
+                      </span>
+                    )}
                     {categoryActions(c)}
                   </div>
                   <div className="amount">
                     {editing === c.id ? (
                       <BudgetInput initial={c.budgeted} onDone={(amount, step) => finishEdit(c, amount, step)} />
                     ) : (
-                      <button className="budget-cell" onClick={() => setEditing(c.id)} aria-label={`Budget for ${c.name}`}>
+                      <button
+                        className="budget-cell"
+                        onClick={() => setEditing(c.id)}
+                        aria-label={`Budget for ${c.name}`}
+                      >
                         {formatCents(shownBudgeted(c))}
                       </button>
                     )}
@@ -444,7 +480,10 @@ export function BudgetPage() {
                       {formatCents(c.activity)}
                     </button>
                   </div>
-                  <div className="amount" title={c.carryIn ? `Includes ${formatCents(c.carryIn)} carried over` : undefined}>
+                  <div
+                    className="amount"
+                    title={c.carryIn ? `Includes ${formatCents(c.carryIn)} carried over` : undefined}
+                  >
                     <BalancePill cents={c.balance} />
                   </div>
                 </div>
@@ -488,7 +527,7 @@ export function BudgetPage() {
                       ⋮⋮
                     </span>
                     <span className="truncate">{c.name}</span>
-                    {categoryActions(c)}
+                    {categoryActions(c, true)}
                   </div>
                   <div />
                   <div className="amount">

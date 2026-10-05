@@ -43,9 +43,17 @@ describe("budget API", () => {
     expect(oct).toMatchObject({ income: 300000, budgeted: 40000, toBudget: 260000, spent: -12000 });
     expect(category(oct, ids.Groceries!)).toMatchObject({ budgeted: 40000, activity: -12000, balance: 28000 });
 
-    const nov = await budget("2026-11");
-    expect(nov).toMatchObject({ fromLastMonth: 260000, toBudget: 260000 });
-    expect(category(nov, ids.Groceries!)).toMatchObject({ carryIn: 28000, balance: 28000 });
+    // Groceries doesn't roll over, so its unspent 280 goes back to To Budget.
+    let nov = await budget("2026-11");
+    expect(nov).toMatchObject({ fromLastMonth: 260000, lastMonthLeftover: 28000, toBudget: 288000 });
+    expect(category(nov, ids.Groceries!)).toMatchObject({ rollover: false, carryIn: 0, balance: 0 });
+
+    // Turn rollover on and the money stays in the category instead.
+    expect((await jeremy.patch(`/api/categories/${ids.Groceries}`, { rollover: true })).status).toBe(200);
+    nov = await budget("2026-11");
+    expect(nov).toMatchObject({ lastMonthLeftover: 0, toBudget: 260000 });
+    expect(category(nov, ids.Groceries!)).toMatchObject({ rollover: true, carryIn: 28000, balance: 28000 });
+    await jeremy.patch(`/api/categories/${ids.Groceries}`, { rollover: false });
 
     // Setting a budget back to zero removes it.
     await jeremy.request("PUT", `/api/budget/2026-10/categories/${ids.Groceries}`, { amount: 0 });
@@ -174,4 +182,13 @@ describe("reordering categories", () => {
     expect(after.map((g) => g.name)).toEqual(["Savings", "Bills", "Everyday", "Income"]);
     expect((await jeremy.post(`/api/categories/groups/${everyday!.id}/move`, { beforeId: income!.id })).status).toBe(400);
   });
+});
+
+test("savings categories roll over by default; everyday ones don't", async () => {
+  const { app } = testApp();
+  const c = new Client(app);
+  await c.post("/api/auth/setup", owner);
+  const groups = (await c.get("/api/categories")).json as CategoryGroup[];
+  const rollover = groups.flatMap((g) => g.categories.filter((cat) => cat.rollover).map((cat) => cat.name));
+  expect(rollover).toEqual(["Emergency Fund", "Vacation"]);
 });

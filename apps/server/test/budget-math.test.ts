@@ -3,7 +3,7 @@ import type { CategoryGroup } from "@fd/shared";
 import { computeBudgetMonth, type MonthAmount } from "../src/services/budget";
 
 const GROCERIES = 1;
-const RENT = 2;
+const SAVINGS = 2;
 const SALARY = 10;
 
 const groups: CategoryGroup[] = [
@@ -14,8 +14,9 @@ const groups: CategoryGroup[] = [
     hidden: false,
     sortOrder: 0,
     categories: [
-      { id: GROCERIES, groupId: 1, name: "Groceries", hidden: false, sortOrder: 0 },
-      { id: RENT, groupId: 1, name: "Rent", hidden: true, sortOrder: 1 },
+      { id: GROCERIES, groupId: 1, name: "Groceries", hidden: false, rollover: false, sortOrder: 0 },
+      // A hidden, rollover category (think: a sinking fund).
+      { id: SAVINGS, groupId: 1, name: "Savings", hidden: true, rollover: true, sortOrder: 1 },
     ],
   },
   {
@@ -24,7 +25,7 @@ const groups: CategoryGroup[] = [
     isIncome: true,
     hidden: false,
     sortOrder: 0,
-    categories: [{ id: SALARY, groupId: 2, name: "Salary", hidden: false, sortOrder: 0 }],
+    categories: [{ id: SALARY, groupId: 2, name: "Salary", hidden: false, rollover: false, sortOrder: 0 }],
   },
 ];
 
@@ -53,21 +54,43 @@ describe("computeBudgetMonth", () => {
     expect(income.activity).toBe(300000);
   });
 
-  test("positive balances roll over; overspending comes out of next month's To Budget", () => {
+  test("categories start each month from zero; leftovers return to To Budget", () => {
     const budgets = [row(GROCERIES, "2026-01", 50000), row(GROCERIES, "2026-02", 50000)];
     const activity = [
       row(SALARY, "2026-01", 300000),
       row(GROCERIES, "2026-01", -30000), // 200 left over
-      row(GROCERIES, "2026-02", -80000), // 200 + 500 - 800 = -100 overspent
+      row(GROCERIES, "2026-02", -80000), // 500 - 800 = -300 overspent
     ];
 
     const feb = computeBudgetMonth(groups, budgets, activity, "2026-02");
-    expect(cat(feb, GROCERIES)).toMatchObject({ carryIn: 20000, budgeted: 50000, activity: -80000, balance: -10000 });
-    expect(feb).toMatchObject({ fromLastMonth: 250000, income: 0, lastMonthOverspent: 0, budgeted: 50000, toBudget: 200000 });
+    expect(cat(feb, GROCERIES)).toMatchObject({ carryIn: 0, budgeted: 50000, activity: -80000, balance: -30000 });
+    expect(feb).toMatchObject({
+      fromLastMonth: 250000,
+      income: 0,
+      lastMonthLeftover: 20000,
+      lastMonthOverspent: 0,
+      budgeted: 50000,
+      toBudget: 220000,
+    });
 
+    // Overspending comes out of next month's To Budget, and the category starts clean.
     const mar = computeBudgetMonth(groups, budgets, activity, "2026-03");
     expect(cat(mar, GROCERIES)).toMatchObject({ carryIn: 0, balance: 0 });
-    expect(mar).toMatchObject({ fromLastMonth: 200000, lastMonthOverspent: -10000, toBudget: 190000 });
+    expect(mar).toMatchObject({ fromLastMonth: 220000, lastMonthLeftover: 0, lastMonthOverspent: -30000, toBudget: 190000 });
+  });
+
+  test("rollover categories keep their positive balance", () => {
+    const budgets = [row(SAVINGS, "2026-01", 50000), row(SAVINGS, "2026-02", 50000)];
+    const activity = [row(SALARY, "2026-01", 300000), row(SAVINGS, "2026-02", -120000)];
+
+    const feb = computeBudgetMonth(groups, budgets, activity, "2026-02");
+    expect(cat(feb, SAVINGS)).toMatchObject({ carryIn: 50000, budgeted: 50000, activity: -120000, balance: -20000 });
+    expect(feb).toMatchObject({ lastMonthLeftover: 0, toBudget: 200000 });
+
+    // Even a rollover category doesn't carry overspending.
+    const mar = computeBudgetMonth(groups, budgets, activity, "2026-03");
+    expect(cat(mar, SAVINGS)).toMatchObject({ carryIn: 0, balance: 0 });
+    expect(mar).toMatchObject({ lastMonthOverspent: -20000, toBudget: 180000 });
   });
 
   test("budgeting more than you have goes negative and carries forward", () => {
@@ -78,19 +101,20 @@ describe("computeBudgetMonth", () => {
       "2026-02",
     );
     expect(m.fromLastMonth).toBe(-20000);
-    expect(m.toBudget).toBe(-20000);
-    expect(cat(m, GROCERIES).balance).toBe(70000);
+    // The unspent 700 comes back, leaving 500 to budget.
+    expect(m).toMatchObject({ lastMonthLeftover: 70000, toBudget: 50000 });
+    expect(cat(m, GROCERIES).balance).toBe(0);
   });
 
   test("walks across gaps and years", () => {
     const m = computeBudgetMonth(
       groups,
-      [row(RENT, "2025-11", 100000)],
-      [row(SALARY, "2025-11", 100000), row(RENT, "2026-03", -40000)],
+      [row(SAVINGS, "2025-11", 100000)],
+      [row(SALARY, "2025-11", 100000), row(SAVINGS, "2026-03", -40000)],
       "2026-03",
     );
     // Hidden categories still count.
-    expect(cat(m, RENT)).toMatchObject({ carryIn: 100000, activity: -40000, balance: 60000 });
+    expect(cat(m, SAVINGS)).toMatchObject({ carryIn: 100000, activity: -40000, balance: 60000 });
     expect(m.toBudget).toBe(0);
   });
 

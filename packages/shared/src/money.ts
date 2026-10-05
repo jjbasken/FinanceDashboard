@@ -36,7 +36,8 @@ export function formatCents(cents: number, currency = "USD", locale = "en-US"): 
     fmt = new Intl.NumberFormat(locale, { style: "currency", currency });
     formatters.set(key, fmt);
   }
-  return fmt.format(cents / 100);
+  // `|| 0` turns -0 (e.g. from negating a zero total) into 0 so it never shows as "-$0.00".
+  return fmt.format(cents / 100 || 0);
 }
 
 /** Convert a rational (as stored by GnuCash: num/denom) to integer cents, rounding half away from zero. */

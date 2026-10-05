@@ -1,0 +1,1 @@
+ALTER TABLE `categories` ADD `rollover` integer DEFAULT false NOT NULL;

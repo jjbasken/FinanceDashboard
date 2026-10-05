@@ -18,14 +18,16 @@ export interface MonthAmount {
 }
 
 /**
- * Envelope budgeting with Actual's rollover rules, computed month by month from the first
- * month with any data up to `target`:
+ * Envelope budgeting, computed month by month from the first month with any data up to `target`:
  *
- * - An expense category's balance is last month's balance (if positive) + budgeted + activity.
- * - Overspending (a negative balance) doesn't carry forward in the category. Instead it comes
- *   out of next month's To Budget.
- * - To Budget = last month's To Budget + this month's income + last month's overspending
- *   - this month's budgeted total. Leftover or over-budgeted amounts carry forward.
+ * - Most categories start each month from zero: balance = budgeted + activity. Whatever was left
+ *   unspent goes back to To Budget the next month.
+ * - Categories with `rollover` keep a positive balance: balance = last month's balance + budgeted
+ *   + activity. This is for money saved up over time.
+ * - Overspending (a negative balance) never carries forward in a category; it comes out of next
+ *   month's To Budget instead.
+ * - To Budget = last month's To Budget + this month's income + last month's unspent (non-rollover)
+ *   money + last month's overspending - this month's budgeted total. Over-budgeting carries forward.
  *
  * Income categories aren't budgeted; their activity is income.
  */
@@ -38,6 +40,9 @@ export function computeBudgetMonth(
 ): BudgetMonth {
   const incomeIds = new Set(groups.filter((g) => g.isIncome).flatMap((g) => g.categories.map((c) => c.id)));
   const expenseIds = groups.filter((g) => !g.isIncome).flatMap((g) => g.categories.map((c) => c.id));
+  const rolloverIds = new Set(
+    groups.filter((g) => !g.isIncome).flatMap((g) => g.categories.filter((c) => c.rollover).map((c) => c.id)),
+  );
 
   const byMonth = (rows: MonthAmount[]) => {
     const map = new Map<string, Map<number, number>>();
@@ -68,33 +73,41 @@ export function computeBudgetMonth(
     for (const [id, amount] of acts) if (incomeIds.has(id)) income += amount;
 
     let lastMonthOverspent = 0;
-    for (const id of expenseIds) lastMonthOverspent += Math.min(0, prevBalance.get(id) ?? 0);
+    let lastMonthLeftover = 0;
+    for (const id of expenseIds) {
+      const prev = prevBalance.get(id) ?? 0;
+      if (prev < 0) lastMonthOverspent += prev;
+      else if (!rolloverIds.has(id)) lastMonthLeftover += prev;
+    }
 
     let budgetedTotal = 0;
     const carryIn = new Map<number, number>();
     const balance = new Map<number, number>();
     for (const id of expenseIds) {
       const b = budgeted.get(id) ?? 0;
-      const c = Math.max(0, prevBalance.get(id) ?? 0);
+      const c = rolloverIds.has(id) ? Math.max(0, prevBalance.get(id) ?? 0) : 0;
       budgetedTotal += b;
       carryIn.set(id, c);
       balance.set(id, c + b + (acts.get(id) ?? 0));
     }
 
     const fromLastMonth = prevToBudget;
-    const toBudget = fromLastMonth + income + lastMonthOverspent - budgetedTotal;
+    const toBudget = fromLastMonth + income + lastMonthLeftover + lastMonthOverspent - budgetedTotal;
 
     if (month === target) {
       let spent = 0;
       const outGroups: BudgetGroup[] = groups.map((g) => {
         const cats = g.categories.map((c) => {
           const act = acts.get(c.id) ?? 0;
-          if (g.isIncome) return { id: c.id, name: c.name, hidden: c.hidden, budgeted: 0, activity: act, carryIn: 0, balance: 0 };
+          if (g.isIncome) {
+            return { id: c.id, name: c.name, hidden: c.hidden, rollover: false, budgeted: 0, activity: act, carryIn: 0, balance: 0 };
+          }
           spent += act;
           return {
             id: c.id,
             name: c.name,
             hidden: c.hidden,
+            rollover: c.rollover,
             budgeted: budgeted.get(c.id) ?? 0,
             activity: act,
             carryIn: carryIn.get(c.id) ?? 0,
@@ -117,6 +130,7 @@ export function computeBudgetMonth(
         month,
         fromLastMonth,
         income,
+        lastMonthLeftover,
         lastMonthOverspent,
         budgeted: budgetedTotal,
         toBudget,

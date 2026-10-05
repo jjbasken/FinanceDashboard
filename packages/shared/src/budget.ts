@@ -39,13 +39,15 @@ export interface BudgetCategory {
   id: number;
   name: string;
   hidden: boolean;
+  /** Whether unspent money stays in the category instead of returning to To Budget. */
+  rollover: boolean;
   /** Assigned this month. Always 0 for income categories. */
   budgeted: number;
   /** Net transactions this month; spending is negative. */
   activity: number;
-  /** Positive balance carried in from last month. */
+  /** Positive balance carried in from last month (rollover categories only). */
   carryIn: number;
-  /** carryIn + budgeted + activity. Overspending (negative) is not carried forward. */
+  /** carryIn + budgeted + activity. Overspending (negative) is never carried forward. */
   balance: number;
 }
 
@@ -66,11 +68,13 @@ export interface BudgetMonth {
   fromLastMonth: number;
   /** Income received this month. */
   income: number;
+  /** Money left unspent last month in categories that don't roll over (zero or positive). */
+  lastMonthLeftover: number;
   /** Last month's overspent categories, taken out of this month (zero or negative). */
   lastMonthOverspent: number;
   /** Total assigned to expense categories this month. */
   budgeted: number;
-  /** fromLastMonth + income + lastMonthOverspent - budgeted */
+  /** fromLastMonth + income + lastMonthLeftover + lastMonthOverspent - budgeted */
   toBudget: number;
   /** Total expense activity this month (negative when spending). */
   spent: number;

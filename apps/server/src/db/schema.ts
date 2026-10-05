@@ -131,6 +131,8 @@ export const categories = sqliteTable(
       .references(() => categoryGroups.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     hidden: flag("hidden"),
+    /** Carry a positive balance into next month instead of returning it to To Budget. */
+    rollover: flag("rollover"),
     sortOrder: integer("sort_order").notNull().default(0),
     createdAt: createdAt(),
   },

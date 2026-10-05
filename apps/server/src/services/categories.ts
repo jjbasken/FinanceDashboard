@@ -23,6 +23,7 @@ export function listCategories(db: DbOrTx, householdId: number): CategoryGroup[]
       groupId: categories.groupId,
       name: categories.name,
       hidden: categories.hidden,
+      rollover: categories.rollover,
       sortOrder: categories.sortOrder,
     })
     .from(categories)
