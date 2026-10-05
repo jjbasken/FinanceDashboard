@@ -999,11 +999,6 @@ select {
 .budget-row:hover .drag-handle {
   opacity: 0.8;
 }
-.rollover-mark {
-  color: var(--accent);
-  font-size: 13px;
-  cursor: help;
-}
 .row-actions-inline {
   display: none;
   gap: 10px;

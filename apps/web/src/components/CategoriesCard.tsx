@@ -43,9 +43,8 @@ function DeleteCategoryDialog(props: { category: Category; groups: CategoryGroup
 export function CategoriesCard() {
   const { data: groups, error } = useCategories();
   const [deleting, setDeleting] = useState<Category | null>(null);
-  const mutate = useLedgerMutation(
-    ({ method, path, body }: { method: "post" | "patch" | "delete"; path: string; body?: unknown }) =>
-      method === "delete" ? api.delete(path) : api[method](path, body),
+  const mutate = useLedgerMutation(({ method, path, body }: { method: "post" | "patch" | "delete"; path: string; body?: unknown }) =>
+    method === "delete" ? api.delete(path) : api[method](path, body),
   );
 
   function ask(label: string, initial = "") {
@@ -60,11 +59,7 @@ export function CategoriesCard() {
   return (
     <section className="card">
       <h2>Categories</h2>
-      <p className="muted">
-        Budget categories, grouped. Each month, categories start from zero and unspent money goes back to To Budget,
-        unless the category rolls over (handy for things you save up for). Hidden categories stay on old transactions
-        but drop out of pickers.
-      </p>
+      <p className="muted">Budget categories, grouped. Hidden categories stay on old transactions but drop out of pickers.</p>
       {error && <p className="error-text">{error.message}</p>}
       {mutate.error && <p className="error-text">{mutate.error.message}</p>}
       {groups?.map((g) => (
@@ -93,9 +88,7 @@ export function CategoriesCard() {
             </button>
             <button
               className="link-button"
-              onClick={() =>
-                mutate.mutate({ method: "patch", path: `/categories/groups/${g.id}`, body: { hidden: !g.hidden } })
-              }
+              onClick={() => mutate.mutate({ method: "patch", path: `/categories/groups/${g.id}`, body: { hidden: !g.hidden } })}
             >
               {g.hidden ? "Show" : "Hide"}
             </button>
@@ -113,7 +106,6 @@ export function CategoriesCard() {
             <div key={c.id} className={c.hidden ? "category-row hidden" : "category-row"}>
               <span>{c.name}</span>
               {c.hidden && <span className="badge">Hidden</span>}
-              {c.rollover && !g.isIncome && <span className="badge">Rolls over</span>}
               <span className="spacer" />
               <button
                 className="link-button"
@@ -126,22 +118,10 @@ export function CategoriesCard() {
               </button>
               <button
                 className="link-button"
-                onClick={() =>
-                  mutate.mutate({ method: "patch", path: `/categories/${c.id}`, body: { hidden: !c.hidden } })
-                }
+                onClick={() => mutate.mutate({ method: "patch", path: `/categories/${c.id}`, body: { hidden: !c.hidden } })}
               >
                 {c.hidden ? "Show" : "Hide"}
               </button>
-              {!g.isIncome && (
-                <button
-                  className="link-button"
-                  onClick={() =>
-                    mutate.mutate({ method: "patch", path: `/categories/${c.id}`, body: { rollover: !c.rollover } })
-                  }
-                >
-                  {c.rollover ? "Stop rolling over" : "Roll over"}
-                </button>
-              )}
               <button className="link-button danger" onClick={() => setDeleting(c)}>
                 Delete
               </button>
@@ -157,9 +137,7 @@ export function CategoriesCard() {
           Add income group
         </button>
       </div>
-      {deleting && groups && (
-        <DeleteCategoryDialog category={deleting} groups={groups} onClose={() => setDeleting(null)} />
-      )}
+      {deleting && groups && <DeleteCategoryDialog category={deleting} groups={groups} onClose={() => setDeleting(null)} />}
     </section>
   );
 }

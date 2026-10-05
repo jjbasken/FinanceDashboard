@@ -89,14 +89,8 @@ function ToBudget(props: { budget: BudgetMonth }) {
         <strong>{formatCents(b.toBudget)}</strong>
       </div>
       <dl className="to-budget-breakdown">
-        <dt>From last month</dt>
-        <dd>{formatCents(b.fromLastMonth)}</dd>
         <dt>Income this month</dt>
         <dd>{formatCents(b.income)}</dd>
-        <dt>Unspent last month</dt>
-        <dd>{formatCents(b.lastMonthLeftover)}</dd>
-        <dt>Overspent last month</dt>
-        <dd>{formatCents(b.lastMonthOverspent)}</dd>
         <dt>Budgeted this month</dt>
         <dd>{formatCents(-b.budgeted)}</dd>
       </dl>
@@ -170,11 +164,8 @@ export function BudgetPage() {
   const [dragging, setDragging] = useState<Dragging | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
 
-  const putBudget = (data: BudgetMonth) => {
-    qc.setQueryData(ledgerKeys.budget(data.month), data);
-    // Every later month depends on this one.
-    void qc.invalidateQueries({ queryKey: ["budget"], predicate: (q) => q.queryKey[1] !== data.month });
-  };
+  // Months are independent, so a change only affects the month it was made in.
+  const putBudget = (data: BudgetMonth) => qc.setQueryData(ledgerKeys.budget(data.month), data);
 
   const setAmount = useMutation({
     mutationFn: ({ id, amount }: { id: number; amount: number }) =>
@@ -302,7 +293,7 @@ export function BudgetPage() {
     );
   }
 
-  function categoryActions(c: BudgetCategory, income = false) {
+  function categoryActions(c: BudgetCategory) {
     return (
       <span className="row-actions-inline">
         <button
@@ -320,21 +311,6 @@ export function BudgetPage() {
         >
           {c.hidden ? "Show" : "Hide"}
         </button>
-        {!income && (
-          <button
-            className="link-button"
-            title={
-              c.rollover
-                ? "Unspent money stays in this category next month"
-                : "Unspent money goes back to To Budget next month"
-            }
-            onClick={() =>
-              edit.mutate({ method: "patch", path: `/categories/${c.id}`, body: { rollover: !c.rollover } })
-            }
-          >
-            {c.rollover ? "Stop rolling over" : "Roll over"}
-          </button>
-        )}
       </span>
     );
   }
@@ -455,11 +431,6 @@ export function BudgetPage() {
                       ⋮⋮
                     </span>
                     <span className="truncate">{c.name}</span>
-                    {c.rollover && (
-                      <span className="rollover-mark" title="Rolls over: unspent money stays in this category">
-                        ↻
-                      </span>
-                    )}
                     {categoryActions(c)}
                   </div>
                   <div className="amount">
@@ -480,10 +451,7 @@ export function BudgetPage() {
                       {formatCents(c.activity)}
                     </button>
                   </div>
-                  <div
-                    className="amount"
-                    title={c.carryIn ? `Includes ${formatCents(c.carryIn)} carried over` : undefined}
-                  >
+                  <div className="amount">
                     <BalancePill cents={c.balance} />
                   </div>
                 </div>
@@ -527,7 +495,7 @@ export function BudgetPage() {
                       ⋮⋮
                     </span>
                     <span className="truncate">{c.name}</span>
-                    {categoryActions(c, true)}
+                    {categoryActions(c)}
                   </div>
                   <div />
                   <div className="amount">
