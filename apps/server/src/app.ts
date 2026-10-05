@@ -5,6 +5,7 @@ import type { SessionContext } from "./auth/sessions";
 import { LoginRateLimiter } from "./auth/rate-limit";
 import { authRoutes } from "./routes/auth";
 import { accountRoutes } from "./routes/accounts";
+import { budgetRoutes } from "./routes/budget";
 import { categoryRoutes } from "./routes/categories";
 import { householdRoutes } from "./routes/household";
 import { payeeRoutes } from "./routes/payees";
@@ -46,6 +47,7 @@ export function createApp({ db, secureCookies = false }: AppOptions) {
   app.route("/api/transactions", transactionRoutes);
   app.route("/api/categories", categoryRoutes);
   app.route("/api/payees", payeeRoutes);
+  app.route("/api/budget", budgetRoutes);
 
   app.notFound((c) => c.json({ error: "Not found" }, 404));
   app.onError((err, c) => {

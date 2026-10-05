@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router";
 import { useAuthStatus } from "./auth";
 import { AppShell } from "./components/AppShell";
 import { AccountPage } from "./pages/AccountPage";
+import { BudgetPage } from "./pages/BudgetPage";
 import { AcceptInvitePage } from "./pages/AcceptInvitePage";
 import { LoginPage } from "./pages/LoginPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
@@ -36,7 +37,7 @@ export function App() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route path="/budget" element={<PlaceholderPage title="Budget" milestone="Budget" />} />
+        <Route path="/budget" element={<BudgetPage />} />
         <Route path="/reports" element={<PlaceholderPage title="Reports" milestone="Reports" />} />
         <Route path="/investments" element={<PlaceholderPage title="Investments" milestone="Investments" />} />
         <Route path="/accounts/:id" element={<AccountPage />} />
