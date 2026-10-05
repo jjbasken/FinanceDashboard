@@ -6,6 +6,7 @@ import type { AppEnv } from "../app";
 import { households, invites, users } from "../db/schema";
 import { createSession, deleteSession } from "../auth/sessions";
 import { hashToken } from "../auth/tokens";
+import { createHousehold } from "../services/household";
 import { clearSessionCookie, parseBody, setSessionCookie } from "../middleware";
 
 let dummyHash: Promise<string> | null = null;
@@ -39,7 +40,7 @@ export const authRoutes = new Hono<AppEnv>()
     const userId = db.transaction((tx) => {
       const [row] = tx.select({ n: count() }).from(users).all();
       if ((row?.n ?? 0) > 0) throw new HTTPException(409, { message: "Setup has already been completed" });
-      const household = tx.insert(households).values({ name: input.householdName }).returning().get();
+      const household = createHousehold(tx, input.householdName);
       return tx
         .insert(users)
         .values({

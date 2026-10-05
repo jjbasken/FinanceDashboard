@@ -1,12 +1,14 @@
-import type { InviteInfo, PublicUser } from "@fd/shared";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import type { InviteInfo } from "@fd/shared";
+import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../api";
 import { useAuthStatus } from "../auth";
+import { CategoriesCard } from "../components/CategoriesCard";
+import { useMembers } from "../ledger";
 
 export function SettingsPage() {
   const { data: status } = useAuthStatus();
-  const members = useQuery({ queryKey: ["household", "users"], queryFn: () => api.get<PublicUser[]>("/household/users") });
+  const members = useMembers();
   const invite = useMutation({ mutationFn: () => api.post<InviteInfo>("/household/invites") });
   const [copied, setCopied] = useState(false);
 
@@ -70,6 +72,7 @@ export function SettingsPage() {
             </div>
           )}
         </section>
+        <CategoriesCard />
       </div>
     </>
   );

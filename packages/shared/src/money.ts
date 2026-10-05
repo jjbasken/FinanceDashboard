@@ -44,3 +44,10 @@ export function rationalToCents(num: number, denom: number): number {
   const v = (num * 100) / denom;
   return Math.sign(v) * Math.round(Math.abs(v));
 }
+
+/** Format integer cents as a plain editable number, e.g. -123456 -> "-1234.56". Exact, no floats. */
+export function centsToInput(cents: number): string {
+  const abs = Math.abs(cents);
+  const text = `${Math.trunc(abs / 100)}.${String(abs % 100).padStart(2, "0")}`;
+  return cents < 0 ? `-${text}` : text;
+}

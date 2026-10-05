@@ -1,7 +1,8 @@
 import { setupInput } from "@fd/shared";
 import { count } from "drizzle-orm";
 import type { Db } from "./db";
-import { households, users } from "./db/schema";
+import { users } from "./db/schema";
+import { createHousehold } from "./services/household";
 
 export type SeedResult =
   | { status: "not-configured" }
@@ -43,7 +44,7 @@ export async function seedOwnerFromEnv(db: Db, env: Record<string, string | unde
     // Re-check inside the transaction in case setup ran concurrently.
     const [row] = tx.select({ n: count() }).from(users).all();
     if ((row?.n ?? 0) > 0) return { status: "skipped", reason: "database already has users" } as const;
-    const household = tx.insert(households).values({ name: input.householdName }).returning().get();
+    const household = createHousehold(tx, input.householdName);
     tx.insert(users)
       .values({
         householdId: household.id,

@@ -89,3 +89,17 @@ export async function parseBody<T extends z.ZodType>(c: Context<AppEnv>, schema:
   }
   return result.data;
 }
+
+/** Parse a positive integer route parameter, 404ing on anything else. */
+export function idParam(c: Context<AppEnv>, name = "id") {
+  const raw = c.req.param(name) ?? "";
+  const id = /^\d{1,15}$/.test(raw) ? Number(raw) : 0;
+  if (id <= 0) throw new HTTPException(404, { message: "Not found" });
+  return id;
+}
+
+/** The household and user behind the current request, for scoping ledger queries. */
+export function actorOf(c: Context<AppEnv>) {
+  const { user, household } = sessionOf(c);
+  return { householdId: household.id, userId: user.id };
+}

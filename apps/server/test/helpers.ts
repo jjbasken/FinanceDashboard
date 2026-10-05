@@ -40,6 +40,14 @@ export class Client {
   post(path: string, body?: unknown) {
     return this.request("POST", path, body);
   }
+
+  patch(path: string, body?: unknown) {
+    return this.request("PATCH", path, body);
+  }
+
+  delete(path: string) {
+    return this.request("DELETE", path);
+  }
 }
 
 export const owner = {
