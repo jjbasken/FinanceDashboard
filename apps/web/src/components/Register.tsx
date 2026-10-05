@@ -538,13 +538,15 @@ export function Register(props: {
     if (!q) return transactions;
     return transactions.filter((t) => {
       const payee = payeeLabel(t.payeeId != null ? lookups.payeeById.get(t.payeeId) : undefined);
-      const cats = [t.categoryId, ...t.splits.map((s) => s.categoryId)]
-        .map((id) => (id != null ? (lookups.categoryName.get(id) ?? "") : ""))
+      const ids = t.splits.length ? t.splits.map((s) => s.categoryId) : [t.categoryId];
+      const needsCategory = showCategory && !isBudgetTransfer(lookups, t.payeeId);
+      const cats = ids
+        .map((id) => (id != null ? (lookups.categoryName.get(id) ?? "") : needsCategory ? "uncategorized" : ""))
         .join(" ");
       const text = [payee, t.notes, ...t.splits.map((s) => s.notes), cats, plain(t.amount), formatDate(t.date)];
       return text.join(" ").toLowerCase().includes(q);
     });
-  }, [transactions, props.search, lookups]);
+  }, [transactions, props.search, lookups, showCategory]);
 
   const whoById = useMemo(() => new Map((members.data ?? []).map((m) => [m.id, m.displayName])), [members.data]);
   function who(t: Transaction) {

@@ -9,6 +9,9 @@ export function Dialog(props: {
   pending?: boolean;
   error?: string | null;
   danger?: boolean;
+  /** Hide the Cancel button, for dialogs that only show information. */
+  noCancel?: boolean;
+  wide?: boolean;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -22,7 +25,7 @@ export function Dialog(props: {
   }
 
   return (
-    <dialog ref={ref} className="dialog" onClose={props.onClose} onCancel={props.onClose}>
+    <dialog ref={ref} className={props.wide ? "dialog wide" : "dialog"} onClose={props.onClose} onCancel={props.onClose}>
       <form onSubmit={submit}>
         <h2>{props.title}</h2>
         {props.children}
@@ -32,9 +35,11 @@ export function Dialog(props: {
           </p>
         )}
         <div className="dialog-actions">
-          <button type="button" className="btn" onClick={props.onClose}>
-            Cancel
-          </button>
+          {!props.noCancel && (
+            <button type="button" className="btn" onClick={props.onClose}>
+              Cancel
+            </button>
+          )}
           <button type="submit" className={props.danger ? "btn btn-danger" : "btn btn-primary"} disabled={props.pending}>
             {props.pending ? "Please wait…" : props.submitLabel}
           </button>

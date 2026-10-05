@@ -1,4 +1,4 @@
-import type { Account, CategoryGroup, Payee, PublicUser, Transaction } from "@fd/shared";
+import type { Account, BudgetMonth, CategoryGroup, Payee, PublicUser, Transaction } from "@fd/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 
@@ -8,6 +8,7 @@ export const ledgerKeys = {
   payees: ["payees"] as const,
   members: ["household", "users"] as const,
   register: (accountId: number) => ["register", accountId] as const,
+  budget: (month: string) => ["budget", month] as const,
 };
 
 export const useAccounts = () =>
@@ -41,9 +42,17 @@ export function useLedgerMutation<TInput, TResult = unknown>(fn: (input: TInput)
         qc.invalidateQueries({ queryKey: ["register"] }),
         qc.invalidateQueries({ queryKey: ledgerKeys.payees }),
         qc.invalidateQueries({ queryKey: ledgerKeys.categories }),
+        qc.invalidateQueries({ queryKey: ["budget"] }),
       ]),
   });
 }
+
+export const useBudget = (month: string) =>
+  useQuery({
+    queryKey: ledgerKeys.budget(month),
+    queryFn: () => api.get<BudgetMonth>(`/budget/${month}`),
+    placeholderData: (prev) => prev,
+  });
 
 /** Today's date in the browser's time zone, as YYYY-MM-DD. */
 export function today() {
@@ -57,3 +66,6 @@ export function formatDate(date: string) {
   const [y, m, d] = date.split("-");
   return `${m}/${d}/${y}`;
 }
+
+/** The current month as YYYY-MM. */
+export const thisMonth = () => today().slice(0, 7);

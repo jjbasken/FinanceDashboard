@@ -180,3 +180,25 @@ export const transactions = sqliteTable(
     uniqueIndex("transactions_imported_id_unique").on(t.householdId, t.importedId),
   ],
 );
+
+/** The amount assigned to an expense category in a month ("YYYY-MM"). Missing rows mean 0. */
+export const budgetMonths = sqliteTable(
+  "budget_months",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    householdId: integer("household_id")
+      .notNull()
+      .references(() => households.id),
+    categoryId: integer("category_id")
+      .notNull()
+      .references(() => categories.id, { onDelete: "cascade" }),
+    month: text("month").notNull(),
+    amount: integer("amount").notNull(),
+    updatedBy: integer("updated_by").references(() => users.id),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("budget_months_category_month_unique").on(t.categoryId, t.month),
+    index("budget_months_household_month_idx").on(t.householdId, t.month),
+  ],
+);

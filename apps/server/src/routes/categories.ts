@@ -1,65 +1,18 @@
 import {
   createCategoryGroupInput,
   createCategoryInput,
+  moveCategoryInput,
+  moveGroupInput,
   updateCategoryGroupInput,
   updateCategoryInput,
-  type CategoryGroup,
 } from "@fd/shared";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { AppEnv } from "../app";
-import type { DbOrTx } from "../db";
 import { categories, categoryGroups, transactions } from "../db/schema";
 import { actorOf, idParam, parseBody, requireAuth } from "../middleware";
-
-function listCategories(db: DbOrTx, householdId: number): CategoryGroup[] {
-  const groups = db
-    .select({
-      id: categoryGroups.id,
-      name: categoryGroups.name,
-      isIncome: categoryGroups.isIncome,
-      hidden: categoryGroups.hidden,
-      sortOrder: categoryGroups.sortOrder,
-    })
-    .from(categoryGroups)
-    .where(eq(categoryGroups.householdId, householdId))
-    .orderBy(asc(categoryGroups.isIncome), asc(categoryGroups.sortOrder), asc(categoryGroups.id))
-    .all();
-  const cats = db
-    .select({
-      id: categories.id,
-      groupId: categories.groupId,
-      name: categories.name,
-      hidden: categories.hidden,
-      sortOrder: categories.sortOrder,
-    })
-    .from(categories)
-    .where(eq(categories.householdId, householdId))
-    .orderBy(asc(categories.sortOrder), asc(categories.id))
-    .all();
-  return groups.map((g) => ({ ...g, categories: cats.filter((c) => c.groupId === g.id) }));
-}
-
-function getGroup(db: DbOrTx, householdId: number, id: number) {
-  const group = db
-    .select()
-    .from(categoryGroups)
-    .where(and(eq(categoryGroups.id, id), eq(categoryGroups.householdId, householdId)))
-    .get();
-  if (!group) throw new HTTPException(404, { message: "Category group not found" });
-  return group;
-}
-
-function getCategory(db: DbOrTx, householdId: number, id: number) {
-  const category = db
-    .select()
-    .from(categories)
-    .where(and(eq(categories.id, id), eq(categories.householdId, householdId)))
-    .get();
-  if (!category) throw new HTTPException(404, { message: "Category not found" });
-  return category;
-}
+import { getCategory, getGroup, listCategories, moveCategory, moveGroup } from "../services/categories";
 
 export const categoryRoutes = new Hono<AppEnv>()
   .use(requireAuth)
@@ -88,6 +41,14 @@ export const categoryRoutes = new Hono<AppEnv>()
     getGroup(c.var.db, actorOf(c).householdId, id);
     c.var.db.update(categoryGroups).set(input).where(eq(categoryGroups.id, id)).run();
     return c.json({ ok: true });
+  })
+
+  .post("/groups/:id/move", async (c) => {
+    const id = idParam(c);
+    const { beforeId } = await parseBody(c, moveGroupInput);
+    const { householdId } = actorOf(c);
+    c.var.db.transaction((tx) => moveGroup(tx, householdId, id, beforeId));
+    return c.json(listCategories(c.var.db, householdId));
   })
 
   /** Deleting a group deletes its categories; their transactions become uncategorised. */
@@ -123,6 +84,14 @@ export const categoryRoutes = new Hono<AppEnv>()
     if (input.groupId !== undefined) getGroup(c.var.db, householdId, input.groupId);
     c.var.db.update(categories).set(input).where(eq(categories.id, id)).run();
     return c.json({ ok: true });
+  })
+
+  .post("/:id/move", async (c) => {
+    const id = idParam(c);
+    const { groupId, beforeId } = await parseBody(c, moveCategoryInput);
+    const { householdId } = actorOf(c);
+    c.var.db.transaction((tx) => moveCategory(tx, householdId, id, groupId, beforeId));
+    return c.json(listCategories(c.var.db, householdId));
   })
 
   /** `?transferTo=<id>` moves the category's transactions to another category first. */
