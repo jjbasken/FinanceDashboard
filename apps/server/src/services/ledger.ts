@@ -12,7 +12,8 @@ import {
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import type { DbOrTx } from "../db";
-import { accounts, categories, categoryGroups, payees, transactions } from "../db/schema";
+import { accounts, categories, categoryGroups, investmentTxns, payees, transactions } from "../db/schema";
+import { holdingsValueByAccount } from "./holdings";
 import { STARTING_BALANCES } from "./household";
 
 /** Who is making a change, and in which household. Every query is scoped by householdId. */
@@ -139,11 +140,13 @@ export function listAccounts(db: DbOrTx, householdId: number): Account[] {
     .groupBy(transactions.accountId)
     .all();
   const byAccount = new Map(totals.map((t) => [t.accountId, t]));
+  const holdings = holdingsValueByAccount(db, householdId);
 
   return rows.map((r) => ({
     ...r,
     balance: byAccount.get(r.id)?.balance ?? 0,
     clearedBalance: byAccount.get(r.id)?.cleared ?? 0,
+    holdingsValue: holdings.get(r.id) ?? 0,
   }));
 }
 
@@ -201,6 +204,11 @@ export function updateAccount(db: DbOrTx, actor: Actor, id: number, input: Updat
   if (input.closed && !account.closed) {
     const { balance } = accountSummary(db, actor.householdId, id);
     if (balance !== 0) throw badRequest("Move the remaining balance out of this account before closing it");
+    const held = db.all<{ n: number }>(sql`
+      select 1 as n from investment_txns where account_id = ${id}
+      group by security_id having sum(shares) != 0 limit 1
+    `);
+    if (held.length) throw badRequest("Sell or move out this account's investments before closing it");
   }
   db.update(accounts)
     .set({ ...input, updatedBy: actor.userId })
@@ -234,6 +242,14 @@ export function reconcileAccount(db: DbOrTx, actor: Actor, id: number, statement
 
 // --- Transactions ---
 
+function linkedToInvestment(db: DbOrTx, transactionId: number) {
+  return !!db
+    .select({ id: investmentTxns.id })
+    .from(investmentTxns)
+    .where(eq(investmentTxns.transactionId, transactionId))
+    .get();
+}
+
 type TxRow = typeof transactions.$inferSelect;
 
 export function listTransactions(db: DbOrTx, householdId: number, accountId: number): Transaction[] {
@@ -252,11 +268,13 @@ export function listTransactions(db: DbOrTx, householdId: number, accountId: num
       reconciled: transactions.reconciled,
       isParent: transactions.isParent,
       transferId: transactions.transferId,
+      investmentTxnId: investmentTxns.id,
       createdBy: transactions.createdBy,
       updatedBy: transactions.updatedBy,
       runningBalance: running,
     })
     .from(transactions)
+    .leftJoin(investmentTxns, eq(investmentTxns.transactionId, transactions.id))
     .where(and(eq(transactions.accountId, accountId), isNull(transactions.parentId)))
     .orderBy(sql`${transactions.date} desc`, sql`${transactions.id} desc`)
     .all();
@@ -401,6 +419,9 @@ export function updateTransaction(db: DbOrTx, actor: Actor, id: number, input: U
   const { householdId, userId } = actor;
   const row = getTransactionRow(db, householdId, id);
   if (row.parentId) throw badRequest("Edit the split through its parent transaction");
+  if (linkedToInvestment(db, id) && Object.keys(input).some((k) => k !== "cleared")) {
+    throw badRequest("This is the cash side of an investment transaction. Edit it on the Investments page.");
+  }
   const account = getAccount(db, householdId, row.accountId);
 
   const payeeChanged = input.payeeId !== undefined || input.payeeName !== undefined;
@@ -470,7 +491,11 @@ export function updateTransaction(db: DbOrTx, actor: Actor, id: number, input: U
         date,
         amount: -amount,
         notes,
-        categoryId: transferCategory(target, account, input.categoryId !== undefined ? input.categoryId : other.categoryId),
+        categoryId: transferCategory(
+          target,
+          account,
+          input.categoryId !== undefined ? input.categoryId : other.categoryId,
+        ),
         updatedBy: userId,
       })
       .where(eq(transactions.id, other.id))
@@ -483,6 +508,9 @@ export function updateTransaction(db: DbOrTx, actor: Actor, id: number, input: U
 export function deleteTransaction(db: DbOrTx, householdId: number, id: number) {
   const row = getTransactionRow(db, householdId, id);
   if (row.parentId) throw badRequest("Delete the split through its parent transaction");
+  if (linkedToInvestment(db, id)) {
+    throw badRequest("This is the cash side of an investment transaction. Delete it on the Investments page.");
+  }
   const ids = row.transferId ? [row.id, row.transferId] : [row.id];
   db.delete(transactions).where(inArray(transactions.id, ids)).run();
 }

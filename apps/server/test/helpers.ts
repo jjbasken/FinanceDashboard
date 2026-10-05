@@ -1,9 +1,28 @@
 import { createApp } from "../src/app";
 import { openDb } from "../src/db";
+import type { PriceProvider, PriceQuote } from "../src/services/prices";
+import type { SecurityLookup } from "@fd/shared";
 
-export function testApp() {
+/** A price provider with canned quotes, so tests never touch the network. */
+export function fakePrices(quotes: Record<string, PriceQuote[]> = {}, names: Record<string, SecurityLookup> = {}) {
+  const calls: { symbol: string; from: string; to: string }[] = [];
+  const provider: PriceProvider = {
+    name: "yahoo",
+    async history(symbol, from, to) {
+      calls.push({ symbol, from, to });
+      if (!(symbol in quotes)) throw new Error(`Unknown symbol ${symbol}`);
+      return quotes[symbol]!.filter((q) => q.date >= from && q.date <= to);
+    },
+    async lookup(symbol) {
+      return names[symbol] ?? null;
+    },
+  };
+  return { provider, calls };
+}
+
+export function testApp(opts: { priceProvider?: PriceProvider } = {}) {
   const db = openDb(":memory:");
-  return { db, app: createApp({ db }) };
+  return { db, app: createApp({ db, priceProvider: opts.priceProvider ?? fakePrices().provider }) };
 }
 
 type App = ReturnType<typeof testApp>["app"];

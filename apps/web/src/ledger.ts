@@ -1,4 +1,15 @@
-import type { Account, BudgetMonth, CategoryGroup, Payee, PublicUser, Transaction } from "@fd/shared";
+import type {
+  Account,
+  BudgetMonth,
+  CategoryGroup,
+  HoldingsSummary,
+  InvestmentTxn,
+  Payee,
+  PublicUser,
+  Security,
+  Transaction,
+  ValuePoint,
+} from "@fd/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 
@@ -43,6 +54,7 @@ export function useLedgerMutation<TInput, TResult = unknown>(fn: (input: TInput)
         qc.invalidateQueries({ queryKey: ledgerKeys.payees }),
         qc.invalidateQueries({ queryKey: ledgerKeys.categories }),
         qc.invalidateQueries({ queryKey: ["budget"] }),
+        qc.invalidateQueries({ queryKey: ["investments"] }),
       ]),
   });
 }
@@ -51,6 +63,25 @@ export const useBudget = (month: string) =>
   useQuery({
     queryKey: ledgerKeys.budget(month),
     queryFn: () => api.get<BudgetMonth>(`/budget/${month}`),
+    placeholderData: (prev) => prev,
+  });
+
+export const useSecurities = () =>
+  useQuery({ queryKey: ["investments", "securities"], queryFn: () => api.get<Security[]>("/investments/securities") });
+
+export const useHoldings = () =>
+  useQuery({ queryKey: ["investments", "holdings"], queryFn: () => api.get<HoldingsSummary>("/investments/holdings") });
+
+export const useInvestmentTxns = () =>
+  useQuery({
+    queryKey: ["investments", "transactions"],
+    queryFn: () => api.get<InvestmentTxn[]>("/investments/transactions"),
+  });
+
+export const useValueHistory = (range: string) =>
+  useQuery({
+    queryKey: ["investments", "history", range],
+    queryFn: () => api.get<ValuePoint[]>(`/investments/history?range=${range}`),
     placeholderData: (prev) => prev,
   });
 

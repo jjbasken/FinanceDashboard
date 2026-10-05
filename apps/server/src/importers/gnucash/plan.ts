@@ -1,4 +1,12 @@
-import type { AccountType, GnucashBalanceCheck, GnucashMapping, GnucashPreview } from "@fd/shared";
+import {
+  INVESTMENT_ACTION_LABELS,
+  priceFromValue,
+  type AccountType,
+  type GnucashBalanceCheck,
+  type GnucashMapping,
+  type GnucashPreview,
+  type SecurityType,
+} from "@fd/shared";
 import type { GncAccount, GncBook, GncSplit, GncTransaction } from "./read";
 
 /** What already exists in the household, for suggestions and validation. */
@@ -9,6 +17,9 @@ export interface ImportContext {
   imported: Set<string>;
   /** Mappings used by the last import, keyed by GnuCash account GUID. */
   remembered: Map<string, GnucashMapping>;
+  securities: { id: number; symbol: string }[];
+  /** importedIds of investment transactions already brought in. */
+  importedInvestments: Set<string>;
 }
 
 export type AccountRef = { kind: "existing"; id: number } | { kind: "new"; key: string };
@@ -51,17 +62,54 @@ export interface PlannedRow {
   children: PlannedChild[];
 }
 
+export type SecurityRef = { kind: "existing"; id: number } | { kind: "new"; key: string };
+
+export interface NewSecurity {
+  /** The upper-case symbol. */
+  key: string;
+  symbol: string;
+  name: string;
+  type: SecurityType;
+}
+
+export interface PlannedInvestment {
+  importedId: string;
+  account: AccountRef;
+  security: SecurityRef;
+  date: string;
+  action: "buy" | "sell" | "split";
+  /** Signed micro-shares. */
+  shares: number;
+  price: number;
+  /** Cost or proceeds, in cents. */
+  amount: number;
+  /** Cash moving in (+) or out (-) of the account; 0 for splits. */
+  cash: number;
+  payeeName: string;
+  notes: string;
+  cleared: boolean;
+}
+
+export interface PlannedPrice {
+  security: SecurityRef;
+  date: string;
+  close: number;
+}
+
 export interface PlannedTransaction {
   guid: string;
   rows: PlannedRow[];
   /** Pairs of rows that become the two sides of a transfer. */
   transfers: [PlannedRow, PlannedRow][];
+  investments: PlannedInvestment[];
 }
 
 export interface Plan {
   newAccounts: NewAccount[];
   newCategories: NewCategory[];
+  newSecurities: NewSecurity[];
   transactions: PlannedTransaction[];
+  prices: PlannedPrice[];
   preview: GnucashPreview;
 }
 
@@ -81,6 +129,12 @@ function categoryNames(account: GncAccount) {
   if (rest.length === 0) return { groupName: top, name: top };
   if (rest.length === 1) return { groupName: top, name: rest[0]! };
   return { groupName: rest[0]!, name: rest.slice(1).join(": ") };
+}
+
+/** A usable ticker from a GnuCash commodity mnemonic (which may contain spaces or other characters). */
+function symbolFor(account: GncAccount) {
+  const cleaned = (account.commodity || account.name).toUpperCase().replace(/[^A-Z0-9.\-^=]/g, "");
+  return cleaned.slice(0, 24) || "UNKNOWN";
 }
 
 function suggestDefault(account: GncAccount, book: GncBook, ctx: ImportContext): GnucashMapping {
@@ -122,8 +176,21 @@ function suggestDefault(account: GncAccount, book: GncBook, ctx: ImportContext):
     }
     case "EQUITY":
       return { kind: "opening" };
+    case "STOCK":
+    case "MUTUAL": {
+      const symbol = symbolFor(account);
+      const existing = ctx.securities.find((x) => x.symbol === symbol);
+      const fund = account.type === "MUTUAL" || /fund/i.test(account.commodityNamespace);
+      return {
+        kind: "holding",
+        securityId: existing?.id ?? null,
+        symbol,
+        name: clip(account.commodityName || account.name, 120),
+        type: fund ? "mutual_fund" : "stock",
+      };
+    }
     default:
-      // STOCK and MUTUAL holdings arrive with investment support; TRADING etc. are bookkeeping.
+      // TRADING and other bookkeeping accounts.
       return { kind: "skip" };
   }
 }
@@ -132,6 +199,7 @@ function suggestDefault(account: GncAccount, book: GncBook, ctx: ImportContext):
 function stillValid(m: GnucashMapping, ctx: ImportContext) {
   if (m.kind === "account" && m.accountId !== null) return ctx.accounts.some((a) => a.id === m.accountId);
   if (m.kind === "category" && m.categoryId !== null) return ctx.categories.some((c) => c.id === m.categoryId);
+  if (m.kind === "holding" && m.securityId !== null) return ctx.securities.some((x) => x.id === m.securityId);
   return true;
 }
 
@@ -139,7 +207,10 @@ export function suggestMappings(book: GncBook, ctx: ImportContext) {
   const out = new Map<string, { mapping: GnucashMapping; remembered: boolean }>();
   for (const account of book.accounts) {
     const remembered = ctx.remembered.get(account.guid);
-    if (remembered && stillValid(remembered, ctx)) out.set(account.guid, { mapping: remembered, remembered: true });
+    // Holdings were always skipped before investments existed; that wasn't a choice to keep.
+    const forcedSkip = remembered?.kind === "skip" && HOLDING_TYPES.has(account.type);
+    if (remembered && !forcedSkip && stillValid(remembered, ctx))
+      out.set(account.guid, { mapping: remembered, remembered: true });
     else out.set(account.guid, { mapping: suggestDefault(account, book, ctx), remembered: false });
   }
   return out;
@@ -172,8 +243,26 @@ export function planImport(book: GncBook, input: Record<string, GnucashMapping>,
     accountNames.set(`e${a.id}`, a.name);
   }
 
-  // Empty accounts (usually placeholders) never create anything.
+  // Empty accounts (usually placeholders) never create anything...
   const used = new Set(book.transactions.flatMap((t) => t.splits.map((s) => s.accountGuid)));
+
+  // ...except the account a holding lives in: the nearest ancestor imported as an account.
+  const holdingHome = new Map<string, string>();
+  for (const account of book.accounts) {
+    if (!used.has(account.guid) || mappingOf(account.guid).kind !== "holding") continue;
+    let parent = account.parentGuid;
+    while (parent && mappingOf(parent).kind !== "account") parent = accountsByGuid.get(parent)?.parentGuid ?? null;
+    if (parent) {
+      holdingHome.set(account.guid, parent);
+      used.add(parent);
+    } else {
+      warnings.push(
+        `${account.path} is a holding, but none of the accounts above it is imported as an account, so it's skipped.`,
+      );
+    }
+  }
+  const newSecurities = new Map<string, NewSecurity>();
+  const holdingRef = new Map<string, { account: string; security: SecurityRef; symbol: string }>();
 
   for (const account of book.accounts) {
     const m = mappingOf(account.guid);
@@ -201,6 +290,24 @@ export function planImport(book: GncBook, input: Record<string, GnucashMapping>,
           `${account.path} holds ${account.commodity}, not ${book.currency}. Its transactions are imported at their ${book.currency} value.`,
         );
       }
+    } else if (m.kind === "holding" && holdingHome.has(account.guid)) {
+      let security: SecurityRef;
+      if (m.securityId !== null) {
+        if (!ctx.securities.some((x) => x.id === m.securityId)) {
+          throw new MappingError(`${account.path} is mapped to a security that no longer exists`);
+        }
+        security = { kind: "existing", id: m.securityId };
+      } else {
+        const existing = ctx.securities.find((x) => x.symbol === m.symbol);
+        if (existing) security = { kind: "existing", id: existing.id };
+        else {
+          if (!newSecurities.has(m.symbol)) {
+            newSecurities.set(m.symbol, { key: m.symbol, symbol: m.symbol, name: m.name, type: m.type });
+          }
+          security = { kind: "new", key: m.symbol };
+        }
+      }
+      holdingRef.set(account.guid, { account: holdingHome.get(account.guid)!, security, symbol: m.symbol });
     } else if (m.kind === "category") {
       if (m.categoryId !== null) {
         if (!ctx.categories.some((c) => c.id === m.categoryId)) {
@@ -232,6 +339,8 @@ export function planImport(book: GncBook, input: Record<string, GnucashMapping>,
   let noAccount = 0;
   let voided = 0;
   let foreign = 0;
+  let missingHoldings = 0;
+  let investmentCount = 0;
   const skippedUse = new Map<string, number>();
   const rowCounts = { transactions: 0, transfers: 0, splits: 0 };
   const plannedTotals = new Map<string, number>();
@@ -246,24 +355,40 @@ export function planImport(book: GncBook, input: Record<string, GnucashMapping>,
     }
     if (ctx.imported.has(tx.guid)) {
       alreadyImported++;
+      const holdingSplits = splits.filter((s) => holdingRef.has(s.accountGuid) && s.shares !== 0);
+      if (holdingSplits.some((s) => !ctx.importedInvestments.has(`gnucash:${tx.guid}:${s.guid}`))) missingHoldings++;
       continue;
     }
     if (tx.currency !== book.currency) foreign++;
 
     // Group the splits that land in our accounts by destination account.
+    // A holding split counts as cash arriving in (or leaving) its account, which a buy or sell
+    // then turns into shares. Zero-share holding splits are GnuCash's realized-gain bookkeeping.
     const groups = new Map<string, { ref: AccountRef; splits: GncSplit[]; total: number }>();
     const others: GncSplit[] = [];
-    for (const s of splits) {
-      const ref = accountRef.get(s.accountGuid);
-      if (!ref) {
-        others.push(s);
-        continue;
-      }
+    const holdingSplits: GncSplit[] = [];
+    let realizedGain = false;
+    const addToGroup = (ref: AccountRef, s: GncSplit, amount: number) => {
       const key = accountKey(ref);
       const g = groups.get(key) ?? { ref, splits: [], total: 0 };
       g.splits.push(s);
-      g.total += amountIn(s, accountsByGuid.get(s.accountGuid)!, tx);
+      g.total += amount;
       groups.set(key, g);
+    };
+    for (const s of splits) {
+      const holding = holdingRef.get(s.accountGuid);
+      if (holding) {
+        if (s.shares === 0) {
+          realizedGain = true;
+          continue;
+        }
+        holdingSplits.push(s);
+        addToGroup(accountRef.get(holding.account)!, s, s.value);
+        continue;
+      }
+      const ref = accountRef.get(s.accountGuid);
+      if (!ref) others.push(s);
+      else addToGroup(ref, s, amountIn(s, accountsByGuid.get(s.accountGuid)!, tx));
     }
     if (groups.size === 0) {
       noAccount++;
@@ -294,11 +419,38 @@ export function planImport(book: GncBook, input: Record<string, GnucashMapping>,
     const payeeName = tx.description.trim() ? clip(tx.description.trim(), 100) : null;
     const prefix = `gnucash:${tx.guid}:`;
 
-    const planned: PlannedTransaction = { guid: tx.guid, rows: [], transfers: [] };
+    const planned: PlannedTransaction = { guid: tx.guid, rows: [], transfers: [], investments: [] };
+
+    for (const s of holdingSplits) {
+      const holding = holdingRef.get(s.accountGuid)!;
+      const action = s.value === 0 ? "split" : s.shares > 0 ? "buy" : "sell";
+      const investment: PlannedInvestment = {
+        importedId: `${prefix}${s.guid}`,
+        account: accountRef.get(holding.account)!,
+        security: holding.security,
+        date: tx.date,
+        action,
+        shares: s.shares,
+        price: s.value ? priceFromValue(s.value, s.shares) : 0,
+        amount: Math.abs(s.value),
+        cash: -s.value,
+        payeeName: payeeName ?? `${INVESTMENT_ACTION_LABELS[action]} ${holding.symbol}`,
+        notes: join(num, s.memo, tx.notes),
+        cleared: status(s).cleared,
+      };
+      planned.investments.push(investment);
+      addTotal(investment.account, investment.cash);
+      investmentCount++;
+    }
 
     // An opening-balance entry often seeds several accounts against Equity at once. Give each
     // account its own starting balance rather than transfers between them.
-    if (others.length > 0 && ordered.length > 1 && others.every((s) => mappingOf(s.accountGuid).kind === "opening")) {
+    if (
+      others.length > 0 &&
+      ordered.length > 1 &&
+      holdingSplits.length === 0 &&
+      others.every((s) => mappingOf(s.accountGuid).kind === "opening")
+    ) {
       for (const g of ordered) {
         const first = g.splits[0]!;
         const budgeted = onBudget.get(accountKey(g.ref)) ?? false;
@@ -374,7 +526,7 @@ export function planImport(book: GncBook, input: Record<string, GnucashMapping>,
         importedId: `${prefix}imbalance`,
         amount: remaining - explained,
         category: null,
-        notes: "Unbalanced in GnuCash",
+        notes: realizedGain ? "Offsets GnuCash's realized-gain entry" : "Unbalanced in GnuCash",
       });
     }
 
@@ -397,7 +549,21 @@ export function planImport(book: GncBook, input: Record<string, GnucashMapping>,
       if (!single) rowCounts.splits += children.length;
     }
 
-    if (planned.rows.length || planned.transfers.length) transactions.push(planned);
+    if (planned.rows.length || planned.transfers.length || planned.investments.length) transactions.push(planned);
+  }
+
+  // Price history for the imported securities, in the book's currency.
+  const plannedPrices: PlannedPrice[] = [];
+  const seenPrices = new Set<string>();
+  const securityByCommodity = new Map<string, SecurityRef>();
+  for (const [guid, h] of holdingRef) securityByCommodity.set(accountsByGuid.get(guid)!.commodity, h.security);
+  for (const p of book.prices) {
+    const security = securityByCommodity.get(p.commodity);
+    if (!security || p.currency !== book.currency || p.value <= 0) continue;
+    const key = `${security.kind}${security.kind === "existing" ? security.id : security.key}|${p.date}`;
+    if (seenPrices.has(key)) continue;
+    seenPrices.add(key);
+    plannedPrices.push({ security, date: p.date, close: p.value });
   }
 
   // Compare each destination account's balance with GnuCash's.
@@ -422,11 +588,13 @@ export function planImport(book: GncBook, input: Record<string, GnucashMapping>,
   balances.sort((a, b) => a.name.localeCompare(b.name));
 
   for (const [path, n] of [...skippedUse].sort((a, b) => b[1] - a[1])) {
-    const holding = HOLDING_TYPES.has(book.accounts.find((a) => a.path === path)?.type ?? "");
     warnings.push(
-      holding
-        ? `${path} is an investment holding. Its share of ${n} transaction${n === 1 ? "" : "s"} is imported as uncategorized cash for now; shares and prices come with investment support.`
-        : `${path} is skipped. Its share of ${n} transaction${n === 1 ? "" : "s"} is imported as uncategorized.`,
+      `${path} is skipped. Its share of ${n} transaction${n === 1 ? "" : "s"} is imported as uncategorized.`,
+    );
+  }
+  if (missingHoldings) {
+    warnings.push(
+      `${missingHoldings} transaction${missingHoldings === 1 ? " was" : "s were"} imported before investment support, so ${missingHoldings === 1 ? "its" : "their"} shares are missing. To bring them in, undo that earlier import and import the book again.`,
     );
   }
   if (foreign) {
@@ -438,13 +606,18 @@ export function planImport(book: GncBook, input: Record<string, GnucashMapping>,
   return {
     newAccounts,
     newCategories: [...newCategories.values()],
+    newSecurities: [...newSecurities.values()],
     transactions,
+    prices: plannedPrices,
     preview: {
       transactions: transactions.length,
       alreadyImported,
       noAccount,
       voided,
       rows: rowCounts,
+      investments: investmentCount,
+      prices: plannedPrices.length,
+      newSecurities: [...newSecurities.values()].map((x) => x.symbol),
       newAccounts: newAccounts.map((a) => a.name),
       newCategories: [...newCategories.values()].map((c) => `${c.groupName}: ${c.name}`),
       warnings,

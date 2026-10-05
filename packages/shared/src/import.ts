@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SECURITY_TYPES } from "./investments";
 import { ACCOUNT_TYPES } from "./ledger";
 
 const id = z.number().int().positive();
@@ -21,6 +22,23 @@ export const gnucashMappingSchema = z.discriminatedUnion("kind", [
     groupName: name,
     name,
     isIncome: z.boolean(),
+  }),
+  /**
+   * A stock or fund holding: its splits become buys, sells and splits of this security, held in
+   * the account its parent GnuCash account is imported into.
+   */
+  z.object({
+    kind: z.literal("holding"),
+    securityId: id.nullable(),
+    symbol: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .min(1, "Symbol is required")
+      .max(24)
+      .regex(/^[A-Z0-9.\-^=]+$/, "Use the ticker symbol, e.g. VTI or BRK-B"),
+    name: z.string().trim().min(1).max(120),
+    type: z.enum(SECURITY_TYPES),
   }),
   /** Equity: money here is an opening balance. */
   z.object({ kind: z.literal("opening") }),
@@ -86,8 +104,13 @@ export interface GnucashPreview {
   voided: number;
   /** Rows that will be written. */
   rows: { transactions: number; transfers: number; splits: number };
+  /** Investment transactions (buys, sells, splits) that will be written. */
+  investments: number;
+  /** Prices from the book's price database for the imported securities (existing ones are kept). */
+  prices: number;
   newAccounts: string[];
   newCategories: string[];
+  newSecurities: string[];
   warnings: string[];
   balances: GnucashBalanceCheck[];
 }

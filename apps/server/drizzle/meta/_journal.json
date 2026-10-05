@@ -29,6 +29,13 @@
       "when": 1791229268120,
       "tag": "0003_imports",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1791230201455,
+      "tag": "0004_investments",
+      "breakpoints": true
     }
   ]
 }

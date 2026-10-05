@@ -17,6 +17,19 @@
   --sidebar-active: #3a3a4c;
   --radius: 8px;
   --shadow: 0 1px 2px rgb(16 18 30 / 6%), 0 4px 16px rgb(16 18 30 / 6%);
+  /* Chart palette: categorical slots in fixed order, validated against --surface in both modes. */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #4a3aa7;
+  --viz-neutral: #898781;
+  --viz-neutral-light: #c3c2b7;
+  --viz-grid: #ecebe6;
+  --viz-axis: #c3c2b7;
+  --viz-muted: #6b7081;
   color-scheme: light;
 }
 
@@ -35,6 +48,18 @@
     --sidebar-hover: #1e1e29;
     --sidebar-active: #29293a;
     --shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 4px 16px rgb(0 0 0 / 30%);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
+    --series-7: #9085e9;
+    --viz-neutral: #898781;
+    --viz-neutral-light: #4a4a47;
+    --viz-grid: #2c2c2a;
+    --viz-axis: #383835;
+    --viz-muted: #9a9cad;
     color-scheme: dark;
   }
 }
@@ -705,6 +730,9 @@ select {
   padding: 40px 16px;
   text-align: center;
 }
+.register-notice {
+  margin: 6px 12px;
+}
 .register-banner {
   padding: 6px 12px;
 }
@@ -1182,6 +1210,221 @@ select {
   background: color-mix(in srgb, #f0b429 14%, var(--surface));
   border: 1px solid color-mix(in srgb, #f0b429 45%, transparent);
   font-size: 13px;
+}
+
+/* Investments */
+.small {
+  font-size: 12px;
+}
+.investments .card.wide {
+  max-width: none;
+}
+.investments .notice {
+  margin: 0;
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 13px;
+}
+.stat-tile strong {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+.stat-tile.hero strong {
+  font-size: 30px;
+}
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.segmented button {
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+.segmented button.active {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.viz {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.viz-legend {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.viz-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+.swatch.dashed {
+  height: 0;
+  width: 14px;
+  border-radius: 0;
+  border-top: 2px dashed var(--viz-neutral);
+}
+.viz-tooltip {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text);
+  min-width: 170px;
+}
+.viz-tooltip-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.viz-tooltip-row {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.allocation-bar {
+  display: flex;
+  gap: 2px;
+  height: 22px;
+}
+.allocation-segment {
+  position: relative;
+  min-width: 3px;
+  border-radius: 4px;
+  transition: opacity 0.15s;
+}
+.allocation-segment.dim {
+  opacity: 0.35;
+}
+.allocation-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  z-index: 5;
+  pointer-events: none;
+}
+.allocation-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 4px 20px;
+  font-size: 13px;
+}
+.allocation-legend li {
+  display: grid;
+  grid-template-columns: 10px 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 4px;
+  border-radius: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.allocation-legend li.active {
+  background: var(--bg);
+}
+.table-scroll {
+  overflow-x: auto;
+}
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.data-table th {
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.data-table th,
+.data-table td {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.data-table .amount {
+  text-align: right;
+}
+.data-table .group-row td {
+  background: var(--bg);
+  font-weight: 600;
+}
+.data-table tr.selected td {
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+.holding-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 340px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.field-link {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--accent);
+}
+.manual-price {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.manual-price .btn {
+  align-self: flex-start;
 }
 
 @media (max-width: 720px) {

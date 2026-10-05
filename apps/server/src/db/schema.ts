@@ -1,4 +1,4 @@
-import { ACCOUNT_TYPES } from "@fd/shared";
+import { ACCOUNT_TYPES, INVESTMENT_ACTIONS, SECURITY_TYPES } from "@fd/shared";
 import { sql } from "drizzle-orm";
 import { type AnySQLiteColumn, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
@@ -275,4 +275,79 @@ export const importMappings = sqliteTable(
     updatedAt: updatedAt(),
   },
   (t) => [uniqueIndex("import_mappings_external_unique").on(t.householdId, t.externalId)],
+);
+
+export const securities = sqliteTable(
+  "securities",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    householdId: integer("household_id")
+      .notNull()
+      .references(() => households.id),
+    symbol: text("symbol").notNull(),
+    name: text("name").notNull(),
+    type: text("type", { enum: SECURITY_TYPES }).notNull(),
+    currency: text("currency").notNull().default("USD"),
+    /** Fetch daily prices from the price provider. */
+    autoPrice: flag("auto_price"),
+    importBatchId: integer("import_batch_id").references(() => importBatches.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("securities_household_symbol_unique").on(t.householdId, t.symbol)],
+);
+
+/**
+ * Buys, sells, dividends, splits and share transfers. Shares are signed micro-shares, prices
+ * micro-dollars, amounts cents. When cash moves, `transactionId` links the matching row in the
+ * account's register, which can only be changed through this record.
+ */
+export const investmentTxns = sqliteTable(
+  "investment_txns",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    householdId: integer("household_id")
+      .notNull()
+      .references(() => households.id),
+    accountId: integer("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    securityId: integer("security_id")
+      .notNull()
+      .references(() => securities.id),
+    date: text("date").notNull(),
+    action: text("action", { enum: INVESTMENT_ACTIONS }).notNull(),
+    shares: integer("shares").notNull(),
+    price: integer("price").notNull().default(0),
+    fees: integer("fees").notNull().default(0),
+    amount: integer("amount").notNull().default(0),
+    transactionId: integer("transaction_id").references(() => transactions.id, { onDelete: "set null" }),
+    notes: text("notes").notNull().default(""),
+    importedId: text("imported_id"),
+    importBatchId: integer("import_batch_id").references(() => importBatches.id, { onDelete: "cascade" }),
+    createdBy: integer("created_by").references(() => users.id),
+    updatedBy: integer("updated_by").references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("investment_txns_account_idx").on(t.accountId, t.date),
+    index("investment_txns_security_idx").on(t.securityId, t.date),
+    uniqueIndex("investment_txns_transaction_unique").on(t.transactionId),
+    uniqueIndex("investment_txns_imported_id_unique").on(t.householdId, t.importedId),
+  ],
+);
+
+/** Daily closing prices in micro-dollars. */
+export const prices = sqliteTable(
+  "prices",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    securityId: integer("security_id")
+      .notNull()
+      .references(() => securities.id, { onDelete: "cascade" }),
+    date: text("date").notNull(),
+    close: integer("close").notNull(),
+    source: text("source", { enum: ["yahoo", "gnucash", "manual"] }).notNull(),
+  },
+  (t) => [uniqueIndex("prices_security_date_unique").on(t.securityId, t.date)],
 );
