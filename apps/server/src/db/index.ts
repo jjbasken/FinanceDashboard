@@ -20,3 +20,6 @@ export function openDb(path: string) {
   migrate(db, { migrationsFolder });
   return db;
 }
+
+/** Either the database or an open transaction on it. */
+export type DbOrTx = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];

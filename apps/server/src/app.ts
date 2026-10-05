@@ -4,7 +4,11 @@ import type { Db } from "./db";
 import type { SessionContext } from "./auth/sessions";
 import { LoginRateLimiter } from "./auth/rate-limit";
 import { authRoutes } from "./routes/auth";
+import { accountRoutes } from "./routes/accounts";
+import { categoryRoutes } from "./routes/categories";
 import { householdRoutes } from "./routes/household";
+import { payeeRoutes } from "./routes/payees";
+import { transactionRoutes } from "./routes/transactions";
 import { requireJsonForMutations, sessionMiddleware } from "./middleware";
 
 export interface AppOptions {
@@ -38,6 +42,10 @@ export function createApp({ db, secureCookies = false }: AppOptions) {
   app.get("/api/health", (c) => c.json({ ok: true }));
   app.route("/api/auth", authRoutes);
   app.route("/api/household", householdRoutes);
+  app.route("/api/accounts", accountRoutes);
+  app.route("/api/transactions", transactionRoutes);
+  app.route("/api/categories", categoryRoutes);
+  app.route("/api/payees", payeeRoutes);
 
   app.notFound((c) => c.json({ error: "Not found" }, 404));
   app.onError((err, c) => {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatCents, parseCents, rationalToCents } from "./money";
+import { centsToInput, formatCents, parseCents, rationalToCents } from "./money";
 
 describe("parseCents", () => {
   test.each([
@@ -30,4 +30,11 @@ test("rationalToCents rounds half away from zero", () => {
   expect(rationalToCents(1, 1)).toBe(100);
   expect(rationalToCents(1005, 1000)).toBe(101);
   expect(rationalToCents(-1005, 1000)).toBe(-101);
+});
+
+test("centsToInput round-trips through parseCents", () => {
+  for (const c of [0, 5, -5, 100, 123456, -123456, 9_999_999_999_99]) {
+    expect(parseCents(centsToInput(c))).toBe(c);
+  }
+  expect(centsToInput(-4510)).toBe("-45.10");
 });
