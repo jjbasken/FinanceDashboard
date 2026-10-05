@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+/data/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.gnucash
+.DS_Store
+docker/data/

@@ -1,0 +1,14 @@
+services:
+  finance:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: family-finance
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # Set to "true" when serving over HTTPS (e.g. behind a reverse proxy).
+      COOKIE_SECURE: "false"
+    volumes:
+      - ./data:/data
