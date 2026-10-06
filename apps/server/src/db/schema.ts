@@ -317,6 +317,9 @@ export const investmentTxns = sqliteTable(
     date: text("date").notNull(),
     action: text("action", { enum: INVESTMENT_ACTIONS }).notNull(),
     shares: integer("shares").notNull(),
+    /** For splits entered here: the ratio (new for old), so the share change can be recomputed. */
+    splitNew: integer("split_new"),
+    splitOld: integer("split_old"),
     price: integer("price").notNull().default(0),
     fees: integer("fees").notNull().default(0),
     amount: integer("amount").notNull().default(0),

@@ -83,4 +83,11 @@ if (existsSync(join(webDist, "index.html"))) {
 console.log(`Finance Dashboard listening on http://localhost:${port} (data: ${dataDir})`);
 
 // Leave room for GnuCash book uploads, and keep live-update streams (pinged every 25s) open.
-export default { port, fetch: app.fetch, maxRequestBodySize: MAX_UPLOAD_BYTES + 1024 * 1024, idleTimeout: 60 };
+// development: false keeps Bun from ever serving its detailed error pages, even when NODE_ENV isn't set.
+export default {
+  port,
+  fetch: app.fetch,
+  maxRequestBodySize: MAX_UPLOAD_BYTES + 1024 * 1024,
+  idleTimeout: 60,
+  development: false,
+};

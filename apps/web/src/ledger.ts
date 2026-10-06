@@ -55,6 +55,7 @@ export function useLedgerMutation<TInput, TResult = unknown>(fn: (input: TInput)
         qc.invalidateQueries({ queryKey: ledgerKeys.categories }),
         qc.invalidateQueries({ queryKey: ["budget"] }),
         qc.invalidateQueries({ queryKey: ["investments"] }),
+        qc.invalidateQueries({ queryKey: ["reports"] }),
       ]),
   });
 }

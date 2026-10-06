@@ -112,6 +112,8 @@ function toApi(r: Row): InvestmentTxn {
     amount: r.amount,
     transactionId: r.transactionId,
     notes: r.notes,
+    splitNew: r.splitNew,
+    splitOld: r.splitOld,
   };
 }
 
@@ -158,17 +160,34 @@ function positionOn(db: DbOrTx, accountId: number, securityId: number, date: str
   return row?.n ?? 0;
 }
 
-/** Reject any change that would leave the account short of shares at some point. */
-function assertNeverShort(db: DbOrTx, accountId: number, securityId: number, symbol: string) {
+/**
+ * Walk a holding's history in order: recompute each split's share change from its ratio (so
+ * editing an earlier buy carries through later splits), and reject any change that would leave
+ * the account short of shares at some point. Imported splits without a ratio keep their change.
+ */
+function settleHolding(db: DbOrTx, accountId: number, securityId: number, symbol: string) {
   const rows = db
-    .select({ date: investmentTxns.date, shares: investmentTxns.shares })
+    .select({
+      id: investmentTxns.id,
+      date: investmentTxns.date,
+      shares: investmentTxns.shares,
+      splitNew: investmentTxns.splitNew,
+      splitOld: investmentTxns.splitOld,
+    })
     .from(investmentTxns)
     .where(and(eq(investmentTxns.accountId, accountId), eq(investmentTxns.securityId, securityId)))
     .orderBy(asc(investmentTxns.date), asc(investmentTxns.id))
     .all();
   let held = 0;
   for (const r of rows) {
-    held += r.shares;
+    let change = r.shares;
+    if (r.splitNew && r.splitOld) {
+      if (held <= 0) throw bad(`There are no ${symbol} shares to split on ${r.date}`);
+      change = Math.round((held * r.splitNew) / r.splitOld) - held;
+      if (change !== r.shares)
+        db.update(investmentTxns).set({ shares: change }).where(eq(investmentTxns.id, r.id)).run();
+    }
+    held += change;
     if (held < 0) throw bad(`That would leave the account short of ${symbol} shares on ${r.date}`);
   }
 }
@@ -309,6 +328,8 @@ export function createInvestmentTxn(
       fees: n.fees,
       amount: n.amount,
       notes: n.notes,
+      splitNew: input.action === "split" ? (input.splitNew ?? null) : null,
+      splitOld: input.action === "split" ? (input.splitOld ?? null) : null,
       transactionId,
       importedId: extra.importedId,
       importBatchId: extra.importBatchId,
@@ -317,7 +338,7 @@ export function createInvestmentTxn(
     })
     .returning()
     .get();
-  assertNeverShort(db, input.accountId, input.securityId, security.symbol);
+  settleHolding(db, input.accountId, input.securityId, security.symbol);
   return row.id;
 }
 
@@ -338,15 +359,17 @@ export function updateInvestmentTxn(db: DbOrTx, actor: Actor, id: number, input:
       fees: n.fees,
       amount: n.amount,
       notes: n.notes,
+      splitNew: input.action === "split" ? (input.splitNew ?? null) : null,
+      splitOld: input.action === "split" ? (input.splitOld ?? null) : null,
       transactionId,
       updatedBy: actor.userId,
     })
     .where(eq(investmentTxns.id, id))
     .run();
-  assertNeverShort(db, input.accountId, input.securityId, security.symbol);
+  settleHolding(db, input.accountId, input.securityId, security.symbol);
   if (existing.accountId !== input.accountId || existing.securityId !== input.securityId) {
     const old = getSecurity(db, actor.householdId, existing.securityId);
-    assertNeverShort(db, existing.accountId, existing.securityId, old.symbol);
+    settleHolding(db, existing.accountId, existing.securityId, old.symbol);
   }
 }
 
@@ -354,5 +377,5 @@ export function deleteInvestmentTxn(db: DbOrTx, householdId: number, id: number)
   const row = getRow(db, householdId, id);
   db.delete(investmentTxns).where(eq(investmentTxns.id, id)).run();
   if (row.transactionId) db.delete(transactions).where(eq(transactions.id, row.transactionId)).run();
-  assertNeverShort(db, row.accountId, row.securityId, getSecurity(db, householdId, row.securityId).symbol);
+  settleHolding(db, row.accountId, row.securityId, getSecurity(db, householdId, row.securityId).symbol);
 }

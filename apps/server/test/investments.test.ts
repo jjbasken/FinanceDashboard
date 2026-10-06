@@ -121,6 +121,31 @@ describe("investment transactions", () => {
     expect((await position())!.shares).toBe(20 * SH);
   });
 
+  test("splits are recomputed from their ratio when earlier transactions change", async () => {
+    const { c, txn, position } = await setUp();
+    const buy = await txn({ date: "2026-01-05", action: "buy", shares: 10 * SH, price: $(100) });
+    await txn({ date: "2026-02-01", action: "split", splitNew: 2, splitOld: 1 });
+    expect((await position())!.shares).toBe(20 * SH);
+
+    const list = (await c.get("/api/investments/transactions")).json as InvestmentTxn[];
+    expect(list.find((t) => t.action === "split")).toMatchObject({ splitNew: 2, splitOld: 1, shares: 10 * SH });
+    const original = list.find((t) => t.id === buy.id)!;
+    await c.request("PUT", `/api/investments/transactions/${buy.id}`, {
+      accountId: original.accountId,
+      securityId: original.securityId,
+      date: original.date,
+      action: "buy",
+      shares: 15 * SH,
+      price: $(100),
+    });
+    expect((await position())!.shares).toBe(30 * SH);
+
+    // A later buy before the split's date counts too; one after it doesn't.
+    await txn({ date: "2026-01-20", action: "buy", shares: 5 * SH, price: $(100) });
+    await txn({ date: "2026-03-01", action: "buy", shares: 1 * SH, price: $(100) });
+    expect((await position())!.shares).toBe(41 * SH);
+  });
+
   test("editing and deleting keep the cash row and share counts consistent", async () => {
     const { c, txn, position, register } = await setUp();
     const buy = await txn({ date: "2026-01-05", action: "buy", shares: 10 * SH, price: $(100) });

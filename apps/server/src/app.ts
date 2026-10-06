@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { secureHeaders } from "hono/secure-headers";
 import type { Db } from "./db";
 import type { SessionContext } from "./auth/sessions";
 import { LoginRateLimiter } from "./auth/rate-limit";
@@ -50,6 +51,29 @@ export function createApp({
   const loginLimiter = new LoginRateLimiter();
   const events = new EventHub();
   const app = new Hono<AppEnv>();
+
+  // Defence in depth for the API and the web app it serves: no framing, no inline scripts, no
+  // content sniffing, and no referrer leaking out. HSTS only when served over HTTPS.
+  app.use(
+    "*",
+    secureHeaders({
+      contentSecurityPolicy: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        // React and the charts set style attributes.
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:"],
+        connectSrc: ["'self'"],
+        fontSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+        frameAncestors: ["'none'"],
+      },
+      strictTransportSecurity: secureCookies ? "max-age=15552000" : false,
+      referrerPolicy: "no-referrer",
+    }),
+  );
 
   app.use("/api/*", async (c, next) => {
     c.set("db", db);

@@ -8,8 +8,8 @@ A self-hosted family finance manager with an Actual Budget-style interface: mont
 
 - **Runtime:** [Bun](https://bun.sh) 1.3+, a monorepo built on Bun workspaces
 - **Server** (`apps/server`): Hono, Drizzle ORM on `bun:sqlite`, and zod
-- **Web** (`apps/web`): React, Vite, React Router, and TanStack Query
-- **Shared** (`packages/shared`): zod schemas, API types, and money helpers. Money is stored as integer cents.
+- **Web** (`apps/web`): React, Vite, React Router, TanStack Query, and Recharts
+- **Shared** (`packages/shared`): zod schemas, API types, and money helpers. Money is stored as integer cents, share quantities and prices as integer millionths, so there is no floating-point drift.
 
 ## Development
 
@@ -20,6 +20,8 @@ bun run dev:web      # UI on http://localhost:5173 (proxies /api to :3000)
 bun test             # all tests
 bun run typecheck
 ```
+
+To run a production build without Docker, use `bun run build` and then `bun run start` (it serves the API and the web app on one port).
 
 When you open the app for the first time (unless you've seeded the owner; see below), it asks you to create your household and the owner account. To add your partner, go to **Settings → Create invite link** and send them the link. Each link works once and expires after 7 days.
 
@@ -32,6 +34,28 @@ bun run db:generate
 ```
 
 Migrations are stored in `apps/server/drizzle/` and run automatically when the server starts.
+
+## Accounts and the register
+
+Add accounts from the sidebar. On-budget accounts (checking, savings, cards, cash) feed the budget; off-budget accounts (investments, loans, other assets) count toward net worth only.
+
+Each account's register is built for the keyboard:
+
+- The top row is always ready for a new transaction. **Tab** moves between fields, **Enter** saves, and **Esc** clears the row.
+- Click any field of an existing row to edit it. **Enter** saves and moves to the next row, **↑/↓** move between rows, and **Esc** cancels.
+- Picking a "Transfer: …" payee creates a transfer, and both sides stay in sync. Picking "Split transaction" in the category field lets you divide a transaction across several categories.
+- Click the circle on a row to mark it cleared. **Reconcile** compares the cleared balance with your statement and locks the cleared transactions once they match.
+- Search finds transactions by payee, notes, category or amount. Searching "uncategorized" finds the ones that still need a category.
+
+## Budgeting
+
+The budget is a plan for one month at a time. Each month stands on its own:
+
+- **To Budget** = this month's income minus what you've budgeted this month.
+- A category's **balance** = what you budgeted for it this month minus what you spent. Nothing carries over: not unspent money, not overspending, and not income you never budgeted.
+- Click a Budgeted amount to edit it. **Enter**, **Tab** and the arrow keys move between categories. **Copy last month** fills in the previous month's amounts.
+- Click a Spent amount to see the transactions behind it. Drag categories and groups to reorder them.
+- Only on-budget accounts count. Transfers between on-budget accounts don't need a category; money moving to an off-budget account (for example, into a brokerage) does.
 
 ## Importing from GnuCash
 
@@ -52,7 +76,7 @@ On the same Import page, choose an account and upload an **OFX/QFX** or **CSV** 
 - Rows already imported from an earlier statement are skipped, so overlapping files are fine.
 - If a row matches a transaction already in the account (same amount, within 3 days), the two are linked instead of duplicated. The existing transaction is marked cleared. This covers rows you entered by hand and rows brought in from GnuCash.
 - New rows are cleared, and their category is suggested from the last time you used that payee. You can untick rows or change categories before importing.
-- Each import can be undone from the Past imports list.
+- Each import can be undone from the Past imports list. Undo removes the transactions it added; ones it matched stay linked and cleared.
 
 ## Investments
 
@@ -67,7 +91,7 @@ Investments live in **Investment** accounts. An account's register holds its cas
 
 - **Reports**
   - **Net worth:** every account over time, with investments at market value.
-  - **Cash flow:** income and spending per month, by category.
+  - **Cash flow:** income and spending per month, by category. Opening balances aren't counted as income.
   - **Spending by category:** totals for any period.
 - **Live updates:** when one of you changes something, the other's open window refreshes on its own.
 - **Backups:** each night the server saves a copy of the database to `backups/` in the data folder and keeps the newest 14. The household owner can also download a fresh copy from **Settings → Backups**. To restore, stop the app, delete `finance.db-wal` and `finance.db-shm` if they exist, and replace `finance.db` with the backup file.
@@ -91,6 +115,7 @@ All settings are optional. To change any of them, copy `.env.example` to `.env` 
 | `DATA_DIR`                | `./data` / `/data`           | Folder that holds `finance.db`                       |
 | `WEB_DIST`                | `apps/web/dist`              | Built web app served by the server                   |
 | `COOKIE_SECURE`           | `false`                      | Set to `true` when the app is served over HTTPS      |
+| `TZ`                      | system / `UTC`               | Your time zone, e.g. `America/Chicago`               |
 | `PRICE_REFRESH`           | `on`                         | Set to `off` to stop fetching investment prices      |
 | `BACKUP_KEEP`             | `14`                         | Nightly backups to keep; `0` turns them off          |
 | `SEED_HOUSEHOLD_NAME`     | (unset)                      | First-boot seeding; see below                        |
@@ -102,7 +127,25 @@ All settings are optional. To change any of them, copy `.env.example` to `.env` 
 
 There are no signing secrets to configure, `JWT_SECRET` included. Sessions use random tokens that the server checks against hashes stored in the database.
 
-**To reach the app from outside your home network,** put it behind a reverse proxy that handles HTTPS, such as Caddy or Traefik, and set `COOKIE_SECURE=true`.
+**Set `TZ` when using Docker.** Containers run in UTC, so without it "today" (default dates, backup names, report ranges) changes over at UTC midnight rather than yours.
+
+## Security
+
+- Passwords are hashed with Argon2. Sessions are random tokens in an `HttpOnly`, `SameSite=Lax` cookie, and only their hashes are stored. They last 30 days and renew while in use.
+- Every change must be sent as JSON (or as a raw file upload), which browsers can't do from another site without permission. This blocks cross-site request forgery.
+- Responses carry a strict Content-Security-Policy, block framing, and turn off content sniffing and referrers.
+- After 10 failed sign-ins within 15 minutes, a username is locked for the rest of that window.
+- Everyone in the household sees and can change everything. Only the owner can create invite links and download backups.
+
+**To reach the app from outside your home network,** put it behind a reverse proxy that handles HTTPS, such as Caddy or Traefik, and set `COOKIE_SECURE=true`. Finish first-run setup (or use the `SEED_*` variables) before exposing it: until an owner exists, anyone who can reach the app can create one.
+
+## Known limitations
+
+- **One currency.** Amounts are shown in US dollars. Accounts in other currencies import from GnuCash at their converted value.
+- **No account management yet.** There's no way to change or reset a password, remove a household member, or sign out other sessions from the app.
+- **Payees can't be renamed, merged or deleted from the app.** Bank imports can add many new payee names.
+- **Existing register rows can't be reached with the keyboard alone.** Click a row first; after that the arrow keys move between rows.
+- **Changing an account between on- and off-budget** changes past months' budgets as well.
 
 ## Contributing
 

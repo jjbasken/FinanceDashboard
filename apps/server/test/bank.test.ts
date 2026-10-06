@@ -57,6 +57,8 @@ describe("parsing", () => {
       { externalId: "2026100302", date: "2026-10-03", amount: -15000, payee: "CITY WATER & SEWER", notes: "#1042" },
       { externalId: "2026100503", date: "2026-10-05", amount: 250000, payee: "ACME PAYROLL", notes: "" },
     ]);
+    // OFX also allows a decimal comma.
+    expect(parseOfx(OFX_SGML.replace("-42.50", "-42,50"))[0]!.amount).toBe(-4250);
     expect(parseOfx(OFX_XML)).toEqual([
       { externalId: "X1", date: "2026-10-02", amount: -999, payee: "Streaming", notes: "" },
     ]);

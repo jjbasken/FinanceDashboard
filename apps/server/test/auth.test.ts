@@ -12,6 +12,18 @@ async function setUp() {
   return { app, db, jeremy };
 }
 
+test("responses carry security headers", async () => {
+  const { app } = testApp();
+  const res = await app.request("/api/health");
+  expect(res.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+  expect(res.headers.get("content-security-policy")).toContain("script-src 'self'");
+  expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+  expect(res.headers.get("x-frame-options")).toBe("SAMEORIGIN");
+  expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+  // No HSTS unless the app is served over HTTPS.
+  expect(res.headers.get("strict-transport-security")).toBeNull();
+});
+
 describe("first-run setup", () => {
   test("reports needsSetup until an owner exists", async () => {
     const { app } = testApp();
@@ -86,7 +98,10 @@ describe("login and logout", () => {
   test("expired sessions are rejected", async () => {
     const { db, jeremy } = await setUp();
     const token = jeremy.cookie!.split("=")[1]!;
-    db.update(sessions).set({ expiresAt: Date.now() - 1 }).where(eq(sessions.id, hashToken(token))).run();
+    db.update(sessions)
+      .set({ expiresAt: Date.now() - 1 })
+      .where(eq(sessions.id, hashToken(token)))
+      .run();
     expect((await jeremy.get("/api/household/users")).status).toBe(401);
   });
 });

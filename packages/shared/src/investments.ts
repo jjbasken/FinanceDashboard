@@ -159,6 +159,9 @@ export interface InvestmentTxn {
   /** The linked cash transaction in the account's register, if cash moved. */
   transactionId: number | null;
   notes: string;
+  /** For splits entered here, the ratio (e.g. 2 for 1). Null for imported splits. */
+  splitNew: number | null;
+  splitOld: number | null;
 }
 
 export interface Holding {

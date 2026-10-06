@@ -49,9 +49,8 @@ export function InvestmentTxnDialog(props: {
     t && (t.action === "dividend" || t.action === "transfer_in") ? centsToInput(t.amount) : "",
   );
   const [total, setTotal] = useState("");
-  const ratio = /^(\d+) for (\d+)/.exec(t?.notes ?? "");
-  const [splitNew, setSplitNew] = useState(ratio?.[1] ?? "2");
-  const [splitOld, setSplitOld] = useState(ratio?.[2] ?? "1");
+  const [splitNew, setSplitNew] = useState(String(t?.splitNew ?? 2));
+  const [splitOld, setSplitOld] = useState(String(t?.splitOld ?? 1));
   const [notes, setNotes] = useState(t?.action === "split" ? "" : (t?.notes ?? ""));
   const [error, setError] = useState<string | null>(null);
 

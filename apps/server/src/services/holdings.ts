@@ -156,19 +156,33 @@ export function getHoldings(db: DbOrTx, householdId: number): HoldingsSummary {
 
 /** Market value of each account's holdings (not its cash), in cents. */
 export function holdingsValueByAccount(db: DbOrTx, householdId: number) {
-  const txns = loadTxns(db, householdId);
-  if (txns.length === 0) return new Map<number, number>();
-  const shares = new Map<string, number>();
-  for (const t of txns) {
-    const key = `${t.accountId}:${t.securityId}`;
-    shares.set(key, (shares.get(key) ?? 0) + t.shares);
-  }
-  const series = loadPriceSeries(db, householdId, txns);
+  // This runs for every account list, so read only what's needed: net shares per holding, and
+  // each security's latest quote (or, without quotes, its latest trade price).
+  const shares = db.all<{ accountId: number; securityId: number; shares: number }>(sql`
+    select account_id as accountId, security_id as securityId, sum(shares) as shares
+    from investment_txns where household_id = ${householdId}
+    group by account_id, security_id having sum(shares) != 0
+  `);
+  if (shares.length === 0) return new Map<number, number>();
+  const latest = new Map(
+    db
+      .all<{ securityId: number; close: number }>(
+        sql`
+        select s.id as securityId,
+          coalesce(
+            (select p.close from prices p where p.security_id = s.id order by p.date desc limit 1),
+            (select t.price from investment_txns t where t.security_id = s.id and t.price > 0
+              order by t.date desc, t.id desc limit 1)
+          ) as close
+        from securities s where s.household_id = ${householdId}
+      `,
+      )
+      .map((r) => [r.securityId, r.close]),
+  );
   const out = new Map<number, number>();
-  for (const [key, n] of shares) {
-    const [accountId, securityId] = key.split(":").map(Number) as [number, number];
-    const last = series.get(securityId)?.at(-1);
-    if (last && n) out.set(accountId, (out.get(accountId) ?? 0) + sharesValueCents(n, last.close));
+  for (const h of shares) {
+    const close = latest.get(h.securityId);
+    if (close) out.set(h.accountId, (out.get(h.accountId) ?? 0) + sharesValueCents(h.shares, close));
   }
   return out;
 }
