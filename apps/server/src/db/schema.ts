@@ -232,7 +232,7 @@ export const importBatches = sqliteTable(
     householdId: integer("household_id")
       .notNull()
       .references(() => households.id),
-    source: text("source", { enum: ["gnucash"] }).notNull(),
+    source: text("source", { enum: ["gnucash", "ofx", "csv"] }).notNull(),
     fileName: text("file_name").notNull(),
     transactionCount: integer("transaction_count").notNull().default(0),
     createdBy: integer("created_by").references(() => users.id),

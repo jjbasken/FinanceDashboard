@@ -20,9 +20,11 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { api } from "../api";
+import { BankImport } from "../components/BankImport";
 import { formatDate, useAccounts, useCategories, useLedgerMutation, useSecurities } from "../ledger";
 
 const CATEGORY_TYPES = new Set(["INCOME", "EXPENSE"]);
+const SOURCE_LABELS: Record<string, string> = { gnucash: "GnuCash", ofx: "OFX", csv: "CSV" };
 
 /** Encodes a mapping as the value of the "Import as" select. */
 function choiceOf(m: GnucashMapping) {
@@ -351,6 +353,7 @@ function Batches() {
           <tr>
             <th>When</th>
             <th>File</th>
+            <th>Type</th>
             <th>By</th>
             <th className="amount">Transactions</th>
             <th />
@@ -361,6 +364,7 @@ function Batches() {
             <tr key={b.id} className={b.undoneAt ? "muted" : undefined}>
               <td>{formatDate(b.createdAt.slice(0, 10))}</td>
               <td>{b.fileName}</td>
+              <td>{SOURCE_LABELS[b.source] ?? b.source}</td>
               <td>{b.createdBy}</td>
               <td className="amount">{b.transactionCount}</td>
               <td className="amount">
@@ -447,7 +451,7 @@ export function ImportPage() {
     return (
       <>
         <header className="page-header">
-          <h1>Import from GnuCash</h1>
+          <h1>Import</h1>
         </header>
         <div className="page-body">
           <section className="card">
@@ -477,12 +481,13 @@ export function ImportPage() {
   return (
     <>
       <header className="page-header">
-        <h1>Import from GnuCash</h1>
+        <h1>Import</h1>
       </header>
       <div className="page-body">
+        {!upload && <BankImport />}
         {!upload && (
           <section className="card">
-            <h2>Upload your book</h2>
+            <h2>GnuCash book</h2>
             <p className="muted">
               Upload a <strong>copy</strong> of your GnuCash book saved in the <strong>sqlite3</strong> format (in
               GnuCash: File → Save As…, data format “sqlite3”). Nothing is saved until you review the mapping and

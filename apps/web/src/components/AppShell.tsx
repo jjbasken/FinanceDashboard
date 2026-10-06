@@ -3,6 +3,7 @@ import { useState } from "react";
 import { NavLink, Outlet } from "react-router";
 import { useAuthMutation, useAuthStatus } from "../auth";
 import { useAccounts } from "../ledger";
+import { useLiveUpdates } from "../live";
 import { AddAccountDialog } from "./AddAccountDialog";
 
 const nav = [
@@ -70,6 +71,7 @@ function SidebarAccounts() {
 }
 
 export function AppShell() {
+  useLiveUpdates();
   const { data: status } = useAuthStatus();
   const logout = useAuthMutation<void>("/auth/logout");
 

@@ -76,7 +76,7 @@ function getTransactionRow(db: DbOrTx, householdId: number, id: number) {
 }
 
 /** Find a regular (non-transfer) payee by name, case-insensitively, creating it if needed. */
-export function findOrCreatePayee(db: DbOrTx, householdId: number, name: string) {
+export function findOrCreatePayee(db: DbOrTx, householdId: number, name: string, importBatchId?: number) {
   const existing = db
     .select()
     .from(payees)
@@ -88,7 +88,7 @@ export function findOrCreatePayee(db: DbOrTx, householdId: number, name: string)
       ),
     )
     .get();
-  return existing ?? db.insert(payees).values({ householdId, name }).returning().get();
+  return existing ?? db.insert(payees).values({ householdId, name, importBatchId }).returning().get();
 }
 
 function transferPayeeFor(db: DbOrTx, accountId: number) {

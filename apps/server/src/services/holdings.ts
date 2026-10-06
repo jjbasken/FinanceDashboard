@@ -14,7 +14,7 @@ type TxnRow = {
   amount: number;
 };
 
-function loadTxns(db: DbOrTx, householdId: number): TxnRow[] {
+export function loadTxns(db: DbOrTx, householdId: number): TxnRow[] {
   return db
     .select({
       accountId: investmentTxns.accountId,
@@ -32,7 +32,7 @@ function loadTxns(db: DbOrTx, householdId: number): TxnRow[] {
 }
 
 /** Running position for one account and security, using average cost. */
-class Position {
+export class Position {
   shares = 0;
   cost = 0;
 
@@ -52,7 +52,7 @@ class Position {
 }
 
 /** Price history for each security, oldest first, with trade prices filling in where there are no quotes. */
-function loadPriceSeries(db: DbOrTx, householdId: number, txns: TxnRow[]) {
+export function loadPriceSeries(db: DbOrTx, householdId: number, txns: TxnRow[]) {
   const rows = db
     .select({ securityId: prices.securityId, date: prices.date, close: prices.close })
     .from(prices)
@@ -80,7 +80,7 @@ function loadPriceSeries(db: DbOrTx, householdId: number, txns: TxnRow[]) {
 }
 
 /** The last price on or before a date, by binary search. */
-function priceOn(series: { date: string; close: number }[] | undefined, date: string) {
+export function priceOn(series: { date: string; close: number }[] | undefined, date: string) {
   if (!series?.length) return null;
   let lo = 0;
   let hi = series.length - 1;
@@ -177,7 +177,7 @@ export const HISTORY_RANGES = ["3m", "1y", "5y", "all"] as const;
 export type HistoryRange = (typeof HISTORY_RANGES)[number];
 
 /** Dates to plot: daily for 3 months, weekly for a year, month ends beyond. Always ends today. */
-function sampleDates(range: HistoryRange, first: string, today: string) {
+export function sampleDates(range: HistoryRange, first: string, today: string) {
   const dates: string[] = [];
   const day = (d: Date) => d.toISOString().slice(0, 10);
   const start = new Date(`${today}T00:00:00Z`);

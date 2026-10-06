@@ -2,7 +2,7 @@
 
 A self-hosted family finance manager: Actual Budget-style envelope budgeting, investment tracking, and GnuCash import, with a separate login for each household member.
 
-> **Status:** milestones 1–5 are done: scaffold and auth; the core ledger (accounts, categories, payees, and a keyboard-driven register with transfers, splits and reconciliation); the monthly budget; the GnuCash importer; and investments (holdings, automatic daily prices, and value over time). Reports are coming in the last milestone.
+> **Status:** all six milestones are done: auth and households; the ledger (accounts, categories, payees, and a keyboard-driven register with transfers, splits and reconciliation); the monthly budget; GnuCash and bank-statement imports; investments with automatic daily prices; and reports, live updates between sessions, and nightly backups.
 
 ## Stack
 
