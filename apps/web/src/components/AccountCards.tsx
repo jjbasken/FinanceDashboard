@@ -49,7 +49,7 @@ export function YourAccountCard() {
             <input
               type="password"
               autoComplete="new-password"
-              minLength={10}
+              minLength={5}
               value={next}
               onChange={(e) => setNext(e.target.value)}
               required
@@ -66,7 +66,7 @@ export function YourAccountCard() {
             />
           </label>
         </div>
-        <small className="muted">At least 10 characters. Your other devices will be signed out.</small>
+        <small className="muted">At least 5 characters. Your other devices will be signed out.</small>
         {mismatch && <p className="error-text">The new passwords don't match.</p>}
         {change.error && <p className="error-text">{change.error.message}</p>}
         {change.isSuccess && <p className="positive">Password changed.</p>}
@@ -111,7 +111,7 @@ function SetPasswordDialog(props: { member: HouseholdMember; onClose: () => void
         <input
           type="text"
           autoComplete="off"
-          minLength={10}
+          minLength={5}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoFocus
@@ -119,7 +119,7 @@ function SetPasswordDialog(props: { member: HouseholdMember; onClose: () => void
         />
       </label>
       <small className="muted">
-        At least 10 characters. They'll be signed out everywhere; give them this password and ask them to change it
+        At least 5 characters. They'll be signed out everywhere; give them this password and ask them to change it
         under Your account.
       </small>
     </Dialog>

@@ -46,7 +46,7 @@ describe("first-run setup", () => {
 
   test("validates input", async () => {
     const { app } = testApp();
-    const res = await new Client(app).post("/api/auth/setup", { ...owner, password: "short" });
+    const res = await new Client(app).post("/api/auth/setup", { ...owner, password: "four" });
     expect(res.status).toBe(400);
     expect(res.json.error).toContain("password");
   });
@@ -195,4 +195,12 @@ describe("invites", () => {
     });
     expect((await spouse.post("/api/household/invites")).status).toBe(403);
   });
+});
+
+test("passwords need at least 5 characters", async () => {
+  const { app } = testApp();
+  const c = new Client(app);
+  expect((await c.post("/api/auth/setup", { ...owner, password: "abcd" })).status).toBe(400);
+  expect((await c.post("/api/auth/setup", { ...owner, password: "abcde" })).status).toBe(201);
+  expect((await new Client(app).post("/api/auth/login", { username: "jeremy", password: "abcde" })).status).toBe(200);
 });

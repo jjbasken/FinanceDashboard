@@ -10,7 +10,7 @@ export const usernameSchema = z
 
 export const passwordSchema = z
   .string()
-  .min(10, "Password must be at least 10 characters")
+  .min(5, "Password must be at least 5 characters")
   .max(256, "Password is too long");
 
 export const displayNameSchema = z.string().trim().min(1, "Name is required").max(64);

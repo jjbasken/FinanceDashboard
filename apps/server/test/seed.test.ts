@@ -53,7 +53,7 @@ describe("seedOwnerFromEnv", () => {
 
   test("rejects invalid values", async () => {
     const { db } = testApp();
-    await expect(seedOwnerFromEnv(db, { ...env, SEED_OWNER_PASSWORD: "short" })).rejects.toThrow(/password/);
+    await expect(seedOwnerFromEnv(db, { ...env, SEED_OWNER_PASSWORD: "four" })).rejects.toThrow(/password/);
     await expect(seedOwnerFromEnv(db, { ...env, SEED_OWNER_USERNAME: "bad name!" })).rejects.toThrow(/username/);
   });
 });
