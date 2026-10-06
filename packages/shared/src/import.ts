@@ -75,6 +75,8 @@ export interface GnucashAccountInfo {
 export interface GnucashUpload {
   uploadId: string;
   fileName: string;
+  /** A whole book (sqlite3) or a CSV export of some of its accounts. */
+  source: "book" | "csv";
   /** The book's main currency. */
   currency: string;
   transactionCount: number;

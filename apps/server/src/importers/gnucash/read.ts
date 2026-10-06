@@ -85,7 +85,9 @@ export async function checkFormat(path: string) {
       "This book is saved in GnuCash's XML format. In GnuCash, use File → Save As… and pick the sqlite3 data format, then upload that copy.",
     );
   }
-  throw new BookError("That doesn't look like a GnuCash book. Upload a .gnucash file saved in the sqlite3 format.");
+  throw new BookError(
+    "That doesn't look like a GnuCash book. Upload your .gnucash file, or a CSV from File → Export → Export Transactions to CSV.",
+  );
 }
 
 /**

@@ -17,7 +17,7 @@ export interface ImportContext {
   imported: Set<string>;
   /** Mappings used by the last import, keyed by GnuCash account GUID. */
   remembered: Map<string, GnucashMapping>;
-  securities: { id: number; symbol: string }[];
+  securities: { id: number; symbol: string; name: string }[];
   /** importedIds of investment transactions already brought in. */
   importedInvestments: Set<string>;
 }
@@ -70,6 +70,8 @@ export interface NewSecurity {
   symbol: string;
   name: string;
   type: SecurityType;
+  /** Only real tickers get daily prices; named funds (common in 401k plans) don't have one. */
+  autoPrice: boolean;
 }
 
 export interface PlannedInvestment {
@@ -131,10 +133,24 @@ function categoryNames(account: GncAccount) {
   return { groupName: rest[0]!, name: rest.slice(1).join(": ") };
 }
 
-/** A usable ticker from a GnuCash commodity mnemonic (which may contain spaces or other characters). */
+/** A commodity mnemonic that is a usable ticker (e.g. VTI, FCNTX, BRK-B), not a fund's name. */
+export function isTicker(mnemonic: string) {
+  return /^[A-Za-z0-9][A-Za-z0-9.\-^=]{0,9}$/.test(mnemonic);
+}
+
+/**
+ * The symbol for a holding: its ticker, or for a named fund without one (e.g. "SP TTL MRKT IDX
+ * CL F"), short initials ("STMICF"). Clipping long names instead would make different funds
+ * that share a long prefix collide.
+ */
 function symbolFor(account: GncAccount) {
-  const cleaned = (account.commodity || account.name).toUpperCase().replace(/[^A-Z0-9.\-^=]/g, "");
-  return cleaned.slice(0, 24) || "UNKNOWN";
+  if (isTicker(account.commodity)) return account.commodity.toUpperCase();
+  const words = (account.commodityName || account.commodity || account.name).toUpperCase().split(/[^A-Z0-9]+/);
+  const initials = words
+    .filter(Boolean)
+    .map((w) => (/\d/.test(w) ? w : w[0]))
+    .join("");
+  return initials.slice(0, 16) || "FUND";
 }
 
 function suggestDefault(account: GncAccount, book: GncBook, ctx: ImportContext): GnucashMapping {
@@ -179,7 +195,10 @@ function suggestDefault(account: GncAccount, book: GncBook, ctx: ImportContext):
     case "STOCK":
     case "MUTUAL": {
       const symbol = symbolFor(account);
-      const existing = ctx.securities.find((x) => x.symbol === symbol);
+      // Made-up symbols could clash with a real ticker, so named funds only match by name.
+      const existing = isTicker(account.commodity)
+        ? ctx.securities.find((x) => x.symbol === symbol)
+        : ctx.securities.find((x) => lower(x.name) === lower(account.commodityName || account.name));
       const fund = account.type === "MUTUAL" || /fund/i.test(account.commodityNamespace);
       return {
         kind: "holding",
@@ -212,6 +231,16 @@ export function suggestMappings(book: GncBook, ctx: ImportContext) {
     if (remembered && !forcedSkip && stillValid(remembered, ctx))
       out.set(account.guid, { mapping: remembered, remembered: true });
     else out.set(account.guid, { mapping: suggestDefault(account, book, ctx), remembered: false });
+  }
+  // Different holdings must not end up sharing a new security's symbol.
+  const taken = new Map<string, string>();
+  for (const [guid, s] of out) {
+    const m = s.mapping;
+    if (m.kind !== "holding" || m.securityId !== null || s.remembered) continue;
+    let symbol = m.symbol;
+    for (let n = 2; taken.has(symbol) && taken.get(symbol) !== m.name; n++) symbol = `${m.symbol}-${n}`;
+    taken.set(symbol, m.name);
+    if (symbol !== m.symbol) out.set(guid, { ...s, mapping: { ...m, symbol } });
   }
   return out;
 }
@@ -302,7 +331,13 @@ export function planImport(book: GncBook, input: Record<string, GnucashMapping>,
         if (existing) security = { kind: "existing", id: existing.id };
         else {
           if (!newSecurities.has(m.symbol)) {
-            newSecurities.set(m.symbol, { key: m.symbol, symbol: m.symbol, name: m.name, type: m.type });
+            newSecurities.set(m.symbol, {
+              key: m.symbol,
+              symbol: m.symbol,
+              name: m.name,
+              type: m.type,
+              autoPrice: isTicker(account.commodity) && account.commodity.toUpperCase() === m.symbol,
+            });
           }
           security = { kind: "new", key: m.symbol };
         }

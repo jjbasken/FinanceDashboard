@@ -18,6 +18,8 @@ import { actorOf, idParam, parseBody, requireAuth } from "../middleware";
 import { commitPlan, listBatches, loadContext, undoBatch } from "../importers/gnucash/commit";
 import { MappingError, planImport, suggestMappings } from "../importers/gnucash/plan";
 import { BookError, checkFormat, readBook, type GncBook } from "../importers/gnucash/read";
+import { isGnucashCsv, readGnucashCsv } from "../importers/gnucash/csv";
+import { isGnucashXml, readGnucashXml } from "../importers/gnucash/xml";
 import { commitBankImport, planBankImport } from "../importers/bank/plan";
 import {
   BankFileError,
@@ -138,17 +140,31 @@ export const importRoutes = new Hono<AppEnv>()
     if (body.byteLength > MAX_UPLOAD_BYTES)
       throw new HTTPException(413, { message: "That file is too large (200 MB max)" });
 
-    const path = join(tmpdir(), `fd-gnucash-${randomUUID()}.gnucash`);
+    // A whole book (GnuCash's default compressed XML, or sqlite3), or a CSV export of some accounts.
     let book: GncBook;
-    try {
-      await Bun.write(path, body);
-      await checkFormat(path);
-      book = readBook(path);
-    } catch (err) {
-      if (err instanceof BookError) throw new HTTPException(400, { message: err.message });
-      throw err;
-    } finally {
-      await unlink(path).catch(() => {});
+    let source: GnucashUpload["source"] = "book";
+    const text = body.byteLength < 64 * 1024 * 1024 ? new TextDecoder().decode(body.slice(0, 4096)) : "";
+    const bytes = new Uint8Array(body);
+    if (isGnucashCsv(text) || isGnucashXml(bytes)) {
+      source = isGnucashCsv(text) ? "csv" : "book";
+      try {
+        book = source === "csv" ? readGnucashCsv(new TextDecoder().decode(body)) : readGnucashXml(bytes);
+      } catch (err) {
+        if (err instanceof BookError) throw new HTTPException(400, { message: err.message });
+        throw err;
+      }
+    } else {
+      const path = join(tmpdir(), `fd-gnucash-${randomUUID()}.gnucash`);
+      try {
+        await Bun.write(path, body);
+        await checkFormat(path);
+        book = readBook(path);
+      } catch (err) {
+        if (err instanceof BookError) throw new HTTPException(400, { message: err.message });
+        throw err;
+      } finally {
+        await unlink(path).catch(() => {});
+      }
     }
 
     purgeExpired();
@@ -170,6 +186,7 @@ export const importRoutes = new Hono<AppEnv>()
     const result: GnucashUpload = {
       uploadId,
       fileName,
+      source,
       currency: book.currency,
       transactionCount: book.transactions.length,
       firstDate: book.transactions[0]?.date ?? null,
