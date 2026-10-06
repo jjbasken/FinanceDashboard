@@ -2,7 +2,7 @@ import type { BankItem, BankPreview } from "@fd/shared";
 import { createHash } from "node:crypto";
 import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import type { DbOrTx } from "../../db";
-import { importBatches, payees, transactions } from "../../db/schema";
+import { importBatches, importMatches, payees, transactions } from "../../db/schema";
 import { findOrCreatePayee, type Actor } from "../../services/ledger";
 import type { BankTxn } from "./parse";
 
@@ -151,6 +151,20 @@ export function commitBankImport(
   for (const item of chosen) {
     const importedId = args.plan.ids[item.index]!;
     if (item.status === "match") {
+      // Remember the transaction as it was, so undoing the import can put it back.
+      const before = db
+        .select({ importedId: transactions.importedId, cleared: transactions.cleared })
+        .from(transactions)
+        .where(eq(transactions.id, item.matchId!))
+        .get()!;
+      db.insert(importMatches)
+        .values({
+          batchId: batch.id,
+          transactionId: item.matchId!,
+          previousImportedId: before.importedId,
+          previousCleared: before.cleared,
+        })
+        .run();
       db.update(transactions)
         .set({ importedId, cleared: true, updatedBy: userId })
         .where(eq(transactions.id, item.matchId!))

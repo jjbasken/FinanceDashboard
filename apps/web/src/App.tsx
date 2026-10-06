@@ -1,24 +1,33 @@
-import { lazy, Suspense } from "react";
+import { lazy, type ReactNode, Suspense } from "react";
+import { setDisplayCurrency } from "@fd/shared";
 import { Navigate, Route, Routes } from "react-router";
 import { useAuthStatus } from "./auth";
 import { AppShell } from "./components/AppShell";
 import { AccountPage } from "./pages/AccountPage";
 import { BudgetPage } from "./pages/BudgetPage";
-import { ImportPage } from "./pages/ImportPage";
 import { AcceptInvitePage } from "./pages/AcceptInvitePage";
 import { LoginPage } from "./pages/LoginPage";
-import { SettingsPage } from "./pages/SettingsPage";
 import { SetupPage } from "./pages/SetupPage";
 
-// The charting library is large, so pages with charts load on demand.
+// Pages used less often (and the charting library) load on demand, keeping the first load small.
 const InvestmentsPage = lazy(() => import("./pages/InvestmentsPage").then((m) => ({ default: m.InvestmentsPage })));
 const ReportsPage = lazy(() => import("./pages/ReportsPage").then((m) => ({ default: m.ReportsPage })));
+const ImportPage = lazy(() => import("./pages/ImportPage").then((m) => ({ default: m.ImportPage })));
+const PayeesPage = lazy(() => import("./pages/PayeesPage").then((m) => ({ default: m.PayeesPage })));
+const SettingsPage = lazy(() => import("./pages/SettingsPage").then((m) => ({ default: m.SettingsPage })));
+
+const onDemand = (page: ReactNode) => (
+  <Suspense fallback={<p className="muted page-error">Loading…</p>}>{page}</Suspense>
+);
 
 export function App() {
   const { data: status, isPending, error } = useAuthStatus();
 
   if (isPending) return <div className="fullscreen-center muted">Loading…</div>;
   if (error) return <div className="fullscreen-center error-text">Can't reach the server: {error.message}</div>;
+
+  // Show amounts in the household's currency everywhere below.
+  if (status.household) setDisplayCurrency(status.household.currency);
 
   if (status.needsSetup) {
     return (
@@ -43,25 +52,12 @@ export function App() {
     <Routes>
       <Route element={<AppShell />}>
         <Route path="/budget" element={<BudgetPage />} />
-        <Route
-          path="/reports"
-          element={
-            <Suspense fallback={<p className="muted page-error">Loading…</p>}>
-              <ReportsPage />
-            </Suspense>
-          }
-        />
-        <Route
-          path="/investments"
-          element={
-            <Suspense fallback={<p className="muted page-error">Loading…</p>}>
-              <InvestmentsPage />
-            </Suspense>
-          }
-        />
+        <Route path="/reports" element={onDemand(<ReportsPage />)} />
+        <Route path="/investments" element={onDemand(<InvestmentsPage />)} />
         <Route path="/accounts/:id" element={<AccountPage />} />
-        <Route path="/import" element={<ImportPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/import" element={onDemand(<ImportPage />)} />
+        <Route path="/payees" element={onDemand(<PayeesPage />)} />
+        <Route path="/settings" element={onDemand(<SettingsPage />)} />
         <Route path="*" element={<Navigate to="/budget" replace />} />
       </Route>
     </Routes>

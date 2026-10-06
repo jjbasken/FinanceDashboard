@@ -1,5 +1,5 @@
 import type { Household, PublicUser } from "@fd/shared";
-import { eq, lt } from "drizzle-orm";
+import { and, eq, lt, ne } from "drizzle-orm";
 import type { Db } from "../db";
 import { households, sessions, users } from "../db/schema";
 import { hashToken, newToken } from "./tokens";
@@ -18,7 +18,9 @@ export interface SessionContext {
 export function createSession(db: Db, userId: number, now = Date.now()) {
   const token = newToken();
   const expiresAt = now + SESSION_TTL_MS;
-  db.insert(sessions).values({ id: hashToken(token), userId, expiresAt }).run();
+  db.insert(sessions)
+    .values({ id: hashToken(token), userId, expiresAt })
+    .run();
   return { token, expiresAt };
 }
 
@@ -34,6 +36,8 @@ export function validateSession(db: Db, token: string, now = Date.now()) {
       role: users.role,
       householdId: households.id,
       householdName: households.name,
+      currency: households.currency,
+      disabledAt: users.disabledAt,
     })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
@@ -42,7 +46,7 @@ export function validateSession(db: Db, token: string, now = Date.now()) {
     .get();
 
   if (!row) return null;
-  if (row.expiresAt <= now) {
+  if (row.expiresAt <= now || row.disabledAt) {
     db.delete(sessions).where(eq(sessions.id, id)).run();
     return null;
   }
@@ -61,13 +65,21 @@ export function validateSession(db: Db, token: string, now = Date.now()) {
       displayName: row.displayName,
       role: row.role,
     },
-    household: { id: row.householdId, name: row.householdName },
+    household: { id: row.householdId, name: row.householdName, currency: row.currency },
   };
   return { ctx, expiresAt, renewed: expiresAt !== row.expiresAt };
 }
 
 export function deleteSession(db: Db, sessionId: string) {
   db.delete(sessions).where(eq(sessions.id, sessionId)).run();
+}
+
+/** Sign a user out everywhere, or everywhere except one session. Returns how many were ended. */
+export function deleteUserSessions(db: Db, userId: number, exceptSessionId?: string) {
+  const where = exceptSessionId
+    ? and(eq(sessions.userId, userId), ne(sessions.id, exceptSessionId))
+    : eq(sessions.userId, userId);
+  return db.delete(sessions).where(where).returning({ id: sessions.id }).all().length;
 }
 
 export function purgeExpiredSessions(db: Db, now = Date.now()) {

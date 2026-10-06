@@ -28,6 +28,8 @@ export interface AppOptions {
   priceProvider?: PriceProvider;
   /** Folder for nightly backups, or null when they're off (tests). */
   backupDir?: string | null;
+  /** Trust X-Forwarded-For for the client's address (only behind a reverse proxy you run). */
+  trustProxy?: boolean;
 }
 
 export type AppEnv = {
@@ -39,6 +41,7 @@ export type AppEnv = {
     priceProvider: PriceProvider;
     events: EventHub;
     backupDir: string | null;
+    trustProxy: boolean;
   };
 };
 
@@ -47,6 +50,7 @@ export function createApp({
   secureCookies = false,
   priceProvider = yahooProvider(),
   backupDir = null,
+  trustProxy = false,
 }: AppOptions) {
   const loginLimiter = new LoginRateLimiter();
   const events = new EventHub();
@@ -82,6 +86,7 @@ export function createApp({
     c.set("priceProvider", priceProvider);
     c.set("events", events);
     c.set("backupDir", backupDir);
+    c.set("trustProxy", trustProxy);
     await next();
   });
   app.use("/api/*", requireJsonForMutations);

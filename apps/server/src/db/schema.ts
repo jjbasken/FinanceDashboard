@@ -18,6 +18,8 @@ const flag = (name: string) => integer(name, { mode: "boolean" }).notNull().defa
 export const households = sqliteTable("households", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
+  /** ISO 4217 code that amounts are shown in. */
+  currency: text("currency").notNull().default("USD"),
   createdAt: createdAt(),
 });
 
@@ -30,6 +32,8 @@ export const users = sqliteTable("users", {
   displayName: text("display_name").notNull(),
   passwordHash: text("password_hash").notNull(),
   role: text("role", { enum: ["owner", "member"] }).notNull(),
+  /** Set when the owner removes a member: they can't sign in, but their name stays on their entries. */
+  disabledAt: text("disabled_at"),
   createdAt: createdAt(),
 });
 
@@ -353,4 +357,24 @@ export const prices = sqliteTable(
     source: text("source", { enum: ["yahoo", "gnucash", "manual"] }).notNull(),
   },
   (t) => [uniqueIndex("prices_security_date_unique").on(t.securityId, t.date)],
+);
+
+/**
+ * Existing transactions a bank import linked to instead of duplicating, with what they looked like
+ * before, so undoing the import can put them back.
+ */
+export const importMatches = sqliteTable(
+  "import_matches",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    batchId: integer("batch_id")
+      .notNull()
+      .references(() => importBatches.id, { onDelete: "cascade" }),
+    transactionId: integer("transaction_id")
+      .notNull()
+      .references(() => transactions.id, { onDelete: "cascade" }),
+    previousImportedId: text("previous_imported_id"),
+    previousCleared: integer("previous_cleared", { mode: "boolean" }).notNull(),
+  },
+  (t) => [index("import_matches_batch_idx").on(t.batchId)],
 );

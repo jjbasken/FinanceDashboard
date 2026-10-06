@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { serveStatic } from "hono/bun";
 import { createApp } from "./app";
+import { dataDir } from "./config";
 import { openDb } from "./db";
 import { purgeExpiredSessions } from "./auth/sessions";
 import { seedOwnerFromEnv } from "./seed";
@@ -11,7 +12,6 @@ import { refreshPrices, yahooProvider } from "./services/prices";
 import { localDate } from "./util";
 
 const port = Number(process.env.PORT ?? 3000);
-const dataDir = resolve(process.env.DATA_DIR ?? join(import.meta.dir, "../../../data"));
 const webDist = resolve(process.env.WEB_DIST ?? join(import.meta.dir, "../../web/dist"));
 const secureCookies = process.env.COOKIE_SECURE === "true";
 
@@ -30,7 +30,8 @@ setInterval(() => purgeExpiredSessions(db), 6 * 60 * 60 * 1000);
 
 const priceProvider = yahooProvider();
 const backupDir = join(dataDir, "backups");
-const app = createApp({ db, secureCookies, priceProvider, backupDir });
+const trustProxy = process.env.TRUST_PROXY === "true";
+const app = createApp({ db, secureCookies, priceProvider, backupDir, trustProxy });
 
 // Nightly backups: check hourly and make today's copy if it's missing, keeping the newest
 // BACKUP_KEEP (default 14). Set BACKUP_KEEP=0 to turn them off.

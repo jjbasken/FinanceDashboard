@@ -1,7 +1,7 @@
 import {
   INVESTMENT_ACTION_LABELS,
   formatCents,
-  priceToString,
+  formatPrice,
   sharesToString,
   sharesValueCents,
   type CreateSecurityInput,
@@ -13,7 +13,7 @@ import {
 import { and, asc, count, desc, eq, ne, sql } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import type { DbOrTx } from "../db";
-import { investmentTxns, prices, securities, transactions } from "../db/schema";
+import { households, investmentTxns, prices, securities, transactions } from "../db/schema";
 import { findOrCreatePayee, getAccount, type Actor } from "./ledger";
 
 const bad = (message: string) => new HTTPException(400, { message });
@@ -274,10 +274,13 @@ function syncCash(
     return null;
   }
   const payee = findOrCreatePayee(db, actor.householdId, `${INVESTMENT_ACTION_LABELS[values.action]} ${values.symbol}`);
+  const currency =
+    db.select({ c: households.currency }).from(households).where(eq(households.id, actor.householdId)).get()?.c ??
+    "USD";
   const detail =
     values.action === "dividend"
       ? ""
-      : `${sharesToString(Math.abs(values.shares))} @ $${priceToString(values.price)}${values.fees ? ` + ${formatCents(values.fees)} fees` : ""}`;
+      : `${sharesToString(Math.abs(values.shares))} @ ${formatPrice(values.price, currency)}${values.fees ? ` + ${formatCents(values.fees, currency)} fees` : ""}`;
   const notes = [detail, values.notes].filter(Boolean).join(" · ");
   const row = {
     accountId: values.accountId,

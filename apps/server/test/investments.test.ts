@@ -218,6 +218,22 @@ describe("prices", () => {
     expect(prices.calls[1]).toMatchObject({ symbol: "VTI", from: "2026-02-03" });
   });
 
+  test("securities you've sold out of stop getting price updates", async () => {
+    const { c, txn, prices } = await setUp(quotes);
+    await txn({ date: "2026-01-05", action: "buy", shares: 1 * SH, price: $(200) });
+    await txn({ date: "2026-01-06", action: "sell", shares: 1 * SH, price: $(201) });
+    await c.post("/api/investments/securities", { symbol: "WATCH", name: "Never traded", type: "stock" });
+    await c.post("/api/investments/prices/refresh");
+    expect(prices.calls.map((x) => x.symbol)).toEqual(["WATCH"]);
+  });
+
+  test("cash notes use the household's currency", async () => {
+    const { c, txn, register } = await setUp();
+    await c.patch("/api/household", { currency: "EUR" });
+    await txn({ date: "2026-01-05", action: "buy", shares: 2 * SH, price: $(12.5), fees: 100 });
+    expect((await register())[0]!.notes).toBe("2 @ €12.50 + €1.00 fees");
+  });
+
   test("manual prices win and failures are reported per symbol", async () => {
     const { c, vti, txn, position } = await setUp(quotes);
     await txn({ date: "2026-01-05", action: "buy", shares: 1 * SH, price: $(200) });

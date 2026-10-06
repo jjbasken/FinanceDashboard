@@ -35,6 +35,19 @@ bun run db:generate
 
 Migrations are stored in `apps/server/drizzle/` and run automatically when the server starts.
 
+## Members and passwords
+
+- **Your account** (Settings): change your password, which signs out your other devices, or sign out other devices on their own.
+- **The owner** can set a new password for a member who has forgotten theirs, and remove a member. Removed members are signed out and can't sign in, but their name stays on what they entered; **Restore** brings them back.
+- **If the owner forgets their password**, reset it on the server. This prints a new random password and signs them out everywhere:
+
+  ```sh
+  docker exec -u bun family-finance bun apps/server/src/cli.ts reset-password <username>
+  # without Docker: bun apps/server/src/cli.ts reset-password <username>
+  ```
+
+- **Household name and currency** (owner, Settings → Household). Amounts are shown in the chosen currency; nothing is converted.
+
 ## Accounts and the register
 
 Add accounts from the sidebar. On-budget accounts (checking, savings, cards, cash) feed the budget; off-budget accounts (investments, loans, other assets) count toward net worth only.
@@ -46,6 +59,9 @@ Each account's register is built for the keyboard:
 - Picking a "Transfer: …" payee creates a transfer, and both sides stay in sync. Picking "Split transaction" in the category field lets you divide a transaction across several categories.
 - Click the circle on a row to mark it cleared. **Reconcile** compares the cleared balance with your statement and locks the cleared transactions once they match.
 - Search finds transactions by payee, notes, category or amount. Searching "uncategorized" finds the ones that still need a category.
+- Existing rows can be reached with **Tab**. On a row, **Enter** (or **F2**) edits it, **↑/↓** move between rows, and **Space** toggles cleared.
+
+To tidy payee names, for example the ones bank statements bring in, use **Settings → Manage payees**. You can rename, merge several into one, delete, or delete all unused payees at once.
 
 ## Budgeting
 
@@ -76,7 +92,7 @@ On the same Import page, choose an account and upload an **OFX/QFX** or **CSV** 
 - Rows already imported from an earlier statement are skipped, so overlapping files are fine.
 - If a row matches a transaction already in the account (same amount, within 3 days), the two are linked instead of duplicated. The existing transaction is marked cleared. This covers rows you entered by hand and rows brought in from GnuCash.
 - New rows are cleared, and their category is suggested from the last time you used that payee. You can untick rows or change categories before importing.
-- Each import can be undone from the Past imports list. Undo removes the transactions it added; ones it matched stay linked and cleared.
+- Each import can be undone from the Past imports list. Undo removes the transactions it added and puts the ones it matched back the way they were.
 
 ## Investments
 
@@ -103,7 +119,7 @@ cd docker
 docker compose up -d --build
 ```
 
-The app runs at http://localhost:8080. Its SQLite database is stored in `docker/data/`, and nightly backups go to `docker/data/backups/`. Copy that folder somewhere else (another disk, or cloud storage) to keep your data safe if this machine fails.
+The app runs at http://localhost:8080. Its SQLite database is stored in `docker/data/`, and nightly backups go to `docker/data/backups/`. The container makes sure the app's user (uid 1000) owns that folder on start-up, then runs the app as that user, not as root. Copy that folder somewhere else (another disk, or cloud storage) to keep your data safe if this machine fails.
 
 ### Configuration
 
@@ -115,6 +131,7 @@ All settings are optional. To change any of them, copy `.env.example` to `.env` 
 | `DATA_DIR`                | `./data` / `/data`           | Folder that holds `finance.db`                       |
 | `WEB_DIST`                | `apps/web/dist`              | Built web app served by the server                   |
 | `COOKIE_SECURE`           | `false`                      | Set to `true` when the app is served over HTTPS      |
+| `TRUST_PROXY`             | `false`                      | `true` behind your own reverse proxy (see below)     |
 | `TZ`                      | system / `UTC`               | Your time zone, e.g. `America/Chicago`               |
 | `PRICE_REFRESH`           | `on`                         | Set to `off` to stop fetching investment prices      |
 | `BACKUP_KEEP`             | `14`                         | Nightly backups to keep; `0` turns them off          |
@@ -134,18 +151,16 @@ There are no signing secrets to configure, `JWT_SECRET` included. Sessions use r
 - Passwords are hashed with Argon2. Sessions are random tokens in an `HttpOnly`, `SameSite=Lax` cookie, and only their hashes are stored. They last 30 days and renew while in use.
 - Every change must be sent as JSON (or as a raw file upload), which browsers can't do from another site without permission. This blocks cross-site request forgery.
 - Responses carry a strict Content-Security-Policy, block framing, and turn off content sniffing and referrers.
-- After 10 failed sign-ins within 15 minutes, a username is locked for the rest of that window.
+- Failed sign-ins are limited per visitor: 10 for one username, or 30 across usernames, within 15 minutes. Someone guessing at your username can't lock you out from your own devices. Behind a reverse proxy, set `TRUST_PROXY=true` so the limit uses each visitor's address rather than the proxy's.
+- Changing a password, an owner reset and removing a member all end the affected sessions straight away.
 - Everyone in the household sees and can change everything. Only the owner can create invite links and download backups.
 
 **To reach the app from outside your home network,** put it behind a reverse proxy that handles HTTPS, such as Caddy or Traefik, and set `COOKIE_SECURE=true`. Finish first-run setup (or use the `SEED_*` variables) before exposing it: until an owner exists, anyone who can reach the app can create one.
 
 ## Known limitations
 
-- **One currency.** Amounts are shown in US dollars. Accounts in other currencies import from GnuCash at their converted value.
-- **No account management yet.** There's no way to change or reset a password, remove a household member, or sign out other sessions from the app.
-- **Payees can't be renamed, merged or deleted from the app.** Bank imports can add many new payee names.
-- **Existing register rows can't be reached with the keyboard alone.** Click a row first; after that the arrow keys move between rows.
-- **Changing an account between on- and off-budget** changes past months' budgets as well.
+- **One currency per household.** It's a display setting; amounts aren't converted. Accounts in other currencies import from GnuCash at their converted value, and securities priced in another currency aren't converted.
+- **No email.** Password resets go through the owner, or the command above for the owner.
 
 ## Contributing
 

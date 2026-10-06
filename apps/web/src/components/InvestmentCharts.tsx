@@ -1,4 +1,4 @@
-import { formatCents, type ValuePoint } from "@fd/shared";
+import { formatCents, getDisplayCurrency, type ValuePoint } from "@fd/shared";
 import { useState } from "react";
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { formatDate } from "../ledger";
@@ -8,7 +8,13 @@ export const SERIES = [1, 2, 3, 4, 5, 6, 7].map((n) => `var(--series-${n})`);
 export const NEUTRAL = "var(--viz-neutral)";
 export const NEUTRAL_LIGHT = "var(--viz-neutral-light)";
 
-const compact = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact" });
+/** Short axis labels like "$1.3K", in the household's currency. */
+export const compact = {
+  format: (v: number) =>
+    new Intl.NumberFormat("en-US", { style: "currency", currency: getDisplayCurrency(), notation: "compact" }).format(
+      v,
+    ),
+};
 /** Axis labels: day and month for short ranges (weekly or daily points), month and year beyond. */
 const axisDate = (date: string, fine: boolean) =>
   new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", {

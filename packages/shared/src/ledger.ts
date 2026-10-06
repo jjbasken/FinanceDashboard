@@ -86,6 +86,12 @@ export interface Account {
 // --- Payees ---
 
 export const updatePayeeInput = z.object({ name: nameSchema });
+
+/** Move every transaction from the source payees to the target, then delete the sources. */
+export const mergePayeesInput = z.object({
+  sourceIds: z.array(idSchema).min(1).max(1000),
+  targetId: idSchema,
+});
 export type UpdatePayeeInput = z.infer<typeof updatePayeeInput>;
 
 export interface Payee {
@@ -93,6 +99,8 @@ export interface Payee {
   name: string;
   /** Set when this payee stands for a transfer to that account. */
   transferAccountId: number | null;
+  /** How many transactions use this payee. */
+  transactionCount: number;
 }
 
 // --- Categories ---

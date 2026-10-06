@@ -10,6 +10,7 @@ import {
   importBatches,
   importedRecords,
   importMappings,
+  importMatches,
   investmentTxns,
   payees,
   prices,
@@ -371,6 +372,14 @@ export function undoBatch(db: Db, householdId: number, batchId: number) {
     if (batch.undoneAt) throw new HTTPException(409, { message: "That import was already undone" });
 
     // Parents first is fine: children cascade.
+    // Transactions a bank import matched (rather than created) go back to how they were.
+    for (const m of tx.select().from(importMatches).where(eq(importMatches.batchId, batchId)).all()) {
+      tx.update(transactions)
+        .set({ importedId: m.previousImportedId, cleared: m.previousCleared })
+        .where(eq(transactions.id, m.transactionId))
+        .run();
+    }
+    tx.delete(importMatches).where(eq(importMatches.batchId, batchId)).run();
     tx.delete(investmentTxns).where(eq(investmentTxns.importBatchId, batchId)).run();
     tx.delete(transactions).where(eq(transactions.importBatchId, batchId)).run();
     tx.delete(securities)

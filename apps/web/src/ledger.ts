@@ -3,9 +3,9 @@ import type {
   BudgetMonth,
   CategoryGroup,
   HoldingsSummary,
+  HouseholdMember,
   InvestmentTxn,
   Payee,
-  PublicUser,
   Security,
   Transaction,
   ValuePoint,
@@ -31,7 +31,7 @@ export const useCategories = () =>
 export const usePayees = () => useQuery({ queryKey: ledgerKeys.payees, queryFn: () => api.get<Payee[]>("/payees") });
 
 export const useMembers = () =>
-  useQuery({ queryKey: ledgerKeys.members, queryFn: () => api.get<PublicUser[]>("/household/users") });
+  useQuery({ queryKey: ledgerKeys.members, queryFn: () => api.get<HouseholdMember[]>("/household/users") });
 
 export const useRegister = (accountId: number) =>
   useQuery({

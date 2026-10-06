@@ -43,6 +43,13 @@
       "when": 1791321966333,
       "tag": "0005_split_ratio",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1791322503433,
+      "tag": "0006_accounts_and_matches",
+      "breakpoints": true
     }
   ]
 }
