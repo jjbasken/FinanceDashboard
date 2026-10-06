@@ -7,8 +7,14 @@ export class ApiError extends Error {
   }
 }
 
-/** Identifies this browser tab, so live updates can skip the tab's own changes. */
-export const clientId = crypto.randomUUID();
+/**
+ * Identifies this browser tab, so live updates can skip the tab's own changes. Built from
+ * getRandomValues because crypto.randomUUID only exists on HTTPS or localhost, and the app is
+ * often opened over plain HTTP on a home network.
+ */
+export const clientId = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) =>
+  b.toString(16).padStart(2, "0"),
+).join("");
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`/api${path}`, {

@@ -20,8 +20,9 @@ test("responses carry security headers", async () => {
   expect(res.headers.get("x-content-type-options")).toBe("nosniff");
   expect(res.headers.get("x-frame-options")).toBe("SAMEORIGIN");
   expect(res.headers.get("referrer-policy")).toBe("no-referrer");
-  // No HSTS unless the app is served over HTTPS.
+  // No HSTS, and none of the headers browsers ignore on plain HTTP, unless served over HTTPS.
   expect(res.headers.get("strict-transport-security")).toBeNull();
+  expect(res.headers.get("cross-origin-opener-policy")).toBeNull();
 });
 
 describe("first-run setup", () => {

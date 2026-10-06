@@ -75,6 +75,9 @@ export function createApp({
         frameAncestors: ["'none'"],
       },
       strictTransportSecurity: secureCookies ? "max-age=15552000" : false,
+      // Browsers ignore (and warn about) these on plain-HTTP origins other than localhost.
+      crossOriginOpenerPolicy: secureCookies,
+      originAgentCluster: secureCookies,
       referrerPolicy: "no-referrer",
     }),
   );
