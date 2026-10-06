@@ -9,7 +9,11 @@ export interface GncAccount {
   /** GnuCash account type: BANK, CASH, CREDIT, ASSET, LIABILITY, STOCK, MUTUAL, INCOME, EXPENSE, EQUITY, ... */
   type: string;
   parentGuid: string | null;
+  /** Commodity mnemonic, e.g. USD or AAPL. */
   commodity: string;
+  /** Commodity full name and namespace (e.g. "Apple Inc.", "NASDAQ" or "FUND"). */
+  commodityName: string;
+  commodityNamespace: string;
   placeholder: boolean;
   hidden: boolean;
 }
@@ -24,6 +28,16 @@ export interface GncSplit {
   value: number;
   /** In the account's commodity, cents (for currency accounts). */
   quantity: number;
+  /** In the account's commodity, millionths (micro-shares for stock accounts). */
+  shares: number;
+}
+
+export interface GncPrice {
+  commodity: string;
+  currency: string;
+  date: string;
+  /** Micro-units of the currency. */
+  value: number;
 }
 
 export interface GncTransaction {
@@ -40,6 +54,19 @@ export interface GncBook {
   currency: string;
   accounts: GncAccount[];
   transactions: GncTransaction[];
+  prices: GncPrice[];
+}
+
+/** num/denom in millionths, rounded half away from zero, exactly (quantities can exceed 2^53 / 1e6). */
+export function rationalToMicros(num: number, denom: number): number {
+  if (!denom) return 0;
+  const n = BigInt(Math.round(num)) * 1_000_000n;
+  const d = BigInt(Math.round(denom));
+  const neg = n < 0n !== d < 0n;
+  const an = n < 0n ? -n : n;
+  const ad = d < 0n ? -d : d;
+  const q = (an * 2n + ad) / (2n * ad);
+  return Number(neg ? -q : q);
 }
 
 /** The file isn't something we can import; the message is shown to the user. */
@@ -99,12 +126,13 @@ export function readBook(path: string): GncBook {
     const book = db.query<{ root: string }, []>("select root_account_guid as root from books limit 1").get();
     if (!book) throw new BookError("The book has no root account.");
 
-    const commodities = new Map(
-      db
-        .query<{ guid: string; mnemonic: string }, []>("select guid, mnemonic from commodities")
-        .all()
-        .map((c) => [c.guid, c.mnemonic]),
-    );
+    const commodityRows = db
+      .query<{ guid: string; mnemonic: string; fullname: string | null; namespace: string | null }, []>(
+        "select guid, mnemonic, fullname, namespace from commodities",
+      )
+      .all();
+    const commodities = new Map(commodityRows.map((c) => [c.guid, c.mnemonic]));
+    const commodityInfo = new Map(commodityRows.map((c) => [c.guid, c]));
 
     const rows = db
       .query<
@@ -154,6 +182,8 @@ export function readBook(path: string): GncBook {
         type: r.type,
         parentGuid: r.parent === book.root ? null : r.parent,
         commodity: (r.commodity && commodities.get(r.commodity)) || "",
+        commodityName: (r.commodity && commodityInfo.get(r.commodity)?.fullname) || "",
+        commodityNamespace: (r.commodity && commodityInfo.get(r.commodity)?.namespace) || "",
         placeholder: !!r.placeholder,
         hidden: !!r.hidden,
       });
@@ -207,6 +237,7 @@ export function readBook(path: string): GncBook {
         reconcile: s.reconcile ?? "n",
         value: s.vd ? rationalToCents(s.vn, s.vd) : 0,
         quantity: s.qd ? rationalToCents(s.qn, s.qd) : 0,
+        shares: rationalToMicros(s.qn, s.qd),
       });
       splitsByTx.set(s.tx, list);
     }
@@ -237,7 +268,21 @@ export function readBook(path: string): GncBook {
     transactions.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.guid.localeCompare(b.guid)));
 
     const currency = [...currencyCount].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "USD";
-    return { currency, accounts, transactions };
+
+    const bookPrices: GncPrice[] = [];
+    if (tables.has("prices")) {
+      for (const p of db
+        .query<{ commodity: string; currency: string; date: string; vn: number; vd: number }, []>(
+          "select commodity_guid as commodity, currency_guid as currency, date, value_num as vn, value_denom as vd from prices",
+        )
+        .all()) {
+        const commodity = commodities.get(p.commodity);
+        const cur = commodities.get(p.currency);
+        if (!commodity || !cur || !p.date || !p.vd) continue;
+        bookPrices.push({ commodity, currency: cur, date: gnucashDate(p.date), value: rationalToMicros(p.vn, p.vd) });
+      }
+    }
+    return { currency, accounts, transactions, prices: bookPrices };
   } catch (err) {
     if (err instanceof BookError) throw err;
     throw new BookError(`Couldn't read the book: ${err instanceof Error ? err.message : String(err)}`);

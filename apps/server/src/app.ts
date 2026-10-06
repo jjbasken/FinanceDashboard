@@ -9,6 +9,8 @@ import { budgetRoutes } from "./routes/budget";
 import { categoryRoutes } from "./routes/categories";
 import { householdRoutes } from "./routes/household";
 import { importRoutes } from "./routes/import";
+import { investmentRoutes } from "./routes/investments";
+import { type PriceProvider, yahooProvider } from "./services/prices";
 import { payeeRoutes } from "./routes/payees";
 import { transactionRoutes } from "./routes/transactions";
 import { requireJsonForMutations, sessionMiddleware } from "./middleware";
@@ -17,6 +19,8 @@ export interface AppOptions {
   db: Db;
   /** Set the Secure flag on cookies; enable when served over HTTPS. */
   secureCookies?: boolean;
+  /** Where daily prices come from (Yahoo by default). */
+  priceProvider?: PriceProvider;
 }
 
 export type AppEnv = {
@@ -25,10 +29,11 @@ export type AppEnv = {
     secureCookies: boolean;
     loginLimiter: LoginRateLimiter;
     session: SessionContext | null;
+    priceProvider: PriceProvider;
   };
 };
 
-export function createApp({ db, secureCookies = false }: AppOptions) {
+export function createApp({ db, secureCookies = false, priceProvider = yahooProvider() }: AppOptions) {
   const loginLimiter = new LoginRateLimiter();
   const app = new Hono<AppEnv>();
 
@@ -36,6 +41,7 @@ export function createApp({ db, secureCookies = false }: AppOptions) {
     c.set("db", db);
     c.set("secureCookies", secureCookies);
     c.set("loginLimiter", loginLimiter);
+    c.set("priceProvider", priceProvider);
     await next();
   });
   app.use("/api/*", requireJsonForMutations);
@@ -50,6 +56,7 @@ export function createApp({ db, secureCookies = false }: AppOptions) {
   app.route("/api/payees", payeeRoutes);
   app.route("/api/budget", budgetRoutes);
   app.route("/api/import", importRoutes);
+  app.route("/api/investments", investmentRoutes);
 
   app.notFound((c) => c.json({ error: "Not found" }, 404));
   app.onError((err, c) => {

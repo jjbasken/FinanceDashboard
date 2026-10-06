@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router";
 import { useAuthStatus } from "./auth";
 import { AppShell } from "./components/AppShell";
@@ -9,6 +10,9 @@ import { LoginPage } from "./pages/LoginPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SetupPage } from "./pages/SetupPage";
+
+// The charting library is large, so the investments page loads on demand.
+const InvestmentsPage = lazy(() => import("./pages/InvestmentsPage").then((m) => ({ default: m.InvestmentsPage })));
 
 export function App() {
   const { data: status, isPending, error } = useAuthStatus();
@@ -40,7 +44,14 @@ export function App() {
       <Route element={<AppShell />}>
         <Route path="/budget" element={<BudgetPage />} />
         <Route path="/reports" element={<PlaceholderPage title="Reports" milestone="Reports" />} />
-        <Route path="/investments" element={<PlaceholderPage title="Investments" milestone="Investments" />} />
+        <Route
+          path="/investments"
+          element={
+            <Suspense fallback={<p className="muted page-error">Loading…</p>}>
+              <InvestmentsPage />
+            </Suspense>
+          }
+        />
         <Route path="/accounts/:id" element={<AccountPage />} />
         <Route path="/import" element={<ImportPage />} />
         <Route path="/settings" element={<SettingsPage />} />

@@ -77,6 +77,8 @@ export interface Account {
   balance: number;
   /** Sum of cleared and reconciled transactions, in cents. */
   clearedBalance: number;
+  /** Market value of investments held in this account, in cents (on top of `balance`, which is cash). */
+  holdingsValue: number;
   /** The payee that represents a transfer into this account. */
   transferPayeeId: number;
 }
@@ -184,6 +186,8 @@ export interface Transaction {
   reconciled: boolean;
   /** The other side of a transfer. */
   transferId: number | null;
+  /** Set when this row is the cash side of an investment transaction; edit it there. */
+  investmentTxnId: number | null;
   /** Empty unless this is a split transaction. */
   splits: TransactionSplit[];
   /** Account balance after this transaction, in register order (date, then id). */

@@ -11,10 +11,14 @@ const nav = [
   { to: "/investments", label: "Investments" },
 ];
 
-const total = (list: Account[]) => list.reduce((sum, a) => sum + a.balance, 0);
+/** Cash plus the market value of any investments held. */
+const worth = (a: Account) => a.balance + a.holdingsValue;
+const total = (list: Account[]) => list.reduce((sum, a) => sum + worth(a), 0);
 
 function Money(props: { cents: number }) {
-  return <span className={props.cents < 0 ? "sidebar-amount negative" : "sidebar-amount"}>{formatCents(props.cents)}</span>;
+  return (
+    <span className={props.cents < 0 ? "sidebar-amount negative" : "sidebar-amount"}>{formatCents(props.cents)}</span>
+  );
 }
 
 function AccountGroup(props: { title: string; accounts: Account[]; collapsible?: boolean }) {
@@ -33,7 +37,7 @@ function AccountGroup(props: { title: string; accounts: Account[]; collapsible?:
         props.accounts.map((a) => (
           <NavLink key={a.id} to={`/accounts/${a.id}`} className="sidebar-account">
             <span className="truncate">{a.name}</span>
-            <Money cents={a.balance} />
+            <Money cents={worth(a)} />
           </NavLink>
         ))}
     </div>

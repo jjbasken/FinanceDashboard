@@ -1,6 +1,15 @@
-import { centsToInput, formatCents, parseCents, type Account, type CategoryGroup, type Payee, type Transaction } from "@fd/shared";
+import {
+  centsToInput,
+  formatCents,
+  parseCents,
+  type Account,
+  type CategoryGroup,
+  type Payee,
+  type Transaction,
+} from "@fd/shared";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { type FocusEvent, type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router";
 import { api } from "../api";
 import { formatDate, today, useLedgerMutation, useMembers } from "../ledger";
 import { Autocomplete, type Option } from "./Autocomplete";
@@ -73,7 +82,12 @@ function draftFrom(t: Transaction, payeeName: string): Draft {
     notes: t.notes,
     categoryId: t.categoryId,
     split: t.splits.length > 0,
-    splits: t.splits.map((s) => ({ key: ++splitKey, categoryId: s.categoryId, notes: s.notes, ...amountFields(s.amount) })),
+    splits: t.splits.map((s) => ({
+      key: ++splitKey,
+      categoryId: s.categoryId,
+      notes: s.notes,
+      ...amountFields(s.amount),
+    })),
     ...amountFields(t.amount),
     cleared: t.cleared,
   };
@@ -96,7 +110,11 @@ function buildBody(d: Draft, original?: Draft): Built {
   }
 
   const payee =
-    d.payeeId != null ? { payeeId: d.payeeId } : d.payeeName.trim() ? { payeeName: d.payeeName.trim() } : { payeeId: null };
+    d.payeeId != null
+      ? { payeeId: d.payeeId }
+      : d.payeeName.trim()
+        ? { payeeName: d.payeeName.trim() }
+        : { payeeId: null };
   const full: Record<string, unknown> = {
     date: d.date,
     amount,
@@ -169,7 +187,8 @@ function useLookups(account: Account, accounts: Account[], payees: Payee[], grou
     for (const g of groups) {
       for (const c of g.categories) {
         categoryName.set(c.id, c.name);
-        if (!g.hidden && !c.hidden) splitCategoryOptions.push({ key: `c${c.id}`, label: c.name, value: c.id, group: g.name });
+        if (!g.hidden && !c.hidden)
+          splitCategoryOptions.push({ key: `c${c.id}`, label: c.name, value: c.id, group: g.name });
       }
     }
     const categoryOptions: Option<CategoryValue>[] = [
@@ -230,14 +249,23 @@ function EditRow(props: {
 
   const transfer = isBudgetTransfer(l, d.payeeId);
   const amount = amountOf(d);
-  const remaining =
-    d.split && amount !== null ? amount - d.splits.reduce((sum, s) => sum + (amountOf(s) ?? 0), 0) : 0;
+  const remaining = d.split && amount !== null ? amount - d.splits.reduce((sum, s) => sum + (amountOf(s) ?? 0), 0) : 0;
 
   function chooseCategory(value: CategoryValue) {
     if (value !== "split") return set({ categoryId: value, split: false, splits: [] });
     if (d.split) return;
-    const first: SplitDraft = { key: ++splitKey, categoryId: d.categoryId, notes: "", payment: d.payment, deposit: d.deposit };
-    set({ split: true, categoryId: null, splits: [first, { key: ++splitKey, categoryId: null, notes: "", payment: "", deposit: "" }] });
+    const first: SplitDraft = {
+      key: ++splitKey,
+      categoryId: d.categoryId,
+      notes: "",
+      payment: d.payment,
+      deposit: d.deposit,
+    };
+    set({
+      split: true,
+      categoryId: null,
+      splits: [first, { key: ++splitKey, categoryId: null, notes: "", payment: "", deposit: "" }],
+    });
   }
 
   function setSplit(key: number, patch: Partial<SplitDraft>) {
@@ -298,7 +326,15 @@ function EditRow(props: {
             <Autocomplete
               ariaLabel="Category"
               inputRef={register("category")}
-              value={transfer ? "Transfer" : d.split ? "Split transaction" : d.categoryId != null ? (l.categoryName.get(d.categoryId) ?? "") : ""}
+              value={
+                transfer
+                  ? "Transfer"
+                  : d.split
+                    ? "Split transaction"
+                    : d.categoryId != null
+                      ? (l.categoryName.get(d.categoryId) ?? "")
+                      : ""
+              }
               options={l.categoryOptions}
               disabled={transfer}
               onSelect={chooseCategory}
@@ -370,7 +406,9 @@ function EditRow(props: {
                   aria-label="Split payment"
                   inputMode="decimal"
                   value={s.payment}
-                  onChange={(e) => setSplit(s.key, { payment: e.target.value, deposit: e.target.value ? "" : s.deposit })}
+                  onChange={(e) =>
+                    setSplit(s.key, { payment: e.target.value, deposit: e.target.value ? "" : s.deposit })
+                  }
                 />
               </div>
               <div className="cell">
@@ -379,7 +417,9 @@ function EditRow(props: {
                   aria-label="Split deposit"
                   inputMode="decimal"
                   value={s.deposit}
-                  onChange={(e) => setSplit(s.key, { deposit: e.target.value, payment: e.target.value ? "" : s.payment })}
+                  onChange={(e) =>
+                    setSplit(s.key, { deposit: e.target.value, payment: e.target.value ? "" : s.payment })
+                  }
                 />
               </div>
               <div className="cell" />
@@ -463,7 +503,9 @@ function DisplayRow(props: {
         {props.showCategory && cell("category", category, "cell truncate")}
         {cell("payment", t.amount < 0 ? formatCents(-t.amount) : "", "cell amount")}
         {cell("deposit", t.amount > 0 ? formatCents(t.amount) : "", "cell amount positive")}
-        <div className={t.runningBalance < 0 ? "cell amount negative" : "cell amount"}>{formatCents(t.runningBalance)}</div>
+        <div className={t.runningBalance < 0 ? "cell amount negative" : "cell amount"}>
+          {formatCents(t.runningBalance)}
+        </div>
         <div className="cell center">
           <button
             type="button"
@@ -483,7 +525,11 @@ function DisplayRow(props: {
           <div className="cell truncate muted">{s.notes}</div>
           {props.showCategory && (
             <div className="cell truncate">
-              {s.categoryId != null ? l.categoryName.get(s.categoryId) : <span className="uncategorized">Uncategorized</span>}
+              {s.categoryId != null ? (
+                l.categoryName.get(s.categoryId)
+              ) : (
+                <span className="uncategorized">Uncategorized</span>
+              )}
             </div>
           )}
           <div className="cell amount">{s.amount < 0 ? formatCents(-s.amount) : ""}</div>
@@ -513,10 +559,13 @@ export function Register(props: {
   const [newFocus, setNewFocus] = useState<{ field: Field; n: number }>({ field: "date", n: 0 });
   const [newError, setNewError] = useState<string | null>(null);
 
-  const [editing, setEditing] = useState<{ id: number; original: Draft; focus: { field: Field; n: number } } | null>(null);
+  const [editing, setEditing] = useState<{ id: number; original: Draft; focus: { field: Field; n: number } } | null>(
+    null,
+  );
   const [editDraft, setEditDraft] = useState<Draft>(() => blankDraft());
   const [editError, setEditError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [linkedNotice, setLinkedNotice] = useState(false);
 
   // Reset the entry row when switching accounts.
   useEffect(() => {
@@ -606,6 +655,11 @@ export function Register(props: {
   function startEdit(t: Transaction, field: Field) {
     if (editing?.id === t.id) return;
     if (editing && !saveEdit()) return;
+    if (t.investmentTxnId) {
+      setEditing(null);
+      setLinkedNotice(true);
+      return;
+    }
     if (t.reconciled && !confirm("This transaction is reconciled. Edit it anyway?")) return;
     beginEdit(t, field);
   }
@@ -668,6 +722,15 @@ export function Register(props: {
       {saveError && (
         <p className="error-text register-banner" role="alert">
           Couldn't save: {saveError}
+        </p>
+      )}
+      {linkedNotice && (
+        <p className="notice register-notice" role="status">
+          That row is the cash side of an investment transaction. Edit it on the{" "}
+          <Link to="/investments">Investments page</Link>.{" "}
+          <button className="link-button" onClick={() => setLinkedNotice(false)}>
+            Dismiss
+          </button>
         </p>
       )}
 

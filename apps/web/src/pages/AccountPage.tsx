@@ -82,7 +82,10 @@ function AccountMenu(props: { account: Account }) {
       <summary className="btn" aria-label="Account actions">
         ⋯
       </summary>
-      <div className="menu-items" onClick={(e) => (e.currentTarget.parentElement as HTMLDetailsElement).removeAttribute("open")}>
+      <div
+        className="menu-items"
+        onClick={(e) => (e.currentTarget.parentElement as HTMLDetailsElement).removeAttribute("open")}
+      >
         <button onClick={rename}>Rename</button>
         <button onClick={() => update.mutate({ onBudget: !account.onBudget })}>
           {account.onBudget ? "Move off budget" : "Move on budget"}
@@ -126,9 +129,19 @@ export function AccountPage() {
         </div>
         {account && (
           <div className="account-stats">
-            <Amount label="Cleared" cents={account.clearedBalance} />
-            <Amount label="Uncleared" cents={account.balance - account.clearedBalance} />
-            <Amount label="Balance" cents={account.balance} />
+            {account.type === "investment" || account.holdingsValue !== 0 ? (
+              <>
+                <Amount label="Cash" cents={account.balance} />
+                <Amount label="Investments" cents={account.holdingsValue} />
+                <Amount label="Total" cents={account.balance + account.holdingsValue} />
+              </>
+            ) : (
+              <>
+                <Amount label="Cleared" cents={account.clearedBalance} />
+                <Amount label="Uncleared" cents={account.balance - account.clearedBalance} />
+                <Amount label="Balance" cents={account.balance} />
+              </>
+            )}
           </div>
         )}
       </header>

@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type {
   Account,
+  HoldingsSummary,
+  InvestmentTxn,
   BudgetMonth,
   CategoryGroup,
   GnucashMapping,
@@ -99,9 +101,9 @@ describe("uploading", () => {
     expect(up).toMatchObject({
       fileName: "family.gnucash",
       currency: "USD",
-      transactionCount: 14, // the scheduled-transaction template is left out
+      transactionCount: 15, // the scheduled-transaction template is left out
       firstDate: "2026-01-01",
-      lastDate: "2026-03-10",
+      lastDate: "2026-03-20",
     });
     const s = (guid: string) => up.accounts.find((a) => a.guid === guid)!;
     const { accounts: a } = sample;
@@ -121,7 +123,13 @@ describe("uploading", () => {
     expect(s(a.visa).suggested).toMatchObject({ type: "credit", onBudget: true });
     expect(s(a.brokerage).suggested).toMatchObject({ type: "investment", onBudget: false });
     expect(s(a.k401).suggested).toMatchObject({ type: "asset", onBudget: false });
-    expect(s(a.aapl).suggested).toEqual({ kind: "skip" });
+    expect(s(a.aapl).suggested).toEqual({
+      kind: "holding",
+      securityId: null,
+      symbol: "AAPL",
+      name: "AAPL",
+      type: "stock",
+    });
     expect(s(a.imbalance).suggested).toEqual({ kind: "skip" });
     expect(s(a.opening).suggested).toEqual({ kind: "opening" });
     expect(s(a.fuel).suggested).toMatchObject({ kind: "category", categoryId: null, groupName: "Auto", name: "Fuel" });
@@ -144,15 +152,18 @@ describe("importing the sample book", () => {
     const up = await upload(jeremy, sample.builder.bytes());
     const p = await preview(jeremy, up);
     expect(p).toMatchObject({
-      transactions: 12,
+      transactions: 13,
       alreadyImported: 0,
       noAccount: 1,
       voided: 1,
-      rows: { transactions: 11, transfers: 3, splits: 4 },
+      // The buy and sell become investment transactions (with their own cash rows), as does the split.
+      rows: { transactions: 9, transfers: 3, splits: 4 },
+      investments: 3,
+      prices: 2,
+      newSecurities: ["AAPL"],
     });
     expect(p.newAccounts.sort()).toEqual(["401k", "Brokerage", "Checking", "Savings Account", "Visa"]);
     expect(p.newCategories.sort()).toEqual(["Auto: Fuel", "Income: Dividends", "Income: Salary", "Taxes: Federal"]);
-    expect(p.warnings.join("\n")).toContain("Assets:Brokerage:AAPL is an investment holding");
     expect(p.warnings.join("\n")).toContain("Imbalance-USD is skipped");
     for (const b of p.balances) expect(b.afterImport).toBe(b.gnucash);
     // Nothing is written by a preview.
@@ -257,7 +268,13 @@ describe("importing the sample book", () => {
     expect(checking.suggested).toMatchObject({ kind: "account", accountId: joint.id });
 
     const p = await preview(jeremy, again);
-    expect(p).toMatchObject({ transactions: 1, alreadyImported: 12, newAccounts: [], newCategories: [] });
+    expect(p).toMatchObject({
+      transactions: 1,
+      alreadyImported: 13,
+      newAccounts: [],
+      newCategories: [],
+      investments: 0,
+    });
     await commit(jeremy, again);
     const rows = await registerOf(jeremy, joint.id);
     expect(rows[0]).toMatchObject({ date: "2026-04-02", amount: -3000 });
@@ -338,7 +355,7 @@ describe("undo", () => {
       id: batchId,
       source: "gnucash",
       fileName: "family.gnucash",
-      transactionCount: 12,
+      transactionCount: 13,
       createdBy: "Jeremy",
       undoneAt: null,
     });
@@ -361,7 +378,7 @@ describe("undo", () => {
     // The same book imports again from scratch.
     const p = await preview(jeremy, await upload(jeremy, sample.builder.bytes()));
     expect(p.alreadyImported).toBe(0);
-    expect(p.transactions).toBe(12);
+    expect(p.transactions).toBe(13);
   });
 
   test("another household can't undo our import", async () => {
@@ -377,5 +394,65 @@ describe("undo", () => {
     intruder.cookie = `${SESSION_COOKIE}=${createSession(db, user.id).token}`;
     expect((await intruder.post(`/api/import/batches/${batchId}/undo`)).status).toBe(404);
     expect((await intruder.get("/api/import/batches")).json).toEqual([]);
+  });
+});
+
+describe("investments", () => {
+  test("holdings become buys, sells and splits with linked cash, plus the book's prices", async () => {
+    const { jeremy, sample } = await setUp();
+    await commit(jeremy, await upload(jeremy, sample.builder.bytes()));
+    const brokerage = byName(await accountsOf(jeremy), "Brokerage");
+
+    const summary = (await jeremy.get("/api/investments/holdings")).json as HoldingsSummary;
+    const holding = summary.accounts.find((x) => x.accountId === brokerage.id)!.holdings[0]!;
+    // 5 bought, 2 sold, then split 2-for-1. Average cost: $1,000 - 2/5 of it = $600.
+    expect(holding).toMatchObject({
+      symbol: "AAPL",
+      shares: 6_000_000,
+      cost: 60_000,
+      price: 165_000_000,
+      priceDate: "2026-03-31",
+      value: 99_000,
+    });
+
+    const txns = (await jeremy.get(`/api/investments/transactions?accountId=${brokerage.id}`)).json as InvestmentTxn[];
+    expect(txns.map((t) => [t.date, t.action, t.shares, t.amount, t.price])).toEqual([
+      ["2026-03-20", "split", 3_000_000, 0, 0],
+      ["2026-03-01", "sell", -2_000_000, 65_000, 325_000_000],
+      ["2026-02-01", "buy", 5_000_000, 100_000, 200_000_000],
+    ]);
+    // Cash still matches GnuCash, now through the linked rows.
+    expect(brokerage.balance).toBe(-33766);
+    expect(brokerage.holdingsValue).toBe(99_000);
+    const register = await registerOf(jeremy, brokerage.id);
+    const buyCash = register.find((t) => t.date === "2026-02-01")!;
+    expect(buyCash).toMatchObject({ amount: -100_000, investmentTxnId: txns[2]!.id });
+
+    // Undo removes the investment transactions and the new security too.
+    const [batch] = (await jeremy.get("/api/import/batches")).json as ImportBatch[];
+    await jeremy.post(`/api/import/batches/${batch!.id}/undo`);
+    expect((await jeremy.get("/api/investments/transactions")).json).toEqual([]);
+    expect((await jeremy.get("/api/investments/securities")).json).toEqual([]);
+  });
+
+  test("an earlier import that skipped holdings is flagged on re-import", async () => {
+    const { jeremy, sample } = await setUp();
+    await commit(jeremy, await upload(jeremy, sample.builder.bytes()), { [sample.accounts.aapl]: { kind: "skip" } });
+    const again = await upload(jeremy, sample.builder.bytes());
+    // Holdings were only ever skipped for lack of support, so the old "skip" isn't suggested.
+    expect(again.accounts.find((a) => a.guid === sample.accounts.aapl)!.suggested.kind).toBe("holding");
+    const p = await preview(jeremy, again);
+    // The buy and the sell. The split touched no imported account back then, so it imports now.
+    expect(p.warnings.join("\n")).toContain("2 transactions were imported before investment support");
+    expect(p).toMatchObject({ transactions: 1, investments: 1 });
+  });
+
+  test("a holding maps into an existing security", async () => {
+    const { jeremy, sample } = await setUp();
+    const apple = (await jeremy.post("/api/investments/securities", { symbol: "AAPL", name: "Apple", type: "stock" }))
+      .json as { id: number };
+    const up = await upload(jeremy, sample.builder.bytes());
+    expect(up.accounts.find((a) => a.guid === sample.accounts.aapl)!.suggested).toMatchObject({ securityId: apple.id });
+    expect((await preview(jeremy, up)).newSecurities).toEqual([]);
   });
 });

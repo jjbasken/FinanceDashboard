@@ -1,6 +1,8 @@
 import {
   ACCOUNT_TYPES,
   ACCOUNT_TYPE_LABELS,
+  SECURITY_TYPES,
+  SECURITY_TYPE_LABELS,
   centsToInput,
   formatCents,
   type Account,
@@ -11,12 +13,14 @@ import {
   type GnucashPreview,
   type GnucashUpload,
   type ImportBatch,
+  type Security,
+  type SecurityType,
 } from "@fd/shared";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { api } from "../api";
-import { formatDate, useAccounts, useCategories, useLedgerMutation } from "../ledger";
+import { formatDate, useAccounts, useCategories, useLedgerMutation, useSecurities } from "../ledger";
 
 const CATEGORY_TYPES = new Set(["INCOME", "EXPENSE"]);
 
@@ -24,6 +28,7 @@ const CATEGORY_TYPES = new Set(["INCOME", "EXPENSE"]);
 function choiceOf(m: GnucashMapping) {
   if (m.kind === "account") return m.accountId ? `account:${m.accountId}` : "new-account";
   if (m.kind === "category") return m.categoryId ? `category:${m.categoryId}` : "new-category";
+  if (m.kind === "holding") return m.securityId ? `security:${m.securityId}` : "new-holding";
   return m.kind;
 }
 
@@ -45,9 +50,27 @@ function mappingFor(
   current: GnucashMapping,
   accounts: Account[],
   groups: CategoryGroup[],
+  securities: Security[],
 ): GnucashMapping {
   const [kind, id] = choice.split(":");
   if (kind === "opening" || kind === "skip") return { kind };
+  if (kind === "new-holding" || kind === "security") {
+    const existing = kind === "security" ? securities.find((x) => x.id === Number(id)) : undefined;
+    const base = info.suggested.kind === "holding" ? info.suggested : null;
+    return {
+      kind: "holding",
+      securityId: existing?.id ?? null,
+      symbol:
+        existing?.symbol ??
+        base?.symbol ??
+        leafName(info.path)
+          .toUpperCase()
+          .replace(/[^A-Z0-9.\-^=]/g, "")
+          .slice(0, 24),
+      name: existing?.name ?? base?.name ?? leafName(info.path),
+      type: existing?.type ?? base?.type ?? "stock",
+    };
+  }
   if (kind === "new-account") {
     const base = current.kind === "account" ? current : info.suggested.kind === "account" ? info.suggested : null;
     return {
@@ -84,6 +107,7 @@ function MappingRow(props: {
   onChange: (m: GnucashMapping) => void;
   accounts: Account[];
   groups: CategoryGroup[];
+  securities: Security[];
   /** The book's currency; other commodities show as quantities. */
   currency: string;
 }) {
@@ -116,10 +140,13 @@ function MappingRow(props: {
         <select
           aria-label={`Import ${info.path} as`}
           value={choiceOf(m)}
-          onChange={(e) => props.onChange(mappingFor(e.target.value, info, m, props.accounts, props.groups))}
+          onChange={(e) =>
+            props.onChange(mappingFor(e.target.value, info, m, props.accounts, props.groups, props.securities))
+          }
         >
           <option value="new-account">New account</option>
           <option value="new-category">New category</option>
+          {isCategoryType ? null : <option value="new-holding">Investment holding (new security)</option>}
           {isCategoryType ? null : <option value="opening">Opening balances (equity)</option>}
           <option value="skip">Skip</option>
           {props.accounts.length > 0 && (
@@ -127,6 +154,15 @@ function MappingRow(props: {
               {props.accounts.map((a) => (
                 <option key={a.id} value={`account:${a.id}`}>
                   {a.name}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {!isCategoryType && props.securities.length > 0 && (
+            <optgroup label="Existing security">
+              {props.securities.map((x) => (
+                <option key={x.id} value={`security:${x.id}`}>
+                  {x.symbol}: {x.name}
                 </option>
               ))}
             </optgroup>
@@ -169,6 +205,36 @@ function MappingRow(props: {
               <span>On budget</span>
             </label>
           </div>
+        )}
+        {m.kind === "holding" && m.securityId === null && (
+          <div className="map-details">
+            <input
+              aria-label="Ticker symbol"
+              value={m.symbol}
+              maxLength={24}
+              onChange={(e) => props.onChange({ ...m, symbol: e.target.value.toUpperCase() })}
+            />
+            <input
+              aria-label="Security name"
+              value={m.name}
+              maxLength={120}
+              onChange={(e) => props.onChange({ ...m, name: e.target.value })}
+            />
+            <select
+              aria-label="Security type"
+              value={m.type}
+              onChange={(e) => props.onChange({ ...m, type: e.target.value as SecurityType })}
+            >
+              {SECURITY_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {SECURITY_TYPE_LABELS[t]}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        {m.kind === "holding" && (
+          <small className="muted">Held in the account its parent GnuCash account is imported into.</small>
         )}
         {m.kind === "category" && m.categoryId === null && (
           <div className="map-details">
@@ -216,6 +282,13 @@ function PreviewPanel(props: { preview: GnucashPreview; stale: boolean }) {
         {p.voided > 0 && <li>{p.voided} voided (skipped)</li>}
         {p.newAccounts.length > 0 && <li>New accounts: {p.newAccounts.join(", ")}</li>}
         {p.newCategories.length > 0 && <li>New categories: {p.newCategories.join(", ")}</li>}
+        {p.investments > 0 && (
+          <li>
+            {p.investments} investment transaction{p.investments === 1 ? "" : "s"} (buys, sells and splits)
+            {p.prices > 0 && `, plus ${p.prices} price${p.prices === 1 ? "" : "s"} from the book`}
+          </li>
+        )}
+        {p.newSecurities.length > 0 && <li>New securities: {p.newSecurities.join(", ")}</li>}
       </ul>
       {p.warnings.length > 0 && (
         <ul className="import-warnings">
@@ -320,6 +393,7 @@ export function ImportPage() {
   const qc = useQueryClient();
   const accounts = useAccounts();
   const categories = useCategories();
+  const securities = useSecurities();
   const [upload, setUpload] = useState<GnucashUpload | null>(null);
   const [mappings, setMappings] = useState<Record<string, GnucashMapping>>({});
   const [showEmpty, setShowEmpty] = useState(false);
@@ -447,7 +521,8 @@ export function ImportPage() {
               </div>
               <p className="muted">
                 Choose what each GnuCash account becomes. Bank, card and asset accounts become accounts; income and
-                expense accounts become budget categories; equity is treated as opening balances.
+                expense accounts become budget categories; stock and fund accounts become investment holdings; equity is
+                treated as opening balances.
               </p>
               <label className="checkbox inline">
                 <input type="checkbox" checked={showEmpty} onChange={(e) => setShowEmpty(e.target.checked)} />
@@ -466,6 +541,7 @@ export function ImportPage() {
                           onChange={(m) => setMappings((prev) => ({ ...prev, [info.guid]: m }))}
                           accounts={accounts.data ?? []}
                           groups={categories.data ?? []}
+                          securities={securities.data ?? []}
                           currency={upload.currency}
                         />
                       ))}

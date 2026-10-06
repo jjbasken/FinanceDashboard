@@ -1,5 +1,5 @@
 import type { GnucashMapping, ImportBatch } from "@fd/shared";
-import { and, desc, eq, isNull, notExists, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, notExists, sql } from "drizzle-orm";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { HTTPException } from "hono/http-exception";
 import type { Db, DbOrTx } from "../../db";
@@ -10,7 +10,10 @@ import {
   importBatches,
   importedRecords,
   importMappings,
+  investmentTxns,
   payees,
+  prices,
+  securities,
   transactions,
   users,
 } from "../../db/schema";
@@ -19,7 +22,7 @@ import { listAccounts } from "../../services/ledger";
 import { listCategories } from "../../services/categories";
 import type { Actor } from "../../services/ledger";
 import type { GncBook } from "./read";
-import type { AccountRef, CategoryRef, ImportContext, Plan, PlannedRow } from "./plan";
+import type { AccountRef, CategoryRef, ImportContext, Plan, PlannedRow, SecurityRef } from "./plan";
 
 const lower = (s: string) => s.trim().toLowerCase();
 
@@ -50,7 +53,20 @@ export function loadContext(db: DbOrTx, householdId: number): ImportContext {
       .all()
       .map((r) => [r.id, r.mapping as GnucashMapping]),
   );
-  return { accounts: accts, categories: cats, imported, remembered };
+  const secs = db
+    .select({ id: securities.id, symbol: securities.symbol })
+    .from(securities)
+    .where(eq(securities.householdId, householdId))
+    .all();
+  const importedInvestments = new Set(
+    db
+      .select({ id: investmentTxns.importedId })
+      .from(investmentTxns)
+      .where(and(eq(investmentTxns.householdId, householdId), isNotNull(investmentTxns.importedId)))
+      .all()
+      .map((r) => r.id!),
+  );
+  return { accounts: accts, categories: cats, imported, remembered, securities: secs, importedInvestments };
 }
 
 /**
@@ -202,6 +218,31 @@ export function commitPlan(
       .returning({ id: transactions.id })
       .get().id;
 
+  // Securities, then their price history (keeping any prices already there).
+  const newSecurityIds = new Map<string, number>();
+  for (const sec of plan.newSecurities) {
+    const row = db
+      .insert(securities)
+      .values({
+        householdId,
+        symbol: sec.symbol,
+        name: sec.name,
+        type: sec.type,
+        autoPrice: true,
+        importBatchId: batch.id,
+      })
+      .returning({ id: securities.id })
+      .get();
+    newSecurityIds.set(sec.key, row.id);
+  }
+  const securityId = (ref: SecurityRef) => (ref.kind === "existing" ? ref.id : newSecurityIds.get(ref.key)!);
+  for (const p of plan.prices) {
+    db.insert(prices)
+      .values({ securityId: securityId(p.security), date: p.date, close: p.close, source: "gnucash" })
+      .onConflictDoNothing()
+      .run();
+  }
+
   for (const tx of plan.transactions) {
     for (const row of tx.rows) {
       const parentId = insertRow(row, { payeeId: payeeId(row.payeeName), categoryId: categoryId(row.category) });
@@ -233,6 +274,43 @@ export function commitPlan(
       db.update(transactions).set({ transferId: b }).where(eq(transactions.id, a)).run();
       db.update(transactions).set({ transferId: a }).where(eq(transactions.id, b)).run();
     }
+    for (const inv of tx.investments) {
+      const account = accountId(inv.account);
+      const cashId =
+        inv.cash === 0
+          ? null
+          : db
+              .insert(transactions)
+              .values({
+                householdId,
+                accountId: account,
+                date: inv.date,
+                amount: inv.cash,
+                payeeId: payeeId(inv.payeeName),
+                notes: inv.notes,
+                cleared: inv.cleared,
+                importedId: `${inv.importedId}:cash`,
+                ...stamp,
+              })
+              .returning({ id: transactions.id })
+              .get().id;
+      db.insert(investmentTxns)
+        .values({
+          householdId,
+          accountId: account,
+          securityId: securityId(inv.security),
+          date: inv.date,
+          action: inv.action,
+          shares: inv.shares,
+          price: inv.price,
+          amount: inv.amount,
+          notes: inv.notes,
+          transactionId: cashId,
+          importedId: inv.importedId,
+          ...stamp,
+        })
+        .run();
+    }
     db.insert(importedRecords).values({ householdId, batchId: batch.id, externalId: tx.guid }).run();
   }
 
@@ -241,6 +319,9 @@ export function commitPlan(
     if (!m) continue;
     // Remember what was used, with new accounts and categories resolved to their ids.
     if (m.kind === "account" && m.accountId === null) m = { ...m, accountId: newAccountIds.get(account.guid) ?? null };
+    if (m.kind === "holding" && m.securityId === null) {
+      m = { ...m, securityId: newSecurityIds.get(m.symbol) ?? null };
+    }
     if (m.kind === "category" && m.categoryId === null) {
       const key = `${m.isIncome ? 1 : 0}|${lower(m.groupName)}|${lower(m.name)}`;
       m = { ...m, categoryId: newCategoryIds.get(key) ?? null };
@@ -290,7 +371,21 @@ export function undoBatch(db: Db, householdId: number, batchId: number) {
     if (batch.undoneAt) throw new HTTPException(409, { message: "That import was already undone" });
 
     // Parents first is fine: children cascade.
+    tx.delete(investmentTxns).where(eq(investmentTxns.importBatchId, batchId)).run();
     tx.delete(transactions).where(eq(transactions.importBatchId, batchId)).run();
+    tx.delete(securities)
+      .where(
+        and(
+          eq(securities.importBatchId, batchId),
+          notExists(
+            tx
+              .select({ x: sql`1` })
+              .from(investmentTxns)
+              .where(eq(investmentTxns.securityId, securities.id)),
+          ),
+        ),
+      )
+      .run();
 
     const used = (column: SQLiteColumn, id: SQLiteColumn) =>
       tx

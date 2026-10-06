@@ -107,6 +107,17 @@ export class BookBuilder {
     return id;
   }
 
+  /** A price-database entry: `cents` per unit of `mnemonic`, in USD. */
+  price(mnemonic: string, date: string, cents: number) {
+    this.db.run("INSERT INTO prices VALUES (?, ?, ?, ?, 'user:price', 'last', ?, 100)", [
+      guid(),
+      this.commodities.get(mnemonic)!,
+      this.usd,
+      `${date} 10:59:00`,
+      cents,
+    ]);
+  }
+
   bytes() {
     return this.db.serialize();
   }
@@ -214,6 +225,8 @@ export function sampleBook() {
       { account: groceries, value: -500 },
       { account: household, value: 500 },
     ]),
+    // A 2-for-1 split: three shares become six, with no money involved.
+    split: b.tx("2026-03-20", "AAPL 2:1 split", [{ account: aapl, value: 0, shares: 3 }]),
     // An older book stores local midnight converted to UTC (here UTC-5).
     oldStyle: b.tx(
       "2026-03-10",
@@ -225,6 +238,9 @@ export function sampleBook() {
       { postDate: "2026-03-10 05:00:00" },
     ),
   };
+
+  b.price("AAPL", "2026-03-31", 16500);
+  b.price("AAPL", "2026-02-01", 20000);
 
   // A scheduled-transaction template, which must never be imported.
   const templateAccount = b.account("template", "BANK", b.templateRoot);
