@@ -7,11 +7,15 @@ export class ApiError extends Error {
   }
 }
 
+/** Identifies this browser tab, so live updates can skip the tab's own changes. */
+export const clientId = crypto.randomUUID();
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`/api${path}`, {
     method,
     credentials: "same-origin",
-    headers: method === "GET" ? undefined : { "content-type": "application/json" },
+    headers:
+      method === "GET" ? { "x-client-id": clientId } : { "content-type": "application/json", "x-client-id": clientId },
     body: method === "GET" ? undefined : JSON.stringify(body ?? {}),
   });
   const data = res.headers.get("content-type")?.includes("json") ? await res.json() : null;
@@ -24,7 +28,7 @@ async function upload<T>(path: string, file: Blob): Promise<T> {
   const res = await fetch(`/api${path}`, {
     method: "POST",
     credentials: "same-origin",
-    headers: { "content-type": "application/octet-stream" },
+    headers: { "content-type": "application/octet-stream", "x-client-id": clientId },
     body: file,
   });
   const data = res.headers.get("content-type")?.includes("json") ? await res.json() : null;

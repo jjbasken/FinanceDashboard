@@ -1427,6 +1427,83 @@ select {
   align-self: flex-start;
 }
 
+/* Reports */
+.spending-bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.spending-bars li {
+  display: grid;
+  grid-template-columns: minmax(120px, 240px) 1fr 140px;
+  align-items: center;
+  gap: 12px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.spending-bars li.active {
+  background: var(--bg);
+}
+.spending-track {
+  height: 14px;
+}
+.spending-bar {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: 0 4px 4px 0;
+}
+.spending-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Bank import */
+.csv-mapping {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.csv-sample td {
+  font-size: 12px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mapping-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+.bank-items {
+  max-height: 460px;
+  overflow-y: auto;
+}
+.bank-items td.truncate {
+  max-width: 320px;
+}
+.status-badge {
+  font-size: 12px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+.status-badge.new {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.status-badge.match {
+  border-color: var(--positive);
+  color: var(--positive);
+}
+.stale {
+  opacity: 0.6;
+}
+
 @media (max-width: 720px) {
   .shell {
     flex-direction: column;
@@ -1476,6 +1553,13 @@ select {
   }
   .map-row {
     grid-template-columns: 1fr auto;
+  }
+  .spending-bars li {
+    grid-template-columns: 1fr 96px;
+  }
+  .spending-track {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
   .map-count {
     display: none;

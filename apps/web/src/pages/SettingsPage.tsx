@@ -5,6 +5,7 @@ import { Link } from "react-router";
 import { api } from "../api";
 import { useAuthStatus } from "../auth";
 import { CategoriesCard } from "../components/CategoriesCard";
+import { BackupCard } from "../components/BackupCard";
 import { useMembers } from "../ledger";
 
 export function SettingsPage() {
@@ -75,13 +76,17 @@ export function SettingsPage() {
         </section>
         <section className="card">
           <h2>Import</h2>
-          <p className="muted">Bring in your history from a GnuCash book, or add new transactions from it later.</p>
+          <p className="muted">
+            Add transactions from a bank or card statement (OFX, QFX or CSV), or bring in your history from a GnuCash
+            book.
+          </p>
           <div>
             <Link className="btn" to="/import">
-              Import from GnuCash
+              Import transactions
             </Link>
           </div>
         </section>
+        <BackupCard isOwner={isOwner} />
         <CategoriesCard />
       </div>
     </>

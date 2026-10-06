@@ -6,6 +6,7 @@ import { openDb } from "./db";
 import { purgeExpiredSessions } from "./auth/sessions";
 import { seedOwnerFromEnv } from "./seed";
 import { MAX_UPLOAD_BYTES } from "./routes/import";
+import { runNightlyBackup } from "./services/backup";
 import { refreshPrices, yahooProvider } from "./services/prices";
 import { localDate } from "./util";
 
@@ -28,7 +29,25 @@ purgeExpiredSessions(db);
 setInterval(() => purgeExpiredSessions(db), 6 * 60 * 60 * 1000);
 
 const priceProvider = yahooProvider();
-const app = createApp({ db, secureCookies, priceProvider });
+const backupDir = join(dataDir, "backups");
+const app = createApp({ db, secureCookies, priceProvider, backupDir });
+
+// Nightly backups: check hourly and make today's copy if it's missing, keeping the newest
+// BACKUP_KEEP (default 14). Set BACKUP_KEEP=0 to turn them off.
+const keepBackups = Number(process.env.BACKUP_KEEP ?? 14);
+if (keepBackups > 0) {
+  const backup = () => {
+    try {
+      const { name, created, removed } = runNightlyBackup(db, backupDir, localDate(), keepBackups);
+      if (created) console.log(`Backed up the database to ${join(backupDir, name)}.`);
+      if (removed.length) console.log(`Removed old backups: ${removed.join(", ")}.`);
+    } catch (err) {
+      console.error("Backup failed:", err);
+    }
+  };
+  backup();
+  setInterval(backup, 60 * 60 * 1000);
+}
 
 // Keep prices current: shortly after start-up, then every six hours. Each run only fetches days
 // we don't have yet, so it's cheap. Set PRICE_REFRESH=off to disable (e.g. with no internet).
@@ -63,5 +82,5 @@ if (existsSync(join(webDist, "index.html"))) {
 
 console.log(`Finance Dashboard listening on http://localhost:${port} (data: ${dataDir})`);
 
-// Leave room for GnuCash book uploads.
-export default { port, fetch: app.fetch, maxRequestBodySize: MAX_UPLOAD_BYTES + 1024 * 1024 };
+// Leave room for GnuCash book uploads, and keep live-update streams (pinged every 25s) open.
+export default { port, fetch: app.fetch, maxRequestBodySize: MAX_UPLOAD_BYTES + 1024 * 1024, idleTimeout: 60 };

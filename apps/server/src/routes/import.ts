@@ -1,4 +1,12 @@
-import { gnucashImportInput, type GnucashMapping, type GnucashUpload } from "@fd/shared";
+import {
+  bankCommitInput,
+  bankPreviewInput,
+  gnucashImportInput,
+  type BankUpload,
+  type CsvMapping,
+  type GnucashMapping,
+  type GnucashUpload,
+} from "@fd/shared";
 import { randomUUID } from "node:crypto";
 import { unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -10,6 +18,18 @@ import { actorOf, idParam, parseBody, requireAuth } from "../middleware";
 import { commitPlan, listBatches, loadContext, undoBatch } from "../importers/gnucash/commit";
 import { MappingError, planImport, suggestMappings } from "../importers/gnucash/plan";
 import { BookError, checkFormat, readBook, type GncBook } from "../importers/gnucash/read";
+import { commitBankImport, planBankImport } from "../importers/bank/plan";
+import {
+  BankFileError,
+  csvToTxns,
+  detectFormat,
+  parseCsv,
+  parseOfx,
+  suggestCsvMapping,
+  type BankTxn,
+} from "../importers/bank/parse";
+import { getAccount } from "../services/ledger";
+import { listCategories } from "../services/categories";
 
 export const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
 const UPLOAD_TTL_MS = 60 * 60 * 1000;
@@ -24,8 +44,44 @@ interface Upload {
 /** Parsed books waiting for the user to finish the wizard. The file itself is deleted right away. */
 const uploads = new Map<string, Upload>();
 
+interface BankFile {
+  householdId: number;
+  accountId: number;
+  fileName: string;
+  format: "ofx" | "csv";
+  ofx?: BankTxn[];
+  csv?: string[][];
+  expiresAt: number;
+}
+
+/** Bank statement files waiting for review. */
+const bankUploads = new Map<string, BankFile>();
+
 function purgeExpired(now = Date.now()) {
   for (const [id, u] of uploads) if (u.expiresAt <= now) uploads.delete(id);
+  for (const [id, u] of bankUploads) if (u.expiresAt <= now) bankUploads.delete(id);
+}
+
+function getBankUpload(id: string, householdId: number) {
+  purgeExpired();
+  const upload = bankUploads.get(id);
+  if (!upload || upload.householdId !== householdId) {
+    throw new HTTPException(404, { message: "That upload has expired. Upload the file again." });
+  }
+  return upload;
+}
+
+/** The file's transactions, reading CSV with the given column mapping. */
+function bankTxns(upload: BankFile, csv: CsvMapping | undefined) {
+  if (upload.format === "ofx") return { txns: upload.ofx!, errors: [] };
+  if (!csv) throw new HTTPException(400, { message: "Choose which columns hold the date and amount" });
+  const width = Math.max(...upload.csv!.map((r) => r.length));
+  const cols = [csv.date, csv.payee, csv.notes, csv.amount, csv.debit, csv.credit].filter((c) => c !== null);
+  if (cols.some((c) => c! >= width)) throw new HTTPException(400, { message: "That column isn't in the file" });
+  if (csv.amount === null && csv.debit === null && csv.credit === null) {
+    throw new HTTPException(400, { message: "Choose the amount column (or debit and credit columns)" });
+  }
+  return csvToTxns(upload.csv!, csv);
 }
 
 function getUpload(id: string, householdId: number) {
@@ -161,6 +217,72 @@ export const importRoutes = new Hono<AppEnv>()
       return { batchId, preview: p.preview };
     });
     uploads.delete(uploadId);
+    return c.json(result, 201);
+  })
+
+  /** Upload a bank statement (OFX/QFX or CSV) for one account, as the raw request body. */
+  .post("/bank", async (c) => {
+    const { householdId } = actorOf(c);
+    const accountId = Number(c.req.query("accountId"));
+    if (!Number.isInteger(accountId) || accountId <= 0) throw new HTTPException(400, { message: "Pick an account" });
+    getAccount(c.var.db, householdId, accountId);
+    const body = await c.req.arrayBuffer();
+    if (body.byteLength === 0) throw new HTTPException(400, { message: "The file is empty" });
+    if (body.byteLength > 20 * 1024 * 1024)
+      throw new HTTPException(413, { message: "That file is too large (20 MB max)" });
+
+    const text = new TextDecoder().decode(body);
+    const format = detectFormat(text);
+    const fileName = cleanFileName(c.req.query("name"));
+    const upload: BankFile = { householdId, accountId, fileName, format, expiresAt: Date.now() + UPLOAD_TTL_MS };
+    try {
+      if (format === "ofx") upload.ofx = parseOfx(text);
+      else {
+        upload.csv = parseCsv(text);
+        if (upload.csv.length === 0) throw new BankFileError("That file has no rows.");
+      }
+    } catch (err) {
+      if (err instanceof BankFileError) throw new HTTPException(400, { message: err.message });
+      throw err;
+    }
+    purgeExpired();
+    const uploadId = randomUUID();
+    bankUploads.set(uploadId, upload);
+    const result: BankUpload = { uploadId, fileName, format, accountId };
+    if (upload.csv) result.csv = { rows: upload.csv.slice(0, 8), suggested: suggestCsvMapping(upload.csv) };
+    return c.json(result, 201);
+  })
+
+  .post("/bank/:uploadId/preview", async (c) => {
+    const { householdId } = actorOf(c);
+    const upload = getBankUpload(c.req.param("uploadId"), householdId);
+    const { csv } = await parseBody(c, bankPreviewInput);
+    const { txns, errors } = bankTxns(upload, csv);
+    const account = getAccount(c.var.db, householdId, upload.accountId);
+    const { ids: _ids, ...preview } = planBankImport(c.var.db, householdId, account, txns);
+    return c.json({ ...preview, errors });
+  })
+
+  .post("/bank/:uploadId/commit", async (c) => {
+    const actor = actorOf(c);
+    const uploadId = c.req.param("uploadId");
+    const upload = getBankUpload(uploadId, actor.householdId);
+    const input = await parseBody(c, bankCommitInput);
+    const { txns } = bankTxns(upload, input.csv);
+    const result = c.var.db.transaction((tx) => {
+      const account = getAccount(tx, actor.householdId, upload.accountId);
+      const categoryIds = new Set(listCategories(tx, actor.householdId).flatMap((g) => g.categories.map((x) => x.id)));
+      return commitBankImport(tx, actor, {
+        account,
+        format: upload.format,
+        fileName: upload.fileName,
+        plan: planBankImport(tx, actor.householdId, account, txns),
+        include: new Set(input.include),
+        categories: input.categories ?? {},
+        validCategory: (id) => categoryIds.has(id),
+      });
+    });
+    bankUploads.delete(uploadId);
     return c.json(result, 201);
   })
 

@@ -7,12 +7,12 @@ import { BudgetPage } from "./pages/BudgetPage";
 import { ImportPage } from "./pages/ImportPage";
 import { AcceptInvitePage } from "./pages/AcceptInvitePage";
 import { LoginPage } from "./pages/LoginPage";
-import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SetupPage } from "./pages/SetupPage";
 
-// The charting library is large, so the investments page loads on demand.
+// The charting library is large, so pages with charts load on demand.
 const InvestmentsPage = lazy(() => import("./pages/InvestmentsPage").then((m) => ({ default: m.InvestmentsPage })));
+const ReportsPage = lazy(() => import("./pages/ReportsPage").then((m) => ({ default: m.ReportsPage })));
 
 export function App() {
   const { data: status, isPending, error } = useAuthStatus();
@@ -43,7 +43,14 @@ export function App() {
     <Routes>
       <Route element={<AppShell />}>
         <Route path="/budget" element={<BudgetPage />} />
-        <Route path="/reports" element={<PlaceholderPage title="Reports" milestone="Reports" />} />
+        <Route
+          path="/reports"
+          element={
+            <Suspense fallback={<p className="muted page-error">Loading…</p>}>
+              <ReportsPage />
+            </Suspense>
+          }
+        />
         <Route
           path="/investments"
           element={
