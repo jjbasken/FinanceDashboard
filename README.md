@@ -1,6 +1,6 @@
 # FinanceDashboard
 
-A self-hosted family finance manager: Actual Budget-style envelope budgeting, investment tracking, and GnuCash import, with a separate login for each household member.
+A self-hosted family finance manager with an Actual Budget-style interface: monthly budgeting, a fast transaction register, investment tracking, reports, and imports from GnuCash and bank statements, with a separate login for each household member.
 
 > **Status:** all six milestones are done: auth and households; the ledger (accounts, categories, payees, and a keyboard-driven register with transfers, splits and reconciliation); the monthly budget; GnuCash and bank-statement imports; investments with automatic daily prices; and reports, live updates between sessions, and nightly backups.
 
@@ -35,7 +35,7 @@ Migrations are stored in `apps/server/drizzle/` and run automatically when the s
 
 ## Importing from GnuCash
 
-Go to **Settings → Import from GnuCash** and upload a **copy** of your book saved in the sqlite3 format. (In GnuCash, use File → Save As… and set the data format to "sqlite3". XML books aren't supported.) Before anything is saved, you can review how each GnuCash account maps:
+Go to **Settings → Import transactions** and upload a **copy** of your book saved in the sqlite3 format. (In GnuCash, use File → Save As… and set the data format to "sqlite3". XML books aren't supported.) Before anything is saved, you can review how each GnuCash account maps:
 
 - Bank, cash, credit card, asset and liability accounts become accounts. You choose whether each one is on budget.
 - Income and expense accounts become categories. For example, `Expenses:Auto:Fuel` becomes the group "Auto" and the category "Fuel". Accounts that match an existing category name use that category.
@@ -44,14 +44,42 @@ Go to **Settings → Import from GnuCash** and upload a **copy** of your book sa
 
 The preview shows how many transactions will be imported and compares each account's balance with GnuCash's. You can import the same book again later: only transactions you haven't imported yet are added, and your previous mapping is remembered. A transaction you deleted here is not brought back. Each import can be undone from the same page.
 
+## Importing bank statements
 
+On the same Import page, choose an account and upload an **OFX/QFX** or **CSV** file from your bank:
+
+- For a CSV, confirm which columns hold the date, payee and amount. The app guesses these, including separate debit and credit columns and the date format. Tick the box if spending shows as positive numbers, as is common for credit cards.
+- Rows already imported from an earlier statement are skipped, so overlapping files are fine.
+- If a row matches a transaction already in the account (same amount, within 3 days), the two are linked instead of duplicated. The existing transaction is marked cleared. This covers rows you entered by hand and rows brought in from GnuCash.
+- New rows are cleared, and their category is suggested from the last time you used that payee. You can untick rows or change categories before importing.
+- Each import can be undone from the Past imports list.
+
+## Investments
+
+Investments live in **Investment** accounts. An account's register holds its cash, and the **Investments** page tracks the securities it holds:
+
+- Add a security by ticker. "Look up" fills in its name and type from Yahoo Finance. Then record buys, sells, dividends, reinvested dividends, splits, and shares moved in or out.
+- Buys, sells and dividends add a linked cash entry to the account's register. You can only change that entry from the Investments page.
+- Holdings show shares, the latest price, market value, average-cost basis and unrealized gain. Account balances and the sidebar total include market value.
+- Prices are fetched daily from Yahoo Finance's public chart data, which needs no API key, and you can refresh them on demand. For anything Yahoo doesn't cover, enter prices by hand.
+
+## Reports, live updates and backups
+
+- **Reports**
+  - **Net worth:** every account over time, with investments at market value.
+  - **Cash flow:** income and spending per month, by category.
+  - **Spending by category:** totals for any period.
+- **Live updates:** when one of you changes something, the other's open window refreshes on its own.
+- **Backups:** each night the server saves a copy of the database to `backups/` in the data folder and keeps the newest 14. The household owner can also download a fresh copy from **Settings → Backups**. To restore, stop the app, delete `finance.db-wal` and `finance.db-shm` if they exist, and replace `finance.db` with the backup file.
+
+## Production (Docker)
 
 ```sh
 cd docker
 docker compose up -d --build
 ```
 
-The app runs at http://localhost:8080. Its SQLite database is stored in `docker/data/`, which is the folder to back up.
+The app runs at http://localhost:8080. Its SQLite database is stored in `docker/data/`, and nightly backups go to `docker/data/backups/`. Copy that folder somewhere else (another disk, or cloud storage) to keep your data safe if this machine fails.
 
 ### Configuration
 
@@ -63,6 +91,8 @@ All settings are optional. To change any of them, copy `.env.example` to `.env` 
 | `DATA_DIR`                | `./data` / `/data`           | Folder that holds `finance.db`                       |
 | `WEB_DIST`                | `apps/web/dist`              | Built web app served by the server                   |
 | `COOKIE_SECURE`           | `false`                      | Set to `true` when the app is served over HTTPS      |
+| `PRICE_REFRESH`           | `on`                         | Set to `off` to stop fetching investment prices      |
+| `BACKUP_KEEP`             | `14`                         | Nightly backups to keep; `0` turns them off          |
 | `SEED_HOUSEHOLD_NAME`     | (unset)                      | First-boot seeding; see below                        |
 | `SEED_OWNER_USERNAME`     | (unset)                      |                                                      |
 | `SEED_OWNER_PASSWORD`     | (unset)                      |                                                      |
