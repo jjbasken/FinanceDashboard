@@ -75,12 +75,14 @@ The budget is a plan for one month at a time. Each month stands on its own:
 
 ## Importing from GnuCash
 
-Go to **Settings → Import transactions** and upload a **copy** of your book saved in the sqlite3 format. (In GnuCash, use File → Save As… and set the data format to "sqlite3". XML books aren't supported.) Before anything is saved, you can review how each GnuCash account maps:
+Go to **Settings → Import transactions** and upload a **copy** of your `.gnucash` file as it is. GnuCash's normal (compressed XML) format works, and so does a book saved as sqlite3. Before anything is saved, you can review how each GnuCash account maps:
 
 - Bank, cash, credit card, asset and liability accounts become accounts. You choose whether each one is on budget.
 - Income and expense accounts become categories. For example, `Expenses:Auto:Fuel` becomes the group "Auto" and the category "Fuel". Accounts that match an existing category name use that category.
 - Equity is treated as opening balances. `Imbalance-*` and `Orphan-*` accounts are skipped, so their share of a transaction is imported as uncategorized.
 - Stock and mutual fund accounts become investment holdings in the account their parent GnuCash account is imported into. Buys, sells and splits come in with their share counts, along with the book's price history.
+
+To bring in a single investment account (a 401k, say), export just that account instead: in GnuCash, select it and use File → Export → Export Transactions to CSV, leaving "Use simple layout" unticked, then upload the CSV the same way. When you add an Investment account here, tick **Then import its history from GnuCash** (or use **Import from GnuCash** in the account's menu) and the file's investment account is mapped to it automatically. A CSV has no price history, and funds without a ticker symbol (common in 401k plans) don't get automatic daily prices; add prices for them on the Investments page.
 
 The preview shows how many transactions will be imported and compares each account's balance with GnuCash's. You can import the same book again later: only transactions you haven't imported yet are added, and your previous mapping is remembered. A transaction you deleted here is not brought back. Each import can be undone from the same page.
 

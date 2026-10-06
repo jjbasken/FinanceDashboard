@@ -107,6 +107,9 @@ export function InvestmentsPage() {
           <button className="btn" onClick={() => refresh.mutate()} disabled={refresh.isPending}>
             {refresh.isPending ? "Refreshing…" : "Refresh prices"}
           </button>
+          <Link className="btn" to="/import">
+            Import from GnuCash
+          </Link>
           <button className="btn" onClick={() => setSecurityDialog("new")}>
             Add security
           </button>

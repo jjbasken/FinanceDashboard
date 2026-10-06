@@ -55,7 +55,7 @@ export function loadContext(db: DbOrTx, householdId: number): ImportContext {
       .map((r) => [r.id, r.mapping as GnucashMapping]),
   );
   const secs = db
-    .select({ id: securities.id, symbol: securities.symbol })
+    .select({ id: securities.id, symbol: securities.symbol, name: securities.name })
     .from(securities)
     .where(eq(securities.householdId, householdId))
     .all();
@@ -229,7 +229,7 @@ export function commitPlan(
         symbol: sec.symbol,
         name: sec.name,
         type: sec.type,
-        autoPrice: true,
+        autoPrice: sec.autoPrice,
         importBatchId: batch.id,
       })
       .returning({ id: securities.id })

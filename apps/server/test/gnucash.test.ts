@@ -60,15 +60,17 @@ test("gnucashDate handles new and old timestamp styles", () => {
 });
 
 describe("uploading", () => {
-  test("rejects files that aren't sqlite GnuCash books, with a helpful message", async () => {
+  test("rejects files that aren't GnuCash books, with a helpful message", async () => {
     const { jeremy } = await setUp();
-    const xml = await jeremy.upload("/api/import/gnucash", new TextEncoder().encode('<?xml version="1.0"?><gnc-v2/>'));
-    expect(xml.status).toBe(400);
-    expect(xml.json.error).toContain("sqlite3");
+    // XML books are read (see gnucash-xml.test.ts); an empty or broken one is explained.
+    const empty = await jeremy.upload("/api/import/gnucash", new TextEncoder().encode('<?xml version="1.0"?><gnc-v2/>'));
+    expect(empty.status).toBe(400);
+    expect(empty.json.error).toContain("no root account");
     const gz = await jeremy.upload("/api/import/gnucash", new Uint8Array([0x1f, 0x8b, 8, 0, 0, 0]));
-    expect(gz.json.error).toContain("XML");
+    expect(gz.json.error).toContain("decompress");
     const junk = await jeremy.upload("/api/import/gnucash", new TextEncoder().encode("hello"));
     expect(junk.status).toBe(400);
+    expect(junk.json.error).toContain("Export Transactions to CSV");
     const { Database } = await import("bun:sqlite");
     const other = new Database(":memory:");
     other.exec("create table notes (x text)");

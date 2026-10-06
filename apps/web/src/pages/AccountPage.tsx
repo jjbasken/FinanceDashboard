@@ -95,6 +95,9 @@ function AccountMenu(props: { account: Account }) {
       >
         <button onClick={rename}>Rename</button>
         <button onClick={toggleBudget}>{account.onBudget ? "Move off budget" : "Move on budget"}</button>
+        {account.type === "investment" && (
+          <button onClick={() => navigate(`/import?account=${account.id}`)}>Import from GnuCash</button>
+        )}
         <button onClick={toggleClosed}>{account.closed ? "Reopen account" : "Close account"}</button>
         <button className="danger" onClick={del}>
           Delete account

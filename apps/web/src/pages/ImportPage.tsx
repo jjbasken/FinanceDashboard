@@ -18,7 +18,7 @@ import {
 } from "@fd/shared";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { api } from "../api";
 import { BankImport } from "../components/BankImport";
 import { formatDate, useAccounts, useCategories, useLedgerMutation, useSecurities } from "../ledger";
@@ -398,6 +398,8 @@ export function ImportPage() {
   const accounts = useAccounts();
   const categories = useCategories();
   const securities = useSecurities();
+  const [params] = useSearchParams();
+  const targetAccount = accounts.data?.find((a) => a.id === Number(params.get("account")));
   const [upload, setUpload] = useState<GnucashUpload | null>(null);
   const [mappings, setMappings] = useState<Record<string, GnucashMapping>>({});
   const [showEmpty, setShowEmpty] = useState(false);
@@ -409,6 +411,20 @@ export function ImportPage() {
     onSuccess: (u) => {
       setUpload(u);
       const initial = Object.fromEntries(u.accounts.map((a) => [a.guid, a.suggested]));
+      // Importing into a chosen account: if exactly one GnuCash account holds investments (and
+      // wasn't mapped somewhere by an earlier import), point it at that account.
+      const homes = u.accounts.filter(
+        (a) => !a.remembered && a.suggested.kind === "account" && a.suggested.type === "investment" && a.splitCount > 0,
+      );
+      if (targetAccount && homes.length === 1) {
+        initial[homes[0]!.guid] = {
+          kind: "account",
+          accountId: targetAccount.id,
+          name: targetAccount.name,
+          type: targetAccount.type,
+          onBudget: targetAccount.onBudget,
+        };
+      }
       setMappings(initial);
       setDebounced(initial);
     },
@@ -487,15 +503,23 @@ export function ImportPage() {
         {!upload && <BankImport />}
         {!upload && (
           <section className="card">
-            <h2>GnuCash book</h2>
+            <h2>GnuCash</h2>
+            {targetAccount && (
+              <p className="notice">
+                Importing into <strong>{targetAccount.name}</strong>. The GnuCash account that holds the investments'
+                cash will be mapped to it; you can change that on the next screen.
+              </p>
+            )}
             <p className="muted">
-              Upload a <strong>copy</strong> of your GnuCash book saved in the <strong>sqlite3</strong> format (in
-              GnuCash: File → Save As…, data format “sqlite3”). Nothing is saved until you review the mapping and
-              confirm. You can import the same book again later: only new transactions are added.
+              Upload a <strong>copy</strong> of your <strong>.gnucash</strong> file as it is (GnuCash's normal format
+              works, and so does a book saved as sqlite3). To bring in just one investment account, export it instead:
+              in GnuCash, select the account and use File → Export → Export Transactions to CSV, with “Use simple
+              layout” left unticked. Nothing is saved until you review the mapping and confirm, and you can import again
+              later: only new transactions are added.
             </p>
             <input
               type="file"
-              accept=".gnucash,.sqlite,.sqlite3,.db"
+              accept=".gnucash,.gz,.xml,.sqlite,.sqlite3,.db,.csv"
               aria-label="GnuCash book"
               disabled={send.isPending}
               onChange={(e) => {
@@ -515,6 +539,7 @@ export function ImportPage() {
                 <div>
                   <h2>{upload.fileName}</h2>
                   <p className="muted">
+                    {upload.source === "csv" ? "CSV export, " : ""}
                     {upload.transactionCount} transactions
                     {upload.firstDate && ` from ${formatDate(upload.firstDate)} to ${formatDate(upload.lastDate!)}`}, in{" "}
                     {upload.currency}.

@@ -13,11 +13,15 @@ export function AddAccountDialog(props: { onClose: () => void }) {
   const [balance, setBalance] = useState("");
   const [date, setDate] = useState(today());
   const [error, setError] = useState<string | null>(null);
+  const [importNext, setImportNext] = useState(false);
 
   const create = useLedgerMutation((body: unknown) => api.post<Account>("/accounts", body));
 
+  // The imported history brings the balance with it.
+  const importing = importNext && type === "investment";
+
   function submit() {
-    const startingBalance = balance.trim() === "" ? 0 : parseCents(balance);
+    const startingBalance = importing || balance.trim() === "" ? 0 : parseCents(balance);
     if (startingBalance === null) return setError("Enter the balance as a number, like 1,234.56");
     setError(null);
     create.mutate(
@@ -25,7 +29,7 @@ export function AddAccountDialog(props: { onClose: () => void }) {
       {
         onSuccess: (account) => {
           props.onClose();
-          navigate(`/accounts/${account.id}`);
+          navigate(importing ? `/import?account=${account.id}` : `/accounts/${account.id}`);
         },
       },
     );
@@ -67,16 +71,31 @@ export function AddAccountDialog(props: { onClose: () => void }) {
           On budget <small className="muted">(its spending is tracked against budget categories)</small>
         </span>
       </label>
-      <div className="field-row">
-        <label className="field">
-          <span>Current balance</span>
-          <input value={balance} onChange={(e) => setBalance(e.target.value)} placeholder="0.00" inputMode="decimal" />
+      {!importing && (
+        <div className="field-row">
+          <label className="field">
+            <span>Current balance</span>
+            <input
+              value={balance}
+              onChange={(e) => setBalance(e.target.value)}
+              placeholder="0.00"
+              inputMode="decimal"
+            />
+          </label>
+          <label className="field">
+            <span>As of</span>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+          </label>
+        </div>
+      )}
+      {type === "investment" && (
+        <label className="checkbox">
+          <input type="checkbox" checked={importNext} onChange={(e) => setImportNext(e.target.checked)} />
+          <span>
+            Then import its history from GnuCash <small className="muted">(a .gnucash file or a CSV export)</small>
+          </span>
         </label>
-        <label className="field">
-          <span>As of</span>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
-        </label>
-      </div>
+      )}
       {type === "credit" || type === "loan" ? (
         <small className="muted">Enter money you owe as a negative number.</small>
       ) : null}
