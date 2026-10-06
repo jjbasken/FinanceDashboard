@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { centsSchema, dateSchema } from "./ledger";
-import { SHARE_SCALE } from "./money";
+import { getDisplayCurrency, SHARE_SCALE } from "./money";
 
 /** Prices are integer micro-dollars (1e-6 of the currency unit), like shares are micro-shares. */
 export const PRICE_SCALE = 1_000_000;
@@ -60,6 +60,15 @@ export const parseShares = parseMicros;
 export const parsePrice = parseMicros;
 export const sharesToString = (micro: number) => microsToString(micro);
 export const priceToString = (micros: number) => microsToString(micros, 2);
+
+/** A price per share for display, e.g. "$380.27" or "€12.3456", keeping up to 6 decimals. */
+export function formatPrice(micros: number, currency = getDisplayCurrency()): string {
+  const symbol =
+    new Intl.NumberFormat("en-US", { style: "currency", currency, currencyDisplay: "narrowSymbol" })
+      .formatToParts(0)
+      .find((p) => p.type === "currency")?.value ?? "";
+  return `${micros < 0 ? "-" : ""}${symbol}${priceToString(Math.abs(micros))}`;
+}
 
 /** shares × price in cents, rounded half away from zero, computed exactly with BigInt. */
 export function sharesValueCents(sharesMicro: number, priceMicros: number): number {
@@ -159,6 +168,9 @@ export interface InvestmentTxn {
   /** The linked cash transaction in the account's register, if cash moved. */
   transactionId: number | null;
   notes: string;
+  /** For splits entered here, the ratio (e.g. 2 for 1). Null for imported splits. */
+  splitNew: number | null;
+  splitOld: number | null;
 }
 
 export interface Holding {

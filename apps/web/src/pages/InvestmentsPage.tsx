@@ -1,7 +1,7 @@
 import {
   INVESTMENT_ACTION_LABELS,
   formatCents,
-  priceToString,
+  formatPrice,
   sharesToString,
   type InvestmentTxn,
   type PriceRefreshResult,
@@ -213,7 +213,7 @@ export function InvestmentsPage() {
                             className="amount"
                             title={h.priceDate ? `As of ${formatDate(h.priceDate)}` : "No price yet"}
                           >
-                            {h.price !== null ? `$${priceToString(h.price)}` : "–"}
+                            {h.price !== null ? formatPrice(h.price) : "–"}
                           </td>
                           <td className="amount">{formatCents(h.value)}</td>
                           <td className="amount">{formatCents(h.cost)}</td>
@@ -268,7 +268,7 @@ export function InvestmentsPage() {
                       <td>{INVESTMENT_ACTION_LABELS[t.action]}</td>
                       <td>{secById.get(t.securityId)?.symbol}</td>
                       <td className="amount">{t.shares ? sharesToString(t.shares) : ""}</td>
-                      <td className="amount">{t.price ? `$${priceToString(t.price)}` : ""}</td>
+                      <td className="amount">{t.price ? formatPrice(t.price) : ""}</td>
                       <td className="amount">{t.amount ? formatCents(t.amount) : ""}</td>
                       <td className="amount">
                         <button className="link-button" onClick={() => setEditing(t)}>
@@ -306,7 +306,7 @@ export function InvestmentsPage() {
                       </td>
                       <td>{s.name}</td>
                       <td className="amount">
-                        {s.latestPrice !== null ? `$${priceToString(s.latestPrice)}` : "–"}
+                        {s.latestPrice !== null ? formatPrice(s.latestPrice) : "–"}
                         {s.latestPriceDate && <span className="muted small"> {formatDate(s.latestPriceDate)}</span>}
                       </td>
                       <td className="muted">{s.autoPrice ? "Automatic" : "Manual"}</td>

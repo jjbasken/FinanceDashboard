@@ -13,9 +13,8 @@ import {
   YAxis,
 } from "recharts";
 import { formatDate } from "../ledger";
-import { SERIES } from "./InvestmentCharts";
+import { compact, SERIES } from "./InvestmentCharts";
 
-const compact = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact" });
 const monthLabel = (m: string) =>
   new Date(`${m}-01T00:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "2-digit", timeZone: "UTC" });
 

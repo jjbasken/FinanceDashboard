@@ -121,6 +121,31 @@ describe("investment transactions", () => {
     expect((await position())!.shares).toBe(20 * SH);
   });
 
+  test("splits are recomputed from their ratio when earlier transactions change", async () => {
+    const { c, txn, position } = await setUp();
+    const buy = await txn({ date: "2026-01-05", action: "buy", shares: 10 * SH, price: $(100) });
+    await txn({ date: "2026-02-01", action: "split", splitNew: 2, splitOld: 1 });
+    expect((await position())!.shares).toBe(20 * SH);
+
+    const list = (await c.get("/api/investments/transactions")).json as InvestmentTxn[];
+    expect(list.find((t) => t.action === "split")).toMatchObject({ splitNew: 2, splitOld: 1, shares: 10 * SH });
+    const original = list.find((t) => t.id === buy.id)!;
+    await c.request("PUT", `/api/investments/transactions/${buy.id}`, {
+      accountId: original.accountId,
+      securityId: original.securityId,
+      date: original.date,
+      action: "buy",
+      shares: 15 * SH,
+      price: $(100),
+    });
+    expect((await position())!.shares).toBe(30 * SH);
+
+    // A later buy before the split's date counts too; one after it doesn't.
+    await txn({ date: "2026-01-20", action: "buy", shares: 5 * SH, price: $(100) });
+    await txn({ date: "2026-03-01", action: "buy", shares: 1 * SH, price: $(100) });
+    expect((await position())!.shares).toBe(41 * SH);
+  });
+
   test("editing and deleting keep the cash row and share counts consistent", async () => {
     const { c, txn, position, register } = await setUp();
     const buy = await txn({ date: "2026-01-05", action: "buy", shares: 10 * SH, price: $(100) });
@@ -191,6 +216,22 @@ describe("prices", () => {
 
     await c.post("/api/investments/prices/refresh");
     expect(prices.calls[1]).toMatchObject({ symbol: "VTI", from: "2026-02-03" });
+  });
+
+  test("securities you've sold out of stop getting price updates", async () => {
+    const { c, txn, prices } = await setUp(quotes);
+    await txn({ date: "2026-01-05", action: "buy", shares: 1 * SH, price: $(200) });
+    await txn({ date: "2026-01-06", action: "sell", shares: 1 * SH, price: $(201) });
+    await c.post("/api/investments/securities", { symbol: "WATCH", name: "Never traded", type: "stock" });
+    await c.post("/api/investments/prices/refresh");
+    expect(prices.calls.map((x) => x.symbol)).toEqual(["WATCH"]);
+  });
+
+  test("cash notes use the household's currency", async () => {
+    const { c, txn, register } = await setUp();
+    await c.patch("/api/household", { currency: "EUR" });
+    await txn({ date: "2026-01-05", action: "buy", shares: 2 * SH, price: $(12.5), fees: 100 });
+    expect((await register())[0]!.notes).toBe("2 @ €12.50 + €1.00 fees");
   });
 
   test("manual prices win and failures are reported per symbol", async () => {

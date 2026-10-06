@@ -28,8 +28,19 @@ export function parseCents(input: string): number | null {
 
 const formatters = new Map<string, Intl.NumberFormat>();
 
+let displayCurrency = "USD";
+
+/** Set the currency amounts are shown in (the household's setting). Display only; nothing is converted. */
+export function setDisplayCurrency(code: string) {
+  displayCurrency = code;
+}
+
+export function getDisplayCurrency() {
+  return displayCurrency;
+}
+
 /** Format integer cents for display, e.g. 123456 -> "$1,234.56". */
-export function formatCents(cents: number, currency = "USD", locale = "en-US"): string {
+export function formatCents(cents: number, currency = displayCurrency, locale = "en-US"): string {
   const key = `${locale}|${currency}`;
   let fmt = formatters.get(key);
   if (!fmt) {

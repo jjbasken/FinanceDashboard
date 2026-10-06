@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { secureHeaders } from "hono/secure-headers";
 import type { Db } from "./db";
 import type { SessionContext } from "./auth/sessions";
 import { LoginRateLimiter } from "./auth/rate-limit";
@@ -27,6 +28,8 @@ export interface AppOptions {
   priceProvider?: PriceProvider;
   /** Folder for nightly backups, or null when they're off (tests). */
   backupDir?: string | null;
+  /** Trust X-Forwarded-For for the client's address (only behind a reverse proxy you run). */
+  trustProxy?: boolean;
 }
 
 export type AppEnv = {
@@ -38,6 +41,7 @@ export type AppEnv = {
     priceProvider: PriceProvider;
     events: EventHub;
     backupDir: string | null;
+    trustProxy: boolean;
   };
 };
 
@@ -46,10 +50,34 @@ export function createApp({
   secureCookies = false,
   priceProvider = yahooProvider(),
   backupDir = null,
+  trustProxy = false,
 }: AppOptions) {
   const loginLimiter = new LoginRateLimiter();
   const events = new EventHub();
   const app = new Hono<AppEnv>();
+
+  // Defence in depth for the API and the web app it serves: no framing, no inline scripts, no
+  // content sniffing, and no referrer leaking out. HSTS only when served over HTTPS.
+  app.use(
+    "*",
+    secureHeaders({
+      contentSecurityPolicy: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        // React and the charts set style attributes.
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:"],
+        connectSrc: ["'self'"],
+        fontSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+        frameAncestors: ["'none'"],
+      },
+      strictTransportSecurity: secureCookies ? "max-age=15552000" : false,
+      referrerPolicy: "no-referrer",
+    }),
+  );
 
   app.use("/api/*", async (c, next) => {
     c.set("db", db);
@@ -58,6 +86,7 @@ export function createApp({
     c.set("priceProvider", priceProvider);
     c.set("events", events);
     c.set("backupDir", backupDir);
+    c.set("trustProxy", trustProxy);
     await next();
   });
   app.use("/api/*", requireJsonForMutations);

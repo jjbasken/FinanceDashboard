@@ -1,13 +1,13 @@
-import { acceptInviteInput, loginInput, setupInput, type AuthStatus } from "@fd/shared";
+import { acceptInviteInput, changePasswordInput, loginInput, setupInput, type AuthStatus } from "@fd/shared";
 import { and, count, eq, gt, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { AppEnv } from "../app";
 import { households, invites, users } from "../db/schema";
-import { createSession, deleteSession } from "../auth/sessions";
+import { createSession, deleteSession, deleteUserSessions } from "../auth/sessions";
 import { hashToken } from "../auth/tokens";
 import { createHousehold } from "../services/household";
-import { clearSessionCookie, parseBody, setSessionCookie } from "../middleware";
+import { clearSessionCookie, clientAddress, parseBody, requireAuth, sessionOf, setSessionCookie } from "../middleware";
 
 let dummyHash: Promise<string> | null = null;
 /** Verify against a throwaway hash so unknown usernames take as long as wrong passwords. */
@@ -62,21 +62,45 @@ export const authRoutes = new Hono<AppEnv>()
   .post("/login", async (c) => {
     const input = await parseBody(c, loginInput);
     const limiter = c.var.loginLimiter;
-    if (limiter.isBlocked(input.username)) {
+    const client = clientAddress(c);
+    if (limiter.isBlocked(client, input.username)) {
       throw new HTTPException(429, { message: "Too many failed attempts. Try again in a few minutes." });
     }
 
     const user = c.var.db.select().from(users).where(eq(users.username, input.username)).get();
     const ok = user ? await Bun.password.verify(input.password, user.passwordHash) : await burnTime(input.password);
     if (!user || !ok) {
-      limiter.recordFailure(input.username);
+      limiter.recordFailure(client, input.username);
       throw new HTTPException(401, { message: "Incorrect username or password" });
     }
 
-    limiter.reset(input.username);
+    if (user.disabledAt) {
+      // They knew the password, so saying why doesn't reveal anything new.
+      throw new HTTPException(403, { message: "This account has been removed from the household" });
+    }
+    limiter.reset(client, input.username);
     const { token, expiresAt } = createSession(c.var.db, user.id);
     setSessionCookie(c, token, expiresAt);
     return c.json({ ok: true });
+  })
+
+  /** Change your own password. Your other sessions are signed out; this one stays. */
+  .post("/password", requireAuth, async (c) => {
+    const input = await parseBody(c, changePasswordInput);
+    const { user, sessionId } = sessionOf(c);
+    const row = c.var.db.select().from(users).where(eq(users.id, user.id)).get()!;
+    if (!(await Bun.password.verify(input.currentPassword, row.passwordHash))) {
+      throw new HTTPException(400, { message: "Your current password is incorrect" });
+    }
+    const passwordHash = await Bun.password.hash(input.newPassword);
+    c.var.db.update(users).set({ passwordHash }).where(eq(users.id, user.id)).run();
+    const signedOut = deleteUserSessions(c.var.db, user.id, sessionId);
+    return c.json({ ok: true, signedOut });
+  })
+
+  .post("/sign-out-others", requireAuth, (c) => {
+    const { user, sessionId } = sessionOf(c);
+    return c.json({ ok: true, signedOut: deleteUserSessions(c.var.db, user.id, sessionId) });
   })
 
   .post("/logout", (c) => {
@@ -92,11 +116,7 @@ export const authRoutes = new Hono<AppEnv>()
       .from(invites)
       .innerJoin(households, eq(households.id, invites.householdId))
       .where(
-        and(
-          eq(invites.id, hashToken(c.req.param("token"))),
-          isNull(invites.usedBy),
-          gt(invites.expiresAt, Date.now()),
-        ),
+        and(eq(invites.id, hashToken(c.req.param("token"))), isNull(invites.usedBy), gt(invites.expiresAt, Date.now())),
       )
       .get();
     if (!row) throw new HTTPException(404, { message: "This invite link is invalid or has expired" });

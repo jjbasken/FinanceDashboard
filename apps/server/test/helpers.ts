@@ -20,11 +20,16 @@ export function fakePrices(quotes: Record<string, PriceQuote[]> = {}, names: Rec
   return { provider, calls };
 }
 
-export function testApp(opts: { priceProvider?: PriceProvider; backupDir?: string } = {}) {
+export function testApp(opts: { priceProvider?: PriceProvider; backupDir?: string; trustProxy?: boolean } = {}) {
   const db = openDb(":memory:");
   return {
     db,
-    app: createApp({ db, priceProvider: opts.priceProvider ?? fakePrices().provider, backupDir: opts.backupDir }),
+    app: createApp({
+      db,
+      priceProvider: opts.priceProvider ?? fakePrices().provider,
+      backupDir: opts.backupDir,
+      trustProxy: opts.trustProxy,
+    }),
   };
 }
 

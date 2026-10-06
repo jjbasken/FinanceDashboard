@@ -1,5 +1,6 @@
 import type { Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import { getConnInfo } from "hono/bun";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import type { z } from "zod";
@@ -89,6 +90,23 @@ export async function parseBody<T extends z.ZodType>(c: Context<AppEnv>, schema:
     });
   }
   return result.data;
+}
+
+/**
+ * The client's address, for rate limiting. Behind a trusted reverse proxy it's the last address
+ * in X-Forwarded-For (the one the proxy itself saw); otherwise the connection's address.
+ */
+export function clientAddress(c: Context<AppEnv>) {
+  if (c.var.trustProxy) {
+    const forwarded = c.req.header("x-forwarded-for")?.split(",").at(-1)?.trim();
+    if (forwarded) return forwarded;
+  }
+  try {
+    return getConnInfo(c).remote.address ?? "unknown";
+  } catch {
+    // No socket (e.g. in tests).
+    return "unknown";
+  }
 }
 
 /** Parse a positive integer route parameter, 404ing on anything else. */

@@ -57,6 +57,8 @@ describe("parsing", () => {
       { externalId: "2026100302", date: "2026-10-03", amount: -15000, payee: "CITY WATER & SEWER", notes: "#1042" },
       { externalId: "2026100503", date: "2026-10-05", amount: 250000, payee: "ACME PAYROLL", notes: "" },
     ]);
+    // OFX also allows a decimal comma.
+    expect(parseOfx(OFX_SGML.replace("-42.50", "-42,50"))[0]!.amount).toBe(-4250);
     expect(parseOfx(OFX_XML)).toEqual([
       { externalId: "X1", date: "2026-10-02", amount: -999, payee: "Streaming", notes: "" },
     ]);
@@ -235,6 +237,31 @@ describe("importing a bank file", () => {
     const up = (await upload(OFX_SGML)).json as BankUpload;
     const preview = (await c.post(`/api/import/bank/${up.uploadId}/preview`, {})).json as BankPreview;
     expect(preview.items[0]).toMatchObject({ status: "match", matchId: fromGnucash });
+  });
+
+  test("undo puts matched transactions back the way they were", async () => {
+    const { c, checking, upload, register } = await setUp();
+    const mine = (
+      await c.post("/api/transactions", {
+        accountId: checking.id,
+        date: "2026-10-04",
+        amount: -15000,
+        payeeName: "Water bill",
+      })
+    ).json as Transaction;
+    const up = (await upload(OFX_SGML)).json as BankUpload;
+    await c.post(`/api/import/bank/${up.uploadId}/commit`, { include: [0, 1, 2] });
+    expect(((await c.get(`/api/transactions/${mine.id}`)).json as Transaction).cleared).toBe(true);
+
+    const [batch] = (await c.get("/api/import/batches")).json as ImportBatch[];
+    await c.post(`/api/import/batches/${batch!.id}/undo`);
+    const rows = await register();
+    expect(rows.map((t) => t.id)).toEqual([mine.id]);
+    expect(rows[0]).toMatchObject({ cleared: false });
+    // And the statement imports again from scratch, matching it once more.
+    const again = (await upload(OFX_SGML)).json as BankUpload;
+    const preview = (await c.post(`/api/import/bank/${again.uploadId}/preview`, {})).json as BankPreview;
+    expect(preview.counts).toEqual({ new: 2, duplicate: 0, match: 1 });
   });
 
   test("validation", async () => {

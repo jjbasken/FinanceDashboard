@@ -148,6 +148,7 @@ export function Autocomplete<T>(props: {
         aria-expanded={open}
         aria-controls={listId}
         aria-autocomplete="list"
+        aria-activedescendant={open && shown.length > 0 ? `${listId}-${highlight}` : undefined}
         value={text}
         placeholder={props.placeholder}
         autoFocus={props.autoFocus}
@@ -183,6 +184,7 @@ export function Autocomplete<T>(props: {
               {o.group && o.group !== shown[i - 1]?.group && <div className="autocomplete-group">{o.group}</div>}
               <div
                 role="option"
+                id={`${listId}-${i}`}
                 aria-selected={i === highlight}
                 className={i === highlight ? "autocomplete-option active" : "autocomplete-option"}
                 ref={(el) => {

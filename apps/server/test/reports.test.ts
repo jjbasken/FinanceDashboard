@@ -73,7 +73,8 @@ describe("reports", () => {
     const months = (await c.get("/api/reports/cash-flow?from=2025-12&to=2026-03")).json as CashFlowMonth[];
     expect(months).toEqual([
       { month: "2025-12", income: 0, expenses: 0, net: 0 },
-      { month: "2026-01", income: 500_000, expenses: 12_000, net: 488_000 },
+      // The account's opening balance isn't counted as income.
+      { month: "2026-01", income: 0, expenses: 12_000, net: -12_000 },
       // Dining $200 less a $20 refund, plus $1,000 moved to the brokerage under Emergency Fund.
       { month: "2026-02", income: 300_000, expenses: 18_000 + 100_000, net: 182_000 },
       { month: "2026-03", income: 0, expenses: 0, net: 0 },

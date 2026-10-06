@@ -6,6 +6,7 @@ import { api } from "../api";
 import { useAuthStatus } from "../auth";
 import { CategoriesCard } from "../components/CategoriesCard";
 import { BackupCard } from "../components/BackupCard";
+import { HouseholdCard, MemberActions, YourAccountCard } from "../components/AccountCards";
 import { useMembers } from "../ledger";
 
 export function SettingsPage() {
@@ -29,20 +30,23 @@ export function SettingsPage() {
         <h1>Settings</h1>
       </header>
       <div className="page-body">
+        <YourAccountCard />
+        {isOwner && <HouseholdCard />}
         <section className="card">
           <h2>Household members</h2>
           {members.isPending && <p className="muted">Loading…</p>}
           {members.error && <p className="error-text">{members.error.message}</p>}
           <ul className="member-list">
             {members.data?.map((m) => (
-              <li key={m.id}>
+              <li key={m.id} className={m.disabled ? "disabled" : undefined}>
                 <span className="avatar" aria-hidden>
                   {m.displayName.slice(0, 1).toUpperCase()}
                 </span>
                 <span>
                   <strong>{m.displayName}</strong> <span className="muted">@{m.username}</span>
                 </span>
-                <span className="badge">{m.role}</span>
+                <span className="badge">{m.disabled ? "removed" : m.role}</span>
+                {isOwner && m.id !== status?.user?.id && <MemberActions member={m} />}
               </li>
             ))}
           </ul>
@@ -83,6 +87,15 @@ export function SettingsPage() {
           <div>
             <Link className="btn" to="/import">
               Import transactions
+            </Link>
+          </div>
+        </section>
+        <section className="card">
+          <h2>Payees</h2>
+          <p className="muted">Rename, merge or delete the payees on your transactions.</p>
+          <div>
+            <Link className="btn" to="/payees">
+              Manage payees
             </Link>
           </div>
         </section>

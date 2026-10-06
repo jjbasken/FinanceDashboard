@@ -64,6 +64,13 @@ function AccountMenu(props: { account: Account }) {
     if (name && name !== account.name) update.mutate({ name });
   }
 
+  function toggleBudget() {
+    const msg = account.onBudget
+      ? `Move "${account.name}" off budget? Its transactions will stop counting in the budget for every month, including past months, so those months' income, spending and To Budget will change.`
+      : `Move "${account.name}" on budget? Its categorized transactions will start counting in the budget for every month, including past months, and any without a category will need one.`;
+    if (confirm(msg)) update.mutate({ onBudget: !account.onBudget });
+  }
+
   function toggleClosed() {
     if (!account.closed && account.balance !== 0) {
       return alert("Move the remaining balance out of this account (for example, with a transfer) before closing it.");
@@ -87,9 +94,7 @@ function AccountMenu(props: { account: Account }) {
         onClick={(e) => (e.currentTarget.parentElement as HTMLDetailsElement).removeAttribute("open")}
       >
         <button onClick={rename}>Rename</button>
-        <button onClick={() => update.mutate({ onBudget: !account.onBudget })}>
-          {account.onBudget ? "Move off budget" : "Move on budget"}
-        </button>
+        <button onClick={toggleBudget}>{account.onBudget ? "Move off budget" : "Move on budget"}</button>
         <button onClick={toggleClosed}>{account.closed ? "Reopen account" : "Close account"}</button>
         <button className="danger" onClick={del}>
           Delete account

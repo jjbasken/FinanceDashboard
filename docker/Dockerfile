@@ -22,9 +22,11 @@ RUN bun install --frozen-lockfile --production
 COPY packages/shared packages/shared
 COPY apps/server apps/server
 COPY --from=build /app/apps/web/dist apps/web/dist
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN mkdir -p /data && chown bun:bun /data
-USER bun
+# The entrypoint starts as root only to fix /data ownership, then runs the app as "bun".
 VOLUME /data
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s CMD bun -e "fetch('http://localhost:8080/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+ENTRYPOINT ["entrypoint.sh"]
 CMD ["bun", "apps/server/src/index.ts"]

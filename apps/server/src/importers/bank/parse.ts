@@ -48,7 +48,9 @@ export function parseOfx(text: string): BankTxn[] {
   for (const raw of blocks) {
     const block = raw.split(/<\/STMTTRN>/i)[0]!;
     const date = ofxDate(tag(block, "DTPOSTED"));
-    const amount = parseCents(tag(block, "TRNAMT"));
+    // OFX allows a decimal comma ("-42,50"); parseCents would read the comma as a thousands separator.
+    const rawAmount = tag(block, "TRNAMT");
+    const amount = parseCents(/^[+-]?\d*,\d{1,2}$/.test(rawAmount) ? rawAmount.replace(",", ".") : rawAmount);
     if (!date || amount === null) continue;
     const name = tag(block, "NAME") || tag(block, "PAYEE");
     const memo = tag(block, "MEMO");

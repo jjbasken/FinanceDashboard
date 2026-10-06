@@ -2,6 +2,7 @@ import { addMonths, sharesValueCents, type CashFlowMonth, type NetWorthPoint, ty
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import type { DbOrTx } from "../db";
 import { transactions } from "../db/schema";
+import { STARTING_BALANCES } from "./household";
 import { type HistoryRange, loadPriceSeries, loadTxns, Position, priceOn, sampleDates } from "./holdings";
 
 /** Every account's value (cash plus holdings at that day's price) at each sample date. */
@@ -57,7 +58,10 @@ export function netWorthHistory(db: DbOrTx, householdId: number, range: HistoryR
 
 const monthStart = (m: string) => `${m}-01`;
 
-/** Income and spending per month, by category, from on-budget accounts (as on the budget page). */
+/**
+ * Income and spending per month, by category, from on-budget accounts (as on the budget page).
+ * Opening balances aren't income earned in their month, so they're left out.
+ */
 export function cashFlow(db: DbOrTx, householdId: number, from: string, to: string): CashFlowMonth[] {
   const rows = db.all<{ month: string; isIncome: number; amount: number }>(sql`
     select substr(t.date, 1, 7) as month, g.is_income as isIncome, sum(t.amount) as amount
@@ -68,6 +72,7 @@ export function cashFlow(db: DbOrTx, householdId: number, from: string, to: stri
     where t.household_id = ${householdId}
       and a.on_budget = 1
       and t.is_parent = 0
+      and not (g.is_income = 1 and c.name = ${STARTING_BALANCES})
       and t.date >= ${monthStart(from)}
       and t.date < ${monthStart(addMonths(to, 1))}
     group by substr(t.date, 1, 7), g.is_income

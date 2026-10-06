@@ -2,7 +2,10 @@
   "name": "finance-dashboard",
   "private": true,
   "type": "module",
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "bun run --filter '*' dev",
     "dev:server": "bun run --cwd apps/server dev",
@@ -12,5 +15,8 @@
     "test": "bun test",
     "typecheck": "bun run --filter '*' typecheck",
     "db:generate": "bun run --cwd apps/server db:generate"
+  },
+  "overrides": {
+    "esbuild": "^0.28.2"
   }
 }

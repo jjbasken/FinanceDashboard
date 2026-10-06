@@ -479,6 +479,8 @@ function DisplayRow(props: {
   who: string;
   onEdit: (field: Field) => void;
   onToggleCleared: () => void;
+  /** Move keyboard focus to the row above (-1) or below (1). */
+  onMove: (step: 1 | -1) => void;
 }) {
   const { t, lookups: l } = props;
   const payee = t.payeeId != null ? l.payeeById.get(t.payeeId) : undefined;
@@ -495,7 +497,26 @@ function DisplayRow(props: {
   );
 
   return (
-    <div className="register-item" title={props.who}>
+    <div
+      className="register-item"
+      title={props.who}
+      tabIndex={0}
+      data-row-id={t.id}
+      aria-label={`${formatDate(t.date)}, ${payeeLabel(payee) || "no payee"}, ${formatCents(t.amount)}. Press Enter to edit.`}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === "F2") {
+          e.preventDefault();
+          props.onEdit("payee");
+        } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          props.onMove(e.key === "ArrowDown" ? 1 : -1);
+        } else if (e.key === " ") {
+          e.preventDefault();
+          props.onToggleCleared();
+        }
+      }}
+    >
       <div className="register-row">
         {cell("date", formatDate(t.date))}
         {cell("payee", payeeLabel(payee), "cell truncate")}
@@ -620,6 +641,16 @@ export function Register(props: {
 
   function payeeNameOf(t: Transaction) {
     return t.payeeId != null ? (lookups.payeeById.get(t.payeeId)?.name ?? "") : "";
+  }
+
+  /** Focus a row by its position, scrolling the virtual list to it first. */
+  function focusRow(index: number) {
+    const row = rows[index];
+    if (!row) return;
+    virtualizer.scrollToIndex(index, { align: "auto" });
+    requestAnimationFrame(() =>
+      scrollRef.current?.querySelector<HTMLElement>(`.register-item[data-row-id="${row.id}"]`)?.focus(),
+    );
   }
 
   function beginEdit(t: Transaction, field: Field) {
@@ -761,8 +792,14 @@ export function Register(props: {
                       error={editError}
                       showCategory={showCategory}
                       balance={t.runningBalance}
-                      onCommit={commitEdit}
-                      onCancel={() => setEditing(null)}
+                      onCommit={(move) => {
+                        commitEdit(move);
+                        if (move === 0) focusRow(v.index);
+                      }}
+                      onCancel={() => {
+                        setEditing(null);
+                        focusRow(v.index);
+                      }}
                       onBlurOut={() => commitEdit(0)}
                       onDelete={deleteEditing}
                     />
@@ -774,6 +811,7 @@ export function Register(props: {
                       who={who(t)}
                       onEdit={(field) => startEdit(t, field)}
                       onToggleCleared={() => toggleCleared(t)}
+                      onMove={(step) => focusRow(v.index + step)}
                     />
                   )}
                 </div>

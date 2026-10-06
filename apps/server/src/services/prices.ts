@@ -127,6 +127,11 @@ export async function refreshPrices(
            (select min(t.date) from investment_txns t where t.security_id = s.id) as firstTxn
     from securities s
     where s.auto_price = 1
+      -- Skip securities that were held and are now all sold; ones never traded still get prices.
+      and not (
+        exists (select 1 from investment_txns t where t.security_id = s.id)
+        and (select sum(t.shares) from investment_txns t where t.security_id = s.id) = 0
+      )
       ${householdId === undefined ? sql`` : sql`and s.household_id = ${householdId}`}
   `);
 

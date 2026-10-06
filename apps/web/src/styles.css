@@ -706,6 +706,10 @@ select {
   border-bottom: 1px solid var(--border);
   cursor: default;
 }
+.register-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 .register-item:hover {
   background: color-mix(in srgb, var(--accent) 5%, transparent);
 }
@@ -1502,6 +1506,46 @@ select {
 }
 .stale {
   opacity: 0.6;
+}
+
+/* Settings and payees */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.row-actions.align-center {
+  align-items: center;
+  flex-wrap: wrap;
+}
+.member-list li.disabled > span:not(.member-actions) {
+  opacity: 0.55;
+}
+.member-actions {
+  display: inline-flex;
+  gap: 12px;
+  font-size: 13px;
+}
+.member-list .badge + .member-actions {
+  margin-left: 4px;
+}
+.payee-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.payee-toolbar input[type="search"] {
+  width: min(280px, 100%);
+}
+.merge-bar {
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+.row-actions-cell {
+  display: inline-flex;
+  gap: 12px;
 }
 
 @media (max-width: 720px) {
