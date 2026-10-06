@@ -31,7 +31,7 @@ describe("your own account", () => {
       (await jeremy.post("/api/auth/password", { currentPassword: "wrong one!!", newPassword: "x".repeat(12) })).status,
     ).toBe(400);
     expect(
-      (await jeremy.post("/api/auth/password", { currentPassword: owner.password, newPassword: "short" })).status,
+      (await jeremy.post("/api/auth/password", { currentPassword: owner.password, newPassword: "four" })).status,
     ).toBe(400);
     const res = await jeremy.post("/api/auth/password", {
       currentPassword: owner.password,

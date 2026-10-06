@@ -37,7 +37,7 @@ export function AcceptInvitePage() {
     >
       <Field label="Your name" name="displayName" autoComplete="name" autoFocus />
       <Field label="Username" name="username" autoComplete="username" />
-      <Field label="Password" name="password" type="password" autoComplete="new-password" hint="At least 10 characters" />
+      <Field label="Password" name="password" type="password" autoComplete="new-password" hint="At least 5 characters" />
     </AuthCard>
   );
 }
