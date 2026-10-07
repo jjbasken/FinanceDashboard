@@ -10,7 +10,7 @@ import {
   type UpdateAccountInput,
   type UpdateTransactionInput,
 } from "@fd/shared";
-import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { HTTPException } from "hono/http-exception";
 import type { DbOrTx } from "../db";
@@ -33,6 +33,28 @@ function found<T>(row: T | undefined, what: string): T {
   return row;
 }
 
+/** Whether a member can see an account: the family's shared accounts, and their own private ones. */
+export function canSee(account: { ownerId: number | null }, userId: number) {
+  return account.ownerId === null || account.ownerId === userId;
+}
+
+/** SQL condition: the account aliased `a` is one the member can see. */
+export const visibleTo = (userId: number) => sql`(a.owner_id is null or a.owner_id = ${userId})`;
+
+/**
+ * SQL condition: a row of transactions `t` in account `a` counts in the family budget. Shared
+ * on-budget accounts count; a private one only for the transactions its owner included.
+ */
+export const inFamilyBudget = sql`(a.on_budget = 1 and (a.owner_id is null or t.in_budget = 1))`;
+
+/** An account the actor can see; someone else's private account is "not found". */
+export function visibleAccount(db: DbOrTx, actor: Actor, id: number) {
+  const account = getAccount(db, actor.householdId, id);
+  if (!canSee(account, actor.userId)) throw notFound("Account");
+  return account;
+}
+
+/** Raw lookup by household only. Anything acting for a member uses visibleAccount instead. */
 export function getAccount(db: DbOrTx, householdId: number, id: number) {
   return found(
     db
@@ -115,7 +137,9 @@ function findStartingBalancesCategory(db: DbOrTx, householdId: number) {
 
 // --- Accounts ---
 
-export function listAccounts(db: DbOrTx, householdId: number): Account[] {
+/** The accounts a member can see. */
+export function listAccounts(db: DbOrTx, viewer: Actor): Account[] {
+  const { householdId } = viewer;
   const rows = db
     .select({
       id: accounts.id,
@@ -125,11 +149,17 @@ export function listAccounts(db: DbOrTx, householdId: number): Account[] {
       closed: accounts.closed,
       sortOrder: accounts.sortOrder,
       folderId: accounts.folderId,
+      ownerId: accounts.ownerId,
       transferPayeeId: payees.id,
     })
     .from(accounts)
     .innerJoin(payees, eq(payees.transferAccountId, accounts.id))
-    .where(eq(accounts.householdId, householdId))
+    .where(
+      and(
+        eq(accounts.householdId, householdId),
+        or(isNull(accounts.ownerId), eq(accounts.ownerId, viewer.userId)),
+      ),
+    )
     .orderBy(asc(accounts.sortOrder), asc(accounts.id))
     .all();
 
@@ -146,17 +176,18 @@ export function listAccounts(db: DbOrTx, householdId: number): Account[] {
   const byAccount = new Map(totals.map((t) => [t.accountId, t]));
   const holdings = holdingsValueByAccount(db, householdId);
 
-  return rows.map((r) => ({
+  return rows.map(({ ownerId, ...r }) => ({
     ...r,
+    private: ownerId !== null,
     balance: byAccount.get(r.id)?.balance ?? 0,
     clearedBalance: byAccount.get(r.id)?.cleared ?? 0,
     holdingsValue: holdings.get(r.id) ?? 0,
   }));
 }
 
-export function accountSummary(db: DbOrTx, householdId: number, id: number) {
+export function accountSummary(db: DbOrTx, viewer: Actor, id: number) {
   return found(
-    listAccounts(db, householdId).find((a) => a.id === id),
+    listAccounts(db, viewer).find((a) => a.id === id),
     "Account",
   );
 }
@@ -172,6 +203,7 @@ export function createAccount(db: DbOrTx, actor: Actor, input: CreateAccountInpu
       name: input.name,
       type: input.type,
       onBudget,
+      ownerId: input.private ? userId : null,
       sortOrder: next,
       createdBy: userId,
       updatedBy: userId,
@@ -200,9 +232,20 @@ export function createAccount(db: DbOrTx, actor: Actor, input: CreateAccountInpu
 }
 
 export function updateAccount(db: DbOrTx, actor: Actor, id: number, input: UpdateAccountInput) {
-  const account = getAccount(db, actor.householdId, id);
+  const { private: makePrivate, ...changes } = input;
+  const account = visibleAccount(db, actor, id);
+  let ownerId = account.ownerId;
+  if (makePrivate === true && account.ownerId === null) {
+    // Hiding a family account from everyone else is only for the member who added it.
+    if (account.createdBy !== actor.userId) {
+      throw new HTTPException(403, { message: "Only the member who added this account can make it private" });
+    }
+    ownerId = actor.userId;
+  } else if (makePrivate === false) {
+    ownerId = null;
+  }
   if (input.closed && !account.closed) {
-    const { balance } = accountSummary(db, actor.householdId, id);
+    const { balance } = accountSummary(db, actor, id);
     if (balance !== 0) throw badRequest("Move the remaining balance out of this account before closing it");
     const held = db.all<{ n: number }>(sql`
       select 1 as n from investment_txns where account_id = ${id}
@@ -212,20 +255,23 @@ export function updateAccount(db: DbOrTx, actor: Actor, id: number, input: Updat
   }
   // Folders belong to one sidebar section. Moving into a folder puts the account at its end;
   // moving to another section takes it out of a folder that no longer fits.
-  const section = accountSection({ type: input.type ?? account.type, onBudget: input.onBudget ?? account.onBudget });
+  const section = accountSection({
+    type: changes.type ?? account.type,
+    onBudget: changes.onBudget ?? account.onBudget,
+  });
   let placement: { folderId?: number | null; sortOrder?: number } = {};
-  if (input.folderId !== undefined && input.folderId !== account.folderId) {
-    assertParent(db, actor.householdId, input.folderId, section);
-    placement = { folderId: input.folderId, sortOrder: nextSidebarOrder(db, actor.householdId) };
+  if (changes.folderId !== undefined && changes.folderId !== account.folderId) {
+    assertParent(db, actor.householdId, changes.folderId, section);
+    placement = { folderId: changes.folderId, sortOrder: nextSidebarOrder(db, actor.householdId) };
   } else if (account.folderId !== null && getFolder(db, actor.householdId, account.folderId).section !== section) {
     placement = { folderId: null, sortOrder: nextSidebarOrder(db, actor.householdId) };
   }
   db.update(accounts)
-    .set({ ...input, ...placement, updatedBy: actor.userId })
+    .set({ ...changes, ...placement, ownerId, updatedBy: actor.userId })
     .where(eq(accounts.id, id))
     .run();
-  if (input.name !== undefined) {
-    db.update(payees).set({ name: input.name }).where(eq(payees.transferAccountId, id)).run();
+  if (changes.name !== undefined) {
+    db.update(payees).set({ name: changes.name }).where(eq(payees.transferAccountId, id)).run();
   }
 }
 
@@ -233,14 +279,14 @@ export function updateAccount(db: DbOrTx, actor: Actor, id: number, input: Updat
  * Delete an account and its transactions. The other side of any transfer survives as an
  * ordinary transaction (its transfer link and payee are cleared by the foreign keys).
  */
-export function deleteAccount(db: DbOrTx, householdId: number, id: number) {
-  getAccount(db, householdId, id);
+export function deleteAccount(db: DbOrTx, actor: Actor, id: number) {
+  visibleAccount(db, actor, id);
   db.delete(accounts).where(eq(accounts.id, id)).run();
 }
 
 /** Lock in every cleared transaction once the cleared balance matches the bank statement. */
 export function reconcileAccount(db: DbOrTx, actor: Actor, id: number, statementBalance: number) {
-  const { clearedBalance } = accountSummary(db, actor.householdId, id);
+  const { clearedBalance } = accountSummary(db, actor, id);
   if (clearedBalance !== statementBalance) {
     throw badRequest("The cleared balance doesn't match the statement balance yet");
   }
@@ -273,9 +319,29 @@ function splitPartner(db: DbOrTx, householdId: number, row: TxRow) {
   return partner.parentId ? partner : null;
 }
 
-export function listTransactions(db: DbOrTx, householdId: number, accountId: number): Transaction[] {
-  getAccount(db, householdId, accountId);
+/**
+ * Whether the other side of this row's transfer, or of any of its split lines' transfers, is in
+ * an account the actor can't see.
+ */
+function otherSideHidden(db: DbOrTx, actor: Actor, row: TxRow) {
+  const ids = row.isParent ? splitTransferIds(db, row.id) : row.transferId ? [row.transferId] : [];
+  if (ids.length === 0) return false;
+  const owners = db
+    .select({ ownerId: accounts.ownerId })
+    .from(transactions)
+    .innerJoin(accounts, eq(accounts.id, transactions.accountId))
+    .where(inArray(transactions.id, ids))
+    .all();
+  return owners.some((o) => !canSee(o, actor.userId));
+}
+
+const privateTransferMessage = (verb: string) =>
+  `This is a transfer with another member's private account. Only they can ${verb} it.`;
+
+export function listTransactions(db: DbOrTx, viewer: Actor, accountId: number): Transaction[] {
+  visibleAccount(db, viewer, accountId);
   const partner = alias(transactions, "partner");
+  const partnerAccount = alias(accounts, "partner_account");
   const running = sql<number>`sum(${transactions.amount}) over (order by ${transactions.date}, ${transactions.id})`;
   const rows = db
     .select({
@@ -288,10 +354,14 @@ export function listTransactions(db: DbOrTx, householdId: number, accountId: num
       notes: transactions.notes,
       cleared: transactions.cleared,
       reconciled: transactions.reconciled,
+      inBudget: transactions.inBudget,
       isParent: transactions.isParent,
       transferId: transactions.transferId,
       investmentTxnId: investmentTxns.id,
       fromSplit: sql<boolean>`${partner.parentId} is not null`.mapWith(Boolean),
+      otherSidePrivate: sql<boolean>`coalesce(${partnerAccount.ownerId} is not null and ${partnerAccount.ownerId} != ${viewer.userId}, 0)`.mapWith(
+        Boolean,
+      ),
       createdBy: transactions.createdBy,
       updatedBy: transactions.updatedBy,
       runningBalance: running,
@@ -299,6 +369,7 @@ export function listTransactions(db: DbOrTx, householdId: number, accountId: num
     .from(transactions)
     .leftJoin(investmentTxns, eq(investmentTxns.transactionId, transactions.id))
     .leftJoin(partner, eq(partner.id, transactions.transferId))
+    .leftJoin(partnerAccount, eq(partnerAccount.id, partner.accountId))
     .where(and(eq(transactions.accountId, accountId), isNull(transactions.parentId)))
     .orderBy(sql`${transactions.date} desc`, sql`${transactions.id} desc`)
     .all();
@@ -329,11 +400,11 @@ export function listTransactions(db: DbOrTx, householdId: number, accountId: num
   return rows.map(({ isParent, ...r }) => ({ ...r, splits: isParent ? (splitsByParent.get(r.id) ?? []) : [] }));
 }
 
-export function getTransaction(db: DbOrTx, householdId: number, id: number): Transaction {
-  const row = getTransactionRow(db, householdId, id);
+export function getTransaction(db: DbOrTx, viewer: Actor, id: number): Transaction {
+  const row = getTransactionRow(db, viewer.householdId, id);
   const parentId = row.parentId ?? row.id;
   return found(
-    listTransactions(db, householdId, row.accountId).find((t) => t.id === parentId),
+    listTransactions(db, viewer, row.accountId).find((t) => t.id === parentId),
     "Transaction",
   );
 }
@@ -344,13 +415,13 @@ function resolvePayee(db: DbOrTx, householdId: number, input: { payeeId?: number
   return null;
 }
 
-function checkSplits(db: DbOrTx, householdId: number, account: AccountRow, amount: number, splits: SplitInput[]) {
+function checkSplits(db: DbOrTx, actor: Actor, account: AccountRow, amount: number, splits: SplitInput[]) {
   const total = splits.reduce((sum, s) => sum + s.amount, 0);
   if (total !== amount) throw badRequest("Split amounts must add up to the transaction amount");
   for (const s of splits) {
-    assertCategory(db, householdId, s.categoryId);
+    assertCategory(db, actor.householdId, s.categoryId);
     if (s.transferAccountId == null) continue;
-    getAccount(db, householdId, s.transferAccountId);
+    visibleAccount(db, actor, s.transferAccountId);
     if (s.transferAccountId === account.id) throw badRequest("An account can't transfer to itself");
   }
 }
@@ -374,6 +445,7 @@ function insertSplits(db: DbOrTx, actor: Actor, parent: TxRow, account: AccountR
         categoryId: target ? transferCategory(account, target, categoryId) : categoryId,
         notes: s.notes ?? "",
         cleared: parent.cleared,
+        inBudget: parent.inBudget,
         parentId: parent.id,
         createdBy: actor.userId,
         updatedBy: actor.userId,
@@ -437,16 +509,26 @@ function insertTransferSide(
   return other;
 }
 
+/** Only a private on-budget account's transactions can be counted in the family budget. */
+function inBudgetFor(account: AccountRow, requested: boolean | undefined) {
+  return account.ownerId !== null && account.onBudget && !!requested;
+}
+
+/** The transfer target a payee names, if the actor can see it. */
+function transferTarget(db: DbOrTx, actor: Actor, payee: { transferAccountId: number | null } | null) {
+  return payee?.transferAccountId ? visibleAccount(db, actor, payee.transferAccountId) : null;
+}
+
 export function createTransaction(db: DbOrTx, actor: Actor, input: CreateTransactionInput) {
   const { householdId, userId } = actor;
-  const account = getAccount(db, householdId, input.accountId);
+  const account = visibleAccount(db, actor, input.accountId);
   const payee = resolvePayee(db, householdId, input);
   const splits = input.splits ?? [];
   const categoryId = splits.length ? null : (input.categoryId ?? null);
   assertCategory(db, householdId, categoryId);
-  if (splits.length) checkSplits(db, householdId, account, input.amount, splits);
+  if (splits.length) checkSplits(db, actor, account, input.amount, splits);
 
-  const target = payee?.transferAccountId ? getAccount(db, householdId, payee.transferAccountId) : null;
+  const target = transferTarget(db, actor, payee);
   if (target) {
     if (target.id === account.id) throw badRequest("An account can't transfer to itself");
     if (splits.length) throw badRequest("A transfer can't be split");
@@ -463,6 +545,7 @@ export function createTransaction(db: DbOrTx, actor: Actor, input: CreateTransac
       categoryId: target ? transferCategory(account, target, categoryId) : categoryId,
       notes: input.notes ?? "",
       cleared: input.cleared ?? false,
+      inBudget: inBudgetFor(account, input.inBudget),
       isParent: splits.length > 0,
       createdBy: userId,
       updatedBy: userId,
@@ -477,17 +560,22 @@ export function createTransaction(db: DbOrTx, actor: Actor, input: CreateTransac
 export function updateTransaction(db: DbOrTx, actor: Actor, id: number, input: UpdateTransactionInput) {
   const { householdId, userId } = actor;
   const row = getTransactionRow(db, householdId, id);
+  visibleAccount(db, actor, row.accountId);
   if (row.parentId) throw badRequest("Edit the split through its parent transaction");
   if (linkedToInvestment(db, id) && Object.keys(input).some((k) => k !== "cleared")) {
     throw badRequest("This is the cash side of an investment transaction. Edit it on the Investments page.");
   }
-  // The other side of a split line follows the split; only its cleared state is its own.
-  if (splitPartner(db, householdId, row)) {
-    if (Object.keys(input).some((k) => k !== "cleared")) throw badRequest(splitLineMessage("Edit"));
+  // The other side of a split line follows the split, and a transfer with someone else's private
+  // account is theirs to change; either way only the cleared state is this row's own.
+  const hidden = otherSideHidden(db, actor, row);
+  if (hidden || splitPartner(db, householdId, row)) {
+    if (Object.keys(input).some((k) => k !== "cleared")) {
+      throw badRequest(hidden ? privateTransferMessage("edit") : splitLineMessage("Edit"));
+    }
     const cleared = input.cleared ?? row.cleared;
     db.update(transactions)
       .set({ cleared, reconciled: cleared ? row.reconciled : false, updatedBy: userId })
-      .where(eq(transactions.id, id))
+      .where(or(eq(transactions.id, id), eq(transactions.parentId, id)))
       .run();
     return;
   }
@@ -506,7 +594,7 @@ export function updateTransaction(db: DbOrTx, actor: Actor, id: number, input: U
   // Splits: an explicit array replaces them; otherwise the existing ones must still add up.
   const splits = input.splits;
   const willBeSplit = splits ? splits.length > 0 : row.isParent;
-  if (splits?.length) checkSplits(db, householdId, account, amount, splits);
+  if (splits?.length) checkSplits(db, actor, account, amount, splits);
   else if (!splits && row.isParent && input.amount !== undefined && input.amount !== row.amount) {
     throw badRequest("Update the splits along with the amount");
   }
@@ -514,12 +602,13 @@ export function updateTransaction(db: DbOrTx, actor: Actor, id: number, input: U
   let categoryId = willBeSplit ? null : input.categoryId !== undefined ? input.categoryId : row.categoryId;
   assertCategory(db, householdId, categoryId);
 
-  const target = payee?.transferAccountId ? getAccount(db, householdId, payee.transferAccountId) : null;
+  const target = transferTarget(db, actor, payee);
   if (target) {
     if (target.id === account.id) throw badRequest("An account can't transfer to itself");
     if (willBeSplit) throw badRequest("A transfer can't be split");
     categoryId = transferCategory(account, target, categoryId);
   }
+  const inBudget = input.inBudget !== undefined ? inBudgetFor(account, input.inBudget) : row.inBudget;
 
   // Unchecking "cleared" also undoes reconciliation.
   const cleared = input.cleared ?? row.cleared;
@@ -532,6 +621,7 @@ export function updateTransaction(db: DbOrTx, actor: Actor, id: number, input: U
       categoryId,
       cleared,
       reconciled: cleared ? row.reconciled : false,
+      inBudget,
       isParent: willBeSplit,
       updatedBy: userId,
     })
@@ -543,7 +633,10 @@ export function updateTransaction(db: DbOrTx, actor: Actor, id: number, input: U
     deleteSplits(db, id);
     if (splits.length) insertSplits(db, actor, updated, account, splits);
   } else if (row.isParent) {
-    db.update(transactions).set({ date, cleared, updatedBy: userId }).where(eq(transactions.parentId, id)).run();
+    db.update(transactions)
+      .set({ date, cleared, inBudget, updatedBy: userId })
+      .where(eq(transactions.parentId, id))
+      .run();
     // Transfer lines keep their transfer payee, and the other sides move with the date.
     db.update(transactions)
       .set({ payeeId: updated.payeeId })
@@ -580,8 +673,11 @@ export function updateTransaction(db: DbOrTx, actor: Actor, id: number, input: U
   }
 }
 
-export function deleteTransaction(db: DbOrTx, householdId: number, id: number) {
+export function deleteTransaction(db: DbOrTx, actor: Actor, id: number) {
+  const { householdId } = actor;
   const row = getTransactionRow(db, householdId, id);
+  visibleAccount(db, actor, row.accountId);
+  if (otherSideHidden(db, actor, row)) throw badRequest(privateTransferMessage("delete"));
   if (row.parentId) throw badRequest("Delete the split through its parent transaction");
   if (linkedToInvestment(db, id)) {
     throw badRequest("This is the cash side of an investment transaction. Delete it on the Investments page.");

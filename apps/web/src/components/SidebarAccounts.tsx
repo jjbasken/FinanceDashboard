@@ -87,6 +87,21 @@ type Drop = { key: string; mode: "before" | "into"; parentId: number | null; bef
 
 const ask = (label: string, initial = "") => prompt(label, initial)?.trim() || null;
 
+/** An account's name, with a lock when it's private to you. */
+function AccountName(props: { account: Account }) {
+  return (
+    <span className="truncate">
+      {props.account.name}
+      {props.account.private && (
+        <span className="private-mark" title="Private: only you can see this account" aria-label="private">
+          {" "}
+          🔒
+        </span>
+      )}
+    </span>
+  );
+}
+
 export function SidebarAccounts() {
   const { data: accounts, error } = useAccounts();
   const { data: folders } = useFolders();
@@ -179,7 +194,7 @@ export function SidebarAccounts() {
             {...dragProps(item, section)}
             {...dropProps(section, () => ({ key, mode: "before", parentId, before: item }))}
           >
-            <span className="truncate">{n.account.name}</span>
+            <AccountName account={n.account} />
             <Money cents={worth(n.account)} />
           </NavLink>
         );
@@ -314,7 +329,7 @@ function ClosedAccounts(props: { accounts: Account[] }) {
       {open &&
         props.accounts.map((a) => (
           <NavLink key={a.id} to={`/accounts/${a.id}`} className="sidebar-account">
-            <span className="truncate">{a.name}</span>
+            <AccountName account={a} />
             <Money cents={worth(a)} />
           </NavLink>
         ))}

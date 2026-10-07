@@ -29,8 +29,9 @@ import type { AccountRef, CategoryRef, ImportContext, Plan, PlannedRow, Security
 const lower = (s: string) => s.trim().toLowerCase();
 
 /** Everything the planner needs to know about the household. */
-export function loadContext(db: DbOrTx, householdId: number): ImportContext {
-  const accts = listAccounts(db, householdId).map((a) => ({
+export function loadContext(db: DbOrTx, viewer: Actor): ImportContext {
+  const { householdId } = viewer;
+  const accts = listAccounts(db, viewer).map((a) => ({
     id: a.id,
     name: a.name,
     onBudget: a.onBudget,
@@ -357,7 +358,8 @@ export function listBatches(db: DbOrTx, householdId: number): ImportBatch[] {
  * Undo an import: delete its transactions, then whatever accounts, categories, groups and payees
  * it created that nothing else uses now. Its records are forgotten so it can be imported again.
  */
-export function undoBatch(db: Db, householdId: number, batchId: number) {
+export function undoBatch(db: Db, actor: Actor, batchId: number) {
+  const { householdId } = actor;
   db.transaction((tx) => {
     const batch = tx
       .select()
@@ -366,6 +368,24 @@ export function undoBatch(db: Db, householdId: number, batchId: number) {
       .get();
     if (!batch) throw new HTTPException(404, { message: "Import not found" });
     if (batch.undoneAt) throw new HTTPException(409, { message: "That import was already undone" });
+    // Undoing deletes what the import added, so it's only for members who can see all of it.
+    const touched = [
+      ...tx
+        .selectDistinct({ ownerId: accounts.ownerId })
+        .from(transactions)
+        .innerJoin(accounts, eq(accounts.id, transactions.accountId))
+        .where(eq(transactions.importBatchId, batchId))
+        .all(),
+      ...tx
+        .selectDistinct({ ownerId: accounts.ownerId })
+        .from(investmentTxns)
+        .innerJoin(accounts, eq(accounts.id, investmentTxns.accountId))
+        .where(eq(investmentTxns.importBatchId, batchId))
+        .all(),
+    ];
+    if (touched.some((a) => a.ownerId !== null && a.ownerId !== actor.userId)) {
+      throw new HTTPException(403, { message: "This import went into another member's private account" });
+    }
 
     // Parents first is fine: children cascade.
     // Transactions a bank import matched (rather than created) go back to how they were.

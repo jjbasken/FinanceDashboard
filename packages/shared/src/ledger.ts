@@ -46,6 +46,8 @@ export const createAccountInput = z.object({
   onBudget: z.boolean().optional(),
   startingBalance: centsSchema.optional(),
   startingDate: dateSchema.optional(),
+  /** Only the member creating it will see it. */
+  private: z.boolean().optional(),
 });
 export type CreateAccountInput = z.infer<typeof createAccountInput>;
 
@@ -58,6 +60,8 @@ export const updateAccountInput = z
     sortOrder: z.number().int(),
     /** A folder in the account's sidebar section, or null for the top of the section. */
     folderId: idSchema.nullable(),
+    /** Make the account private to you, or share it with the family. */
+    private: z.boolean(),
   })
   .partial();
 export type UpdateAccountInput = z.infer<typeof updateAccountInput>;
@@ -76,6 +80,8 @@ export interface Account {
   closed: boolean;
   sortOrder: number;
   folderId: number | null;
+  /** Only its owner (you) can see a private account; the family's accounts are shared. */
+  private: boolean;
   /** Sum of all transactions, in cents. */
   balance: number;
   /** Sum of cleared and reconciled transactions, in cents. */
@@ -244,6 +250,8 @@ const transactionFields = {
   cleared: z.boolean(),
   /** Replaces the transaction's splits. An empty array turns a split back into a plain transaction. */
   splits: z.array(splitInput).max(100),
+  /** In a private account: count this in the family budget (family money paid for it). */
+  inBudget: z.boolean(),
 };
 
 export const createTransactionInput = z
@@ -274,8 +282,12 @@ export interface Transaction {
   notes: string;
   cleared: boolean;
   reconciled: boolean;
+  /** In a private account: counted in the family budget. Always false in shared accounts. */
+  inBudget: boolean;
   /** The other side of a transfer. */
   transferId: number | null;
+  /** Set when the other side of this transfer is in someone else's private account; only they can change it. */
+  otherSidePrivate: boolean;
   /** Set when this row is the cash side of an investment transaction; edit it there. */
   investmentTxnId: number | null;
   /** Set when this row is the other side of one line of a split transaction; edit it there. */

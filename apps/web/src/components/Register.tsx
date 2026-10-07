@@ -37,6 +37,8 @@ interface Draft {
   payment: string;
   deposit: string;
   cleared: boolean;
+  /** In a private account: count it in the family budget. */
+  inBudget: boolean;
 }
 
 type PayeeValue = { id: number | null; name: string };
@@ -73,6 +75,7 @@ function blankDraft(date = today()): Draft {
     payment: "",
     deposit: "",
     cleared: false,
+    inBudget: false,
   };
 }
 
@@ -93,6 +96,7 @@ function draftFrom(t: Transaction, payeeName: string): Draft {
     })),
     ...amountFields(t.amount),
     cleared: t.cleared,
+    inBudget: t.inBudget,
   };
 }
 
@@ -130,6 +134,7 @@ function buildBody(d: Draft, original?: Draft): Built {
     notes: d.notes.trim(),
     categoryId: d.split ? null : d.categoryId,
     cleared: d.cleared,
+    inBudget: d.inBudget,
     splits,
   };
   if (!original) return { error: null, body: full };
@@ -166,6 +171,9 @@ function payeeLabel(p: Payee | undefined) {
   if (!p) return "";
   return p.transferAccountId ? `Transfer: ${p.name}` : p.name;
 }
+
+/** A private account whose transactions can be counted in the family budget one by one. */
+const choosesBudget = (account: Account) => account.private && account.onBudget;
 
 /** Transfers between two on-budget accounts don't take a category. */
 function isBudgetTransfer(l: Lookups, payeeId: number | null) {
@@ -511,6 +519,12 @@ function EditRow(props: {
       )}
 
       <div className="register-edit-actions">
+        {choosesBudget(l.account) && (
+          <label className="checkbox in-budget-toggle" title="Family money paid for this, so it counts in the family budget">
+            <input type="checkbox" checked={d.inBudget} onChange={(e) => set({ inBudget: e.target.checked })} />
+            <span>Include in family budget</span>
+          </label>
+        )}
         {props.error && (
           <span className="error-text" role="alert">
             {props.error}
@@ -547,7 +561,9 @@ function DisplayRow(props: {
   const payee = t.payeeId != null ? l.payeeById.get(t.payeeId) : undefined;
   let category: ReactNode;
   if (t.splits.length) category = <span className="muted">Split ({t.splits.length})</span>;
-  else if (isBudgetTransfer(l, t.payeeId)) category = <span className="muted">Transfer</span>;
+  else if (isBudgetTransfer(l, t.payeeId) || (t.otherSidePrivate && t.categoryId == null)) {
+    category = <span className="muted">Transfer</span>;
+  }
   else if (t.categoryId != null) category = l.categoryName.get(t.categoryId);
   else category = <span className="uncategorized">Uncategorized</span>;
 
@@ -582,7 +598,19 @@ function DisplayRow(props: {
         {cell("date", formatDate(t.date))}
         {cell("payee", payeeLabel(payee), "cell truncate")}
         {cell("notes", t.notes, "cell truncate muted")}
-        {props.showCategory && cell("category", category, "cell truncate")}
+        {props.showCategory &&
+          cell(
+            "category",
+            <>
+              {category}
+              {choosesBudget(l.account) && t.inBudget && (
+                <span className="family-badge" title="Counts in the family budget">
+                  Family
+                </span>
+              )}
+            </>,
+            "cell truncate",
+          )}
         {cell("payment", t.amount < 0 ? formatCents(-t.amount) : "", "cell amount")}
         {cell("deposit", t.amount > 0 ? formatCents(t.amount) : "", "cell amount positive")}
         <div className={t.runningBalance < 0 ? "cell amount negative" : "cell amount"}>
@@ -653,7 +681,7 @@ export function Register(props: {
   const [editError, setEditError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   /** Why the row the user tried to edit has to be edited somewhere else. */
-  const [linkedNotice, setLinkedNotice] = useState<"investment" | "split" | null>(null);
+  const [linkedNotice, setLinkedNotice] = useState<"investment" | "split" | "private" | null>(null);
 
   // Reset the entry row when switching accounts.
   useEffect(() => {
@@ -676,7 +704,7 @@ export function Register(props: {
     return transactions.filter((t) => {
       const payee = payeeLabel(t.payeeId != null ? lookups.payeeById.get(t.payeeId) : undefined);
       const ids = t.splits.length ? t.splits.map((s) => s.categoryId) : [t.categoryId];
-      const needsCategory = showCategory && !isBudgetTransfer(lookups, t.payeeId);
+      const needsCategory = showCategory && !isBudgetTransfer(lookups, t.payeeId) && !t.otherSidePrivate;
       const cats = ids
         .map((id) => (id != null ? (lookups.categoryName.get(id) ?? "") : needsCategory ? "uncategorized" : ""))
         .join(" ");
@@ -760,9 +788,9 @@ export function Register(props: {
   function startEdit(t: Transaction, field: Field) {
     if (editing?.id === t.id) return;
     if (editing && !saveEdit()) return;
-    if (t.investmentTxnId || t.fromSplit) {
+    if (t.investmentTxnId || t.fromSplit || t.otherSidePrivate) {
       setEditing(null);
-      setLinkedNotice(t.investmentTxnId ? "investment" : "split");
+      setLinkedNotice(t.investmentTxnId ? "investment" : t.fromSplit ? "split" : "private");
       return;
     }
     if (t.reconciled && !confirm("This transaction is reconciled. Edit it anyway?")) return;
@@ -839,8 +867,10 @@ export function Register(props: {
               That row is the cash side of an investment transaction. Edit it on the{" "}
               <Link to="/investments">Investments page</Link>.
             </>
-          ) : (
+          ) : linkedNotice === "split" ? (
             "That row is one line of a split transaction in the account it came from. Edit it there."
+          ) : (
+            "That row is a transfer with another member's private account, so only they can change it. You can still mark it cleared."
           )}{" "}
           <button className="link-button" onClick={() => setLinkedNotice(null)}>
             Dismiss

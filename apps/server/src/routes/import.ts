@@ -33,7 +33,7 @@ import {
   type BankTxn,
 } from "../importers/bank/parse";
 import { commitFundImport, parseFundStatement, planFundImport, type Statement } from "../importers/fund/statement";
-import { getAccount } from "../services/ledger";
+import { visibleAccount, type Actor } from "../services/ledger";
 import { localDate } from "../util";
 import { listCategories } from "../services/categories";
 
@@ -129,11 +129,11 @@ function effectiveMappings(book: GncBook, ctx: ReturnType<typeof loadContext>, i
 
 function plan(
   c: { var: AppEnv["Variables"] },
-  householdId: number,
+  actor: Actor,
   book: GncBook,
   input: Record<string, GnucashMapping>,
 ) {
-  const ctx = loadContext(c.var.db, householdId);
+  const ctx = loadContext(c.var.db, actor);
   try {
     const mappings = effectiveMappings(book, ctx, input);
     return { mappings, plan: planImport(book, mappings, ctx) };
@@ -188,7 +188,7 @@ export const importRoutes = new Hono<AppEnv>()
     const fileName = cleanFileName(c.req.query("name"));
     uploads.set(uploadId, { householdId, fileName, book, expiresAt: Date.now() + UPLOAD_TTL_MS });
 
-    const ctx = loadContext(c.var.db, householdId);
+    const ctx = loadContext(c.var.db, actorOf(c));
     const suggestions = suggestMappings(book, ctx);
     const used = new Map<string, { count: number; balance: number }>();
     for (const tx of book.transactions) {
@@ -227,7 +227,7 @@ export const importRoutes = new Hono<AppEnv>()
     const { householdId } = actorOf(c);
     const upload = getUpload(c.req.param("uploadId"), householdId);
     const { mappings } = await parseBody(c, gnucashImportInput);
-    return c.json(plan(c, householdId, upload.book, mappings).plan.preview);
+    return c.json(plan(c, actorOf(c), upload.book, mappings).plan.preview);
   })
 
   .post("/gnucash/:uploadId/commit", async (c) => {
@@ -236,7 +236,7 @@ export const importRoutes = new Hono<AppEnv>()
     const upload = getUpload(uploadId, actor.householdId);
     const input = await parseBody(c, gnucashImportInput);
     const result = c.var.db.transaction((tx) => {
-      const ctx = loadContext(tx, actor.householdId);
+      const ctx = loadContext(tx, actor);
       let mappings: Record<string, GnucashMapping>;
       let p: ReturnType<typeof planImport>;
       try {
@@ -258,7 +258,7 @@ export const importRoutes = new Hono<AppEnv>()
     const { householdId } = actorOf(c);
     const accountId = Number(c.req.query("accountId"));
     if (!Number.isInteger(accountId) || accountId <= 0) throw new HTTPException(400, { message: "Pick an account" });
-    getAccount(c.var.db, householdId, accountId);
+    visibleAccount(c.var.db, actorOf(c), accountId);
     const body = await c.req.arrayBuffer();
     if (body.byteLength === 0) throw new HTTPException(400, { message: "The file is empty" });
     if (body.byteLength > 20 * 1024 * 1024)
@@ -291,7 +291,7 @@ export const importRoutes = new Hono<AppEnv>()
     const upload = getBankUpload(c.req.param("uploadId"), householdId);
     const { csv } = await parseBody(c, bankPreviewInput);
     const { txns, errors } = bankTxns(upload, csv);
-    const account = getAccount(c.var.db, householdId, upload.accountId);
+    const account = visibleAccount(c.var.db, actorOf(c), upload.accountId);
     const { ids: _ids, ...preview } = planBankImport(c.var.db, householdId, account, txns);
     return c.json({ ...preview, errors });
   })
@@ -303,7 +303,7 @@ export const importRoutes = new Hono<AppEnv>()
     const input = await parseBody(c, bankCommitInput);
     const { txns } = bankTxns(upload, input.csv);
     const result = c.var.db.transaction((tx) => {
-      const account = getAccount(tx, actor.householdId, upload.accountId);
+      const account = visibleAccount(tx, actor, upload.accountId);
       const categoryIds = new Set(listCategories(tx, actor.householdId).flatMap((g) => g.categories.map((x) => x.id)));
       return commitBankImport(tx, actor, {
         account,
@@ -324,7 +324,7 @@ export const importRoutes = new Hono<AppEnv>()
     const { householdId } = actorOf(c);
     const accountId = Number(c.req.query("accountId"));
     if (!Number.isInteger(accountId) || accountId <= 0) throw new HTTPException(400, { message: "Pick an account" });
-    const account = getAccount(c.var.db, householdId, accountId);
+    const account = visibleAccount(c.var.db, actorOf(c), accountId);
     if (account.closed) throw new HTTPException(400, { message: "That account is closed" });
     const body = await c.req.arrayBuffer();
     if (body.byteLength === 0) throw new HTTPException(400, { message: "The file is empty" });
@@ -367,6 +367,7 @@ export const importRoutes = new Hono<AppEnv>()
       throw new HTTPException(404, { message: "That upload has expired. Upload the file again." });
     }
     const result: FundImportResult = c.var.db.transaction((tx) => {
+      visibleAccount(tx, actor, upload.accountId);
       const plan = planFundImport(tx, actor.householdId, upload.accountId, upload.statement, localDate());
       return commitFundImport(tx, actor, upload.accountId, upload.fileName, plan);
     });
@@ -377,6 +378,6 @@ export const importRoutes = new Hono<AppEnv>()
   .get("/batches", (c) => c.json(listBatches(c.var.db, actorOf(c).householdId)))
 
   .post("/batches/:id/undo", (c) => {
-    undoBatch(c.var.db, actorOf(c).householdId, idParam(c));
+    undoBatch(c.var.db, actorOf(c), idParam(c));
     return c.json({ ok: true });
   });

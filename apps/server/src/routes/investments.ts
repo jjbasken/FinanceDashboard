@@ -28,12 +28,12 @@ const optionalId = (raw: string | undefined) => {
 export const investmentRoutes = new Hono<AppEnv>()
   .use(requireAuth)
 
-  .get("/holdings", (c) => c.json(getHoldings(c.var.db, actorOf(c).householdId)))
+  .get("/holdings", (c) => c.json(getHoldings(c.var.db, actorOf(c))))
 
   .get("/history", (c) => {
     const range = (c.req.query("range") ?? "1y") as HistoryRange;
     if (!HISTORY_RANGES.includes(range)) throw new HTTPException(400, { message: "Unknown range" });
-    return c.json(valueHistory(c.var.db, actorOf(c).householdId, range, localDate()));
+    return c.json(valueHistory(c.var.db, actorOf(c), range, localDate()));
   })
 
   .post("/prices/refresh", async (c) =>
@@ -79,7 +79,7 @@ export const investmentRoutes = new Hono<AppEnv>()
   // --- Investment transactions ---
   .get("/transactions", (c) =>
     c.json(
-      listInvestmentTxns(c.var.db, actorOf(c).householdId, {
+      listInvestmentTxns(c.var.db, actorOf(c), {
         accountId: optionalId(c.req.query("accountId")),
         securityId: optionalId(c.req.query("securityId")),
       }),
@@ -103,6 +103,6 @@ export const investmentRoutes = new Hono<AppEnv>()
 
   .delete("/transactions/:id", (c) => {
     const id = idParam(c);
-    c.var.db.transaction((tx) => deleteInvestmentTxn(tx, actorOf(c).householdId, id));
+    c.var.db.transaction((tx) => deleteInvestmentTxn(tx, actorOf(c), id));
     return c.json({ ok: true });
   });

@@ -94,6 +94,8 @@ export interface CategoryActivityItem {
   /** The transaction to open in the register (the parent, for a split). */
   transactionId: number;
   accountId: number;
+  /** In another member's private account (included in the budget), so there's no register to open. */
+  privateAccount: boolean;
   accountName: string;
   date: string;
   payeeName: string;

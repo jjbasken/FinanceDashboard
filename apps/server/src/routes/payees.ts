@@ -24,19 +24,30 @@ function regularPayee(db: DbOrTx, householdId: number, id: number) {
 
 const householdOf = (c: Context<AppEnv>) => actorOf(c).householdId;
 
+/** What another member's private account is called in transfers. */
+const PRIVATE_ACCOUNT = "Private account";
+
 export const payeeRoutes = new Hono<AppEnv>()
   .use(requireAuth)
 
   .get("/", (c) => {
+    const { householdId, userId } = actorOf(c);
+    // Another member's private account appears only as "Private account", and the category
+    // carried forward comes only from accounts this member can see.
     const list: Payee[] = c.var.db.all<Payee>(sql`
-      select p.id as id, p.name as name, p.transfer_account_id as transferAccountId,
-             (select count(*) from transactions t where t.payee_id = p.id and t.parent_id is null) as transactionCount,
-             (select t.category_id from transactions t
-              where t.payee_id = p.id and t.parent_id is null and t.category_id is not null
-              order by t.date desc, t.id desc limit 1) as lastCategoryId
-      from payees p
-      where p.household_id = ${householdOf(c)}
-      order by lower(p.name)
+      select * from (
+        select p.id as id,
+               case when ta.owner_id is not null and ta.owner_id != ${userId} then ${PRIVATE_ACCOUNT} else p.name end as name,
+               p.transfer_account_id as transferAccountId,
+               (select count(*) from transactions t where t.payee_id = p.id and t.parent_id is null) as transactionCount,
+               (select t.category_id from transactions t join accounts a on a.id = t.account_id
+                where t.payee_id = p.id and t.parent_id is null and t.category_id is not null
+                  and (a.owner_id is null or a.owner_id = ${userId})
+                order by t.date desc, t.id desc limit 1) as lastCategoryId
+        from payees p
+        left join accounts ta on ta.id = p.transfer_account_id
+        where p.household_id = ${householdId}
+      ) order by lower(name)
     `);
     return c.json(list);
   })
