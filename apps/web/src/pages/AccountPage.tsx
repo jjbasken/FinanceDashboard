@@ -6,13 +6,27 @@ import {
   parseCents,
   type Account,
   type AccountFolder,
+  type InvestmentTxn,
+  type Security,
 } from "@fd/shared";
 import { useState } from "react";
-import { Navigate, useNavigate, useParams } from "react-router";
+import { Navigate, useNavigate, useParams, useSearchParams } from "react-router";
 import { api } from "../api";
 import { Dialog } from "../components/Dialog";
+import { HoldingsTable, InvestmentTxnTable, useSecurityColors } from "../components/HoldingsTables";
+import { InvestmentTxnDialog, SecurityDialog } from "../components/InvestmentDialogs";
 import { Register } from "../components/Register";
-import { useAccounts, useCategories, useFolders, useLedgerMutation, usePayees, useRegister } from "../ledger";
+import {
+  useAccounts,
+  useCategories,
+  useFolders,
+  useHoldings,
+  useInvestmentTxns,
+  useLedgerMutation,
+  usePayees,
+  useRegister,
+  useSecurities,
+} from "../ledger";
 
 function Amount(props: { label: string; cents: number }) {
   return (
@@ -170,6 +184,94 @@ function AccountMenu(props: { account: Account }) {
   );
 }
 
+/** An investment account's holdings and its buys, sells and other investment transactions. */
+function AccountInvestments(props: { account: Account; accounts: Account[] }) {
+  const { account } = props;
+  const holdings = useHoldings();
+  const securities = useSecurities();
+  const txns = useInvestmentTxns();
+  const colorOf = useSecurityColors(securities.data);
+  const [filter, setFilter] = useState<number | null>(null);
+  const [editing, setEditing] = useState<InvestmentTxn | "new" | null>(null);
+  const [securityDialog, setSecurityDialog] = useState<Security | "new" | null>(null);
+
+  // Closed accounts aren't in the holdings summary; show their cash alone.
+  const own = holdings.data?.accounts.find((a) => a.accountId === account.id) ?? {
+    accountId: account.id,
+    accountName: account.name,
+    cash: account.balance,
+    holdings: [],
+    value: account.balance,
+  };
+  const accountTxns = (txns.data ?? []).filter((t) => t.accountId === account.id);
+  const shownTxns = accountTxns.filter((t) => filter === null || t.securityId === filter);
+  const filterSymbol = securities.data?.find((s) => s.id === filter)?.symbol;
+  const investAccounts = props.accounts
+    .filter((a) => !a.closed || a.id === account.id)
+    .sort((a, b) => Number(b.type === "investment") - Number(a.type === "investment"));
+  const error = holdings.error ?? securities.error ?? txns.error;
+
+  return (
+    <div className="page-body investments">
+      {error && <p className="error-text">{error.message}</p>}
+      <section className="card wide">
+        <div className="card-head">
+          <h2>Holdings</h2>
+          <div className="row-actions">
+            <button className="btn" onClick={() => setSecurityDialog("new")}>
+              Add security
+            </button>
+            <button className="btn btn-primary" onClick={() => setEditing("new")} disabled={!securities.data}>
+              Add transaction
+            </button>
+          </div>
+        </div>
+        {holdings.data ? (
+          <HoldingsTable accounts={[own]} colorOf={colorOf} filter={filter} onFilter={setFilter} />
+        ) : (
+          !error && <p className="muted">Loading…</p>
+        )}
+        {holdings.data && own.holdings.length === 0 && (
+          <p className="muted">
+            No holdings yet. Add a security, then record a buy (or shares moved in) to start tracking it here.
+          </p>
+        )}
+      </section>
+
+      {accountTxns.length > 0 && securities.data && (
+        <section className="card wide">
+          <div className="card-head">
+            <h2>Transactions{filterSymbol && `: ${filterSymbol}`}</h2>
+            {filter !== null && (
+              <button className="link-button" onClick={() => setFilter(null)}>
+                Show all
+              </button>
+            )}
+          </div>
+          <InvestmentTxnTable txns={shownTxns} securities={securities.data} onEdit={setEditing} />
+        </section>
+      )}
+
+      {editing && securities.data && (
+        <InvestmentTxnDialog
+          txn={editing === "new" ? undefined : editing}
+          accounts={investAccounts}
+          securities={securities.data}
+          defaults={{ accountId: account.id, securityId: filter ?? undefined }}
+          onClose={() => setEditing(null)}
+          onAddSecurity={() => setSecurityDialog("new")}
+        />
+      )}
+      {securityDialog && (
+        <SecurityDialog
+          security={securityDialog === "new" ? undefined : securityDialog}
+          onClose={() => setSecurityDialog(null)}
+        />
+      )}
+    </div>
+  );
+}
+
 export function AccountPage() {
   const id = Number(useParams().id);
   const accounts = useAccounts();
@@ -178,9 +280,16 @@ export function AccountPage() {
   const register = useRegister(id);
   const [search, setSearch] = useState("");
   const [reconciling, setReconciling] = useState(false);
+  const [params, setParams] = useSearchParams();
 
   const account = accounts.data?.find((a) => a.id === id);
   if (accounts.data && !account) return <Navigate to="/budget" replace />;
+
+  // Investment accounts open on their holdings; the cash register is a click away.
+  const invests = !!account && (account.type === "investment" || account.holdingsValue !== 0);
+  const showHoldings = invests && params.get("view") !== "register";
+  const setView = (view: "holdings" | "register") =>
+    setParams(view === "register" ? { view } : {}, { replace: true });
 
   const error = accounts.error ?? payees.error ?? categories.error ?? register.error;
   const ready = account && payees.data && categories.data && register.data;
@@ -216,24 +325,44 @@ export function AccountPage() {
         )}
       </header>
       <div className="account-toolbar">
-        <input
-          type="search"
-          placeholder="Search transactions"
-          aria-label="Search transactions"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+        {invests && (
+          <div className="segmented" role="group" aria-label="View">
+            <button className={showHoldings ? "active" : undefined} onClick={() => setView("holdings")}>
+              Holdings
+            </button>
+            <button
+              className={showHoldings ? undefined : "active"}
+              onClick={() => setView("register")}
+              title="The account's cash: deposits, withdrawals, and the cash side of buys, sells and dividends"
+            >
+              Cash register
+            </button>
+          </div>
+        )}
+        {!showHoldings && (
+          <input
+            type="search"
+            placeholder="Search transactions"
+            aria-label="Search transactions"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        )}
         <span className="spacer" />
-        {account && !reconciling && (
+        {account && !showHoldings && !reconciling && (
           <button className="btn" onClick={() => setReconciling(true)}>
             Reconcile
           </button>
         )}
         {account && <AccountMenu account={account} />}
       </div>
-      {account && reconciling && <ReconcileBar account={account} onDone={() => setReconciling(false)} />}
+      {account && reconciling && !showHoldings && (
+        <ReconcileBar account={account} onDone={() => setReconciling(false)} />
+      )}
       {error && <p className="error-text page-error">{error.message}</p>}
-      {ready ? (
+      {showHoldings ? (
+        <AccountInvestments key={account!.id} account={account!} accounts={accounts.data!} />
+      ) : ready ? (
         <Register
           account={account}
           accounts={accounts.data!}

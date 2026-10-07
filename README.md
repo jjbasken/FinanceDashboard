@@ -109,6 +109,7 @@ Investments live in **Investment** accounts. An account's register holds its cas
 - Add a security by ticker. "Look up" fills in its name and type from Yahoo Finance. Then record buys, sells, dividends, reinvested dividends, splits, and shares moved in or out.
 - Buys, sells and dividends add a linked cash entry to the account's register. You can only change that entry from the Investments page.
 - Holdings show shares, the latest price, market value, average-cost basis and unrealized gain. Account balances and the sidebar total include market value.
+- Each investment account's own page opens on its holdings and their transactions. Click a holding to see just its buys and sells, and use **Add transaction** to record one for that account. Switch to **Cash register** for the account's cash.
 - Prices are fetched daily from Yahoo Finance's public chart data, which needs no API key, and you can refresh them on demand. For anything Yahoo doesn't cover, enter prices by hand.
 
 ## Reports, live updates and backups
