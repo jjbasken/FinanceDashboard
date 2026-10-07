@@ -50,6 +50,13 @@
       "when": 1791322503433,
       "tag": "0006_accounts_and_matches",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1791381902395,
+      "tag": "0007_account_folders_and_next_month_income",
+      "breakpoints": true
     }
   ]
 }

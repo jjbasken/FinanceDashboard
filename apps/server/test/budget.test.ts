@@ -106,6 +106,41 @@ describe("budget API", () => {
     expect(items[0]).toMatchObject({ transactionId: t.id, accountName: "Checking", payeeName: "Big Box", amount: -3000 });
   });
 
+  test("income marked for next month is budgeted the month after it arrives", async () => {
+    const { jeremy, ids, account, txn, budget } = await setUp();
+    const checking = await account({ name: "Checking", type: "checking" });
+    // Paid on the second-last day of September and the last day of October.
+    await txn({ accountId: checking.id, date: "2026-09-29", amount: 500000, categoryId: ids.Income, payeeName: "Employer" });
+    await txn({ accountId: checking.id, date: "2026-10-31", amount: 510000, categoryId: ids.Income, payeeName: "Employer" });
+    await txn({ accountId: checking.id, date: "2026-10-12", amount: 2500, categoryId: ids["Starting Balances"] });
+
+    expect((await jeremy.patch(`/api/categories/${ids.Income}`, { forNextMonth: true })).status).toBe(200);
+    const groups = (await jeremy.get("/api/categories")).json as CategoryGroup[];
+    expect(groups.flatMap((g) => g.categories).find((c) => c.id === ids.Income)!.forNextMonth).toBe(true);
+
+    const oct = await budget("2026-10");
+    expect(oct).toMatchObject({ income: 502500, incomeFromLastMonth: 500000 });
+    expect(category(oct, ids.Income!)).toMatchObject({ forNextMonth: true, activity: 500000 });
+    expect((await budget("2026-11")).income).toBe(510000);
+
+    // The activity list shows the transactions the budget counted: September's pay.
+    const items = (await jeremy.get(`/api/budget/2026-10/categories/${ids.Income}/transactions`)).json as CategoryActivityItem[];
+    expect(items.map((i) => i.date)).toEqual(["2026-09-29"]);
+
+    // Turning it off puts income back in the month it arrived.
+    await jeremy.patch(`/api/categories/${ids.Income}`, { forNextMonth: false });
+    expect(await budget("2026-10")).toMatchObject({ income: 512500, incomeFromLastMonth: 0 });
+  });
+
+  test("only income categories can count toward next month", async () => {
+    const { jeremy, ids, groups } = await setUp();
+    expect((await jeremy.patch(`/api/categories/${ids.Groceries}`, { forNextMonth: true })).status).toBe(400);
+    const income = groups.find((g) => g.isIncome)!;
+    const everyday = groups.find((g) => g.name === "Everyday")!;
+    expect((await jeremy.patch(`/api/categories/${ids.Groceries}`, { forNextMonth: true, groupId: income.id })).status).toBe(200);
+    expect((await jeremy.patch(`/api/categories/${ids.Income}`, { forNextMonth: true, groupId: everyday.id })).status).toBe(400);
+  });
+
   test("income categories can't be budgeted", async () => {
     const { jeremy, ids } = await setUp();
     const res = await jeremy.request("PUT", `/api/budget/2026-10/categories/${ids.Income}`, { amount: 100 });

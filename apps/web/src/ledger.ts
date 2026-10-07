@@ -1,5 +1,6 @@
 import type {
   Account,
+  AccountFolder,
   BudgetMonth,
   CategoryGroup,
   HoldingsSummary,
@@ -15,6 +16,7 @@ import { api } from "./api";
 
 export const ledgerKeys = {
   accounts: ["accounts"] as const,
+  folders: ["account-folders"] as const,
   categories: ["categories"] as const,
   payees: ["payees"] as const,
   members: ["household", "users"] as const,
@@ -24,6 +26,9 @@ export const ledgerKeys = {
 
 export const useAccounts = () =>
   useQuery({ queryKey: ledgerKeys.accounts, queryFn: () => api.get<Account[]>("/accounts") });
+
+export const useFolders = () =>
+  useQuery({ queryKey: ledgerKeys.folders, queryFn: () => api.get<AccountFolder[]>("/account-folders") });
 
 export const useCategories = () =>
   useQuery({ queryKey: ledgerKeys.categories, queryFn: () => api.get<CategoryGroup[]>("/categories") });
@@ -50,6 +55,7 @@ export function useLedgerMutation<TInput, TResult = unknown>(fn: (input: TInput)
     onSettled: () =>
       Promise.all([
         qc.invalidateQueries({ queryKey: ledgerKeys.accounts }),
+        qc.invalidateQueries({ queryKey: ledgerKeys.folders }),
         qc.invalidateQueries({ queryKey: ["register"] }),
         qc.invalidateQueries({ queryKey: ledgerKeys.payees }),
         qc.invalidateQueries({ queryKey: ledgerKeys.categories }),

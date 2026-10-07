@@ -1,9 +1,18 @@
-import { ACCOUNT_TYPE_LABELS, centsToInput, formatCents, parseCents, type Account } from "@fd/shared";
+import {
+  ACCOUNT_TYPE_LABELS,
+  accountSection,
+  centsToInput,
+  formatCents,
+  parseCents,
+  type Account,
+  type AccountFolder,
+} from "@fd/shared";
 import { useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router";
 import { api } from "../api";
+import { Dialog } from "../components/Dialog";
 import { Register } from "../components/Register";
-import { useAccounts, useCategories, useLedgerMutation, usePayees, useRegister } from "../ledger";
+import { useAccounts, useCategories, useFolders, useLedgerMutation, usePayees, useRegister } from "../ledger";
 
 function Amount(props: { label: string; cents: number }) {
   return (
@@ -53,9 +62,58 @@ function ReconcileBar(props: { account: Account; onDone: () => void }) {
   );
 }
 
+/** The folders an account can go in (its own sidebar section's), nested folders indented under their parent. */
+function folderOptions(folders: AccountFolder[], account: Account) {
+  const section = folders.filter((f) => f.section === accountSection(account));
+  const out: { id: number; label: string }[] = [];
+  const add = (parentId: number | null, depth: number) => {
+    for (const f of section.filter((x) => x.parentId === parentId).sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id)) {
+      out.push({ id: f.id, label: `${"\u00a0\u00a0\u00a0".repeat(depth)}${f.name}` });
+      add(f.id, depth + 1);
+    }
+  };
+  add(null, 0);
+  return out;
+}
+
+function MoveToFolderDialog(props: { account: Account; onClose: () => void }) {
+  const { data: folders } = useFolders();
+  const [folderId, setFolderId] = useState(props.account.folderId === null ? "" : String(props.account.folderId));
+  const update = useLedgerMutation((body: unknown) => api.patch(`/accounts/${props.account.id}`, body));
+  const options = folderOptions(folders ?? [], props.account);
+  return (
+    <Dialog
+      title={`Move "${props.account.name}"`}
+      submitLabel="Move"
+      onClose={props.onClose}
+      onSubmit={() =>
+        update.mutate({ folderId: folderId ? Number(folderId) : null }, { onSuccess: props.onClose })
+      }
+      pending={update.isPending}
+      error={update.error?.message}
+    >
+      <label className="field">
+        <span>Folder</span>
+        <select value={folderId} onChange={(e) => setFolderId(e.target.value)}>
+          <option value="">No folder</option>
+          {options.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {options.length === 0 && (
+        <p className="muted">There are no folders here yet. Add one with "+ Folder" next to the section name in the sidebar.</p>
+      )}
+    </Dialog>
+  );
+}
+
 function AccountMenu(props: { account: Account }) {
   const { account } = props;
   const navigate = useNavigate();
+  const [moving, setMoving] = useState(false);
   const update = useLedgerMutation((body: unknown) => api.patch(`/accounts/${account.id}`, body));
   const remove = useLedgerMutation(() => api.delete(`/accounts/${account.id}`));
 
@@ -85,6 +143,7 @@ function AccountMenu(props: { account: Account }) {
   }
 
   return (
+    <>
     <details className="menu">
       <summary className="btn" aria-label="Account actions">
         ⋯
@@ -94,6 +153,7 @@ function AccountMenu(props: { account: Account }) {
         onClick={(e) => (e.currentTarget.parentElement as HTMLDetailsElement).removeAttribute("open")}
       >
         <button onClick={rename}>Rename</button>
+        {!account.closed && <button onClick={() => setMoving(true)}>Move to folder</button>}
         <button onClick={toggleBudget}>{account.onBudget ? "Move off budget" : "Move on budget"}</button>
         {account.type === "investment" && (
           <button onClick={() => navigate(`/import?account=${account.id}`)}>Import from GnuCash</button>
@@ -105,6 +165,8 @@ function AccountMenu(props: { account: Account }) {
       </div>
       {(update.error || remove.error) && <p className="error-text">{(update.error ?? remove.error)!.message}</p>}
     </details>
+      {moving && <MoveToFolderDialog account={account} onClose={() => setMoving(false)} />}
+    </>
   );
 }
 

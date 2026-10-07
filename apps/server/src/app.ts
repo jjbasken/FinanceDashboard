@@ -13,6 +13,7 @@ import { householdRoutes } from "./routes/household";
 import { importRoutes } from "./routes/import";
 import { backupRoutes } from "./routes/backup";
 import { eventRoutes } from "./routes/events";
+import { folderRoutes } from "./routes/folders";
 import { reportRoutes } from "./routes/reports";
 import { investmentRoutes } from "./routes/investments";
 import { EventHub } from "./services/events";
@@ -111,6 +112,7 @@ export function createApp({
   app.route("/api/auth", authRoutes);
   app.route("/api/household", householdRoutes);
   app.route("/api/accounts", accountRoutes);
+  app.route("/api/account-folders", folderRoutes);
   app.route("/api/transactions", transactionRoutes);
   app.route("/api/categories", categoryRoutes);
   app.route("/api/payees", payeeRoutes);

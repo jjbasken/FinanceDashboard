@@ -1,4 +1,5 @@
 import {
+  accountSection,
   defaultOnBudget,
   type Account,
   type CreateAccountInput,
@@ -13,6 +14,7 @@ import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import type { DbOrTx } from "../db";
 import { accounts, categories, categoryGroups, investmentTxns, payees, transactions } from "../db/schema";
+import { assertParent, getFolder, nextSidebarOrder } from "./folders";
 import { holdingsValueByAccount } from "./holdings";
 import { STARTING_BALANCES } from "./household";
 
@@ -121,6 +123,7 @@ export function listAccounts(db: DbOrTx, householdId: number): Account[] {
       onBudget: accounts.onBudget,
       closed: accounts.closed,
       sortOrder: accounts.sortOrder,
+      folderId: accounts.folderId,
       transferPayeeId: payees.id,
     })
     .from(accounts)
@@ -159,11 +162,7 @@ export function accountSummary(db: DbOrTx, householdId: number, id: number) {
 
 export function createAccount(db: DbOrTx, actor: Actor, input: CreateAccountInput, today: string) {
   const { householdId, userId } = actor;
-  const [{ next } = { next: 0 }] = db
-    .select({ next: sql<number>`coalesce(max(${accounts.sortOrder}), -1) + 1` })
-    .from(accounts)
-    .where(eq(accounts.householdId, householdId))
-    .all();
+  const next = nextSidebarOrder(db, householdId);
   const onBudget = input.onBudget ?? defaultOnBudget(input.type);
   const account = db
     .insert(accounts)
@@ -210,8 +209,18 @@ export function updateAccount(db: DbOrTx, actor: Actor, id: number, input: Updat
     `);
     if (held.length) throw badRequest("Sell or move out this account's investments before closing it");
   }
+  // Folders belong to one sidebar section. Moving into a folder puts the account at its end;
+  // moving to another section takes it out of a folder that no longer fits.
+  const section = accountSection({ type: input.type ?? account.type, onBudget: input.onBudget ?? account.onBudget });
+  let placement: { folderId?: number | null; sortOrder?: number } = {};
+  if (input.folderId !== undefined && input.folderId !== account.folderId) {
+    assertParent(db, actor.householdId, input.folderId, section);
+    placement = { folderId: input.folderId, sortOrder: nextSidebarOrder(db, actor.householdId) };
+  } else if (account.folderId !== null && getFolder(db, actor.householdId, account.folderId).section !== section) {
+    placement = { folderId: null, sortOrder: nextSidebarOrder(db, actor.householdId) };
+  }
   db.update(accounts)
-    .set({ ...input, updatedBy: actor.userId })
+    .set({ ...input, ...placement, updatedBy: actor.userId })
     .where(eq(accounts.id, id))
     .run();
   if (input.name !== undefined) {

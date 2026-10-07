@@ -5,6 +5,7 @@ import { computeBudgetMonth, type CategoryAmount } from "../src/services/budget"
 const GROCERIES = 1;
 const RENT = 2;
 const SALARY = 10;
+const PAY = 11;
 
 const groups: CategoryGroup[] = [
   {
@@ -14,8 +15,8 @@ const groups: CategoryGroup[] = [
     hidden: false,
     sortOrder: 0,
     categories: [
-      { id: GROCERIES, groupId: 1, name: "Groceries", hidden: false, sortOrder: 0 },
-      { id: RENT, groupId: 1, name: "Rent", hidden: true, sortOrder: 1 },
+      { id: GROCERIES, groupId: 1, name: "Groceries", hidden: false, sortOrder: 0, forNextMonth: false },
+      { id: RENT, groupId: 1, name: "Rent", hidden: true, sortOrder: 1, forNextMonth: false },
     ],
   },
   {
@@ -24,7 +25,10 @@ const groups: CategoryGroup[] = [
     isIncome: true,
     hidden: false,
     sortOrder: 0,
-    categories: [{ id: SALARY, groupId: 2, name: "Salary", hidden: false, sortOrder: 0 }],
+    categories: [
+      { id: SALARY, groupId: 2, name: "Salary", hidden: false, sortOrder: 0, forNextMonth: false },
+      { id: PAY, groupId: 2, name: "Month-end pay", hidden: false, sortOrder: 1, forNextMonth: true },
+    ],
   },
 ];
 
@@ -70,5 +74,21 @@ describe("computeBudgetMonth", () => {
   test("amounts for unknown categories are ignored", () => {
     const m = computeBudgetMonth(groups, [row(999, 500)], [row(999, -500)], "2026-01");
     expect(m).toMatchObject({ budgeted: 0, spent: 0, toBudget: 0 });
+  });
+
+  test("next-month income comes from last month's activity", () => {
+    const m = computeBudgetMonth(
+      groups,
+      [row(GROCERIES, 100000)],
+      [row(SALARY, 2000), row(PAY, 999999), row(GROCERIES, -5000)],
+      "2026-02",
+      0,
+      [row(PAY, 400000), row(SALARY, 77777), row(GROCERIES, -88888)],
+    );
+    // Pay received this month is for next month; last month's pay is budgeted now.
+    expect(cat(m, PAY)).toMatchObject({ forNextMonth: true, activity: 400000 });
+    expect(cat(m, SALARY)).toMatchObject({ forNextMonth: false, activity: 2000 });
+    expect(cat(m, GROCERIES)).toMatchObject({ forNextMonth: false, activity: -5000 });
+    expect(m).toMatchObject({ income: 402000, incomeFromLastMonth: 400000, toBudget: 302000, spent: -5000 });
   });
 });

@@ -22,6 +22,12 @@ export function formatMonth(month: string, locale = "en-US"): string {
   return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(locale, { month: "long", year: "numeric", timeZone: "UTC" });
 }
 
+/** e.g. "2026-10" -> "October" */
+export function monthName(month: string, locale = "en-US"): string {
+  const [y, m] = month.split("-").map(Number) as [number, number];
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(locale, { month: "long", timeZone: "UTC" });
+}
+
 export const setBudgetInput = z.object({ amount: centsSchema });
 export type SetBudgetInput = z.infer<typeof setBudgetInput>;
 
@@ -39,9 +45,11 @@ export interface BudgetCategory {
   id: number;
   name: string;
   hidden: boolean;
+  /** Income category whose activity comes from the month before (pay received at the end of last month). */
+  forNextMonth: boolean;
   /** Assigned this month. Always 0 for income categories. */
   budgeted: number;
-  /** Net transactions this month; spending is negative. */
+  /** Net transactions this month (last month for a forNextMonth category); spending is negative. */
   activity: number;
   /** budgeted + activity. Each month starts from zero; nothing carries over. */
   balance: number;
@@ -61,8 +69,10 @@ export interface BudgetGroup {
 /** One month's plan. Months are independent: nothing carries over from the month before. */
 export interface BudgetMonth {
   month: string;
-  /** Income received this month. */
+  /** Income to budget this month: what came in this month, plus last month's forNextMonth income. */
   income: number;
+  /** The part of `income` received last month in forNextMonth categories. */
+  incomeFromLastMonth: number;
   /** Total assigned to expense categories this month. */
   budgeted: number;
   /** income - budgeted */

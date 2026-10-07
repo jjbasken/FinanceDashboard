@@ -106,7 +106,19 @@ export function CategoriesCard() {
             <div key={c.id} className={c.hidden ? "category-row hidden" : "category-row"}>
               <span>{c.name}</span>
               {c.hidden && <span className="badge">Hidden</span>}
+              {g.isIncome && c.forNextMonth && <span className="badge">Budgeted next month</span>}
               <span className="spacer" />
+              {g.isIncome && (
+                <button
+                  className="link-button"
+                  title="Budget this income in the month after it arrives, e.g. pay that lands at the end of the month"
+                  onClick={() =>
+                    mutate.mutate({ method: "patch", path: `/categories/${c.id}`, body: { forNextMonth: !c.forNextMonth } })
+                  }
+                >
+                  {c.forNextMonth ? "Use when received" : "Use next month"}
+                </button>
+              )}
               <button
                 className="link-button"
                 onClick={() => {
