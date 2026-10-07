@@ -80,8 +80,11 @@ export const categoryRoutes = new Hono<AppEnv>()
     const id = idParam(c);
     const input = await parseBody(c, updateCategoryInput);
     const { householdId } = actorOf(c);
-    getCategory(c.var.db, householdId, id);
-    if (input.groupId !== undefined) getGroup(c.var.db, householdId, input.groupId);
+    const category = getCategory(c.var.db, householdId, id);
+    const group = getGroup(c.var.db, householdId, input.groupId ?? category.groupId);
+    if (input.forNextMonth && !group.isIncome) {
+      throw new HTTPException(400, { message: "Only income can count toward next month" });
+    }
     c.var.db.update(categories).set(input).where(eq(categories.id, id)).run();
     return c.json({ ok: true });
   })

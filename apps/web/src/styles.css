@@ -521,8 +521,79 @@ select {
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  padding: 5px 10px 5px 16px;
+  padding: 5px 10px 5px calc(16px + var(--depth, 0) * 12px);
   font-size: 13px;
+}
+.sidebar-folder-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px calc(10px + var(--depth, 0) * 12px);
+  border-radius: 6px;
+  font-size: 13px;
+}
+.sidebar-folder-row:hover {
+  background: var(--sidebar-hover);
+}
+.sidebar-folder-toggle {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--sidebar-text-strong);
+  font: inherit;
+  font-weight: 600;
+  padding: 2px 0;
+  cursor: pointer;
+  text-align: left;
+}
+.sidebar-folder-toggle .caret {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 12px;
+}
+.sidebar-group-title > span:first-child {
+  flex: 1;
+}
+/* Folder actions appear on hover, or always on touch screens where there's no hover. */
+.sidebar-actions {
+  display: none;
+  gap: 2px;
+}
+.sidebar-folder-row:hover .sidebar-actions,
+.sidebar-folder-row:focus-within .sidebar-actions,
+.sidebar-group-title:hover .sidebar-actions,
+.sidebar-group-title:focus-within .sidebar-actions {
+  display: inline-flex;
+}
+@media (hover: none) {
+  .sidebar-actions {
+    display: inline-flex;
+  }
+}
+.sidebar-actions button {
+  border: 0;
+  background: none;
+  color: var(--sidebar-text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.8;
+}
+.sidebar-actions button:hover {
+  opacity: 1;
+  background: var(--sidebar-active);
+}
+.sidebar .drop-target.drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.sidebar .drop-target.drop-into {
+  background: color-mix(in srgb, var(--accent) 30%, var(--sidebar-bg));
 }
 .sidebar-amount {
   font-variant-numeric: tabular-nums;

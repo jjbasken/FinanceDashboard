@@ -3,6 +3,7 @@ import {
   centsToInput,
   formatCents,
   formatMonth,
+  monthName,
   monthSchema,
   parseCents,
   type BudgetCategory,
@@ -89,8 +90,14 @@ function ToBudget(props: { budget: BudgetMonth }) {
         <strong>{formatCents(b.toBudget)}</strong>
       </div>
       <dl className="to-budget-breakdown">
-        <dt>Income this month</dt>
-        <dd>{formatCents(b.income)}</dd>
+        {b.incomeFromLastMonth !== 0 && (
+          <>
+            <dt>Income from {formatMonth(addMonths(b.month, -1))}</dt>
+            <dd>{formatCents(b.incomeFromLastMonth)}</dd>
+          </>
+        )}
+        <dt>{b.incomeFromLastMonth !== 0 ? "Other income this month" : "Income this month"}</dt>
+        <dd>{formatCents(b.income - b.incomeFromLastMonth)}</dd>
         <dt>Budgeted this month</dt>
         <dd>{formatCents(-b.budgeted)}</dd>
       </dl>
@@ -106,7 +113,11 @@ function ActivityDialog(props: { month: string; category: BudgetCategory; onClos
   });
   return (
     <Dialog
-      title={`${props.category.name}: ${formatMonth(props.month)}`}
+      title={
+        props.category.forNextMonth
+          ? `${props.category.name}: received in ${formatMonth(addMonths(props.month, -1))}`
+          : `${props.category.name}: ${formatMonth(props.month)}`
+      }
       submitLabel="Close"
       noCancel
       wide
@@ -293,9 +304,24 @@ export function BudgetPage() {
     );
   }
 
-  function categoryActions(c: BudgetCategory) {
+  function categoryActions(c: BudgetCategory, isIncome = false) {
     return (
       <span className="row-actions-inline">
+        {isIncome && (
+          <button
+            className="link-button"
+            title={
+              c.forNextMonth
+                ? "Budget this income in the month it arrives"
+                : "Budget this income in the month after it arrives, e.g. pay that lands at the end of the month"
+            }
+            onClick={() =>
+              edit.mutate({ method: "patch", path: `/categories/${c.id}`, body: { forNextMonth: !c.forNextMonth } })
+            }
+          >
+            {c.forNextMonth ? "Use when received" : "Use next month"}
+          </button>
+        )}
         <button
           className="link-button"
           onClick={() => {
@@ -495,7 +521,12 @@ export function BudgetPage() {
                       ⋮⋮
                     </span>
                     <span className="truncate">{c.name}</span>
-                    {categoryActions(c)}
+                    {c.forNextMonth && (
+                      <span className="badge" title="Received last month, budgeted this month">
+                        From {monthName(addMonths(month, -1))}
+                      </span>
+                    )}
+                    {categoryActions(c, true)}
                   </div>
                   <div />
                   <div className="amount">

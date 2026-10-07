@@ -52,6 +52,8 @@ Migrations are stored in `apps/server/drizzle/` and run automatically when the s
 
 Add accounts from the sidebar. On-budget accounts (checking, savings, cards, cash) feed the budget; off-budget accounts (investments, loans, other assets) count toward net worth only.
 
+To group similar accounts, hover a sidebar section (For budget, Off budget or Investments) and click **+ Folder**. Folders can hold other folders, show the combined balance of what's in them, and collapse with a click; each browser remembers which ones you collapsed. Drag accounts and folders to arrange them: drop on an account to place it above, on the top of a folder to place it above, on the rest of the folder to put it inside, or on the section name to move it to the top level. On a phone, use **Move to folder** in the account's ⋯ menu. A folder only holds its own section's accounts, so moving an account on or off budget takes it out of its folder. Deleting a folder moves what was in it up a level.
+
 Each account's register is built for the keyboard:
 
 - The top row is always ready for a new transaction. **Tab** moves between fields, **Enter** saves, and **Esc** clears the row.
@@ -68,6 +70,7 @@ To tidy payee names, for example the ones bank statements bring in, use **Settin
 The budget is a plan for one month at a time. Each month stands on its own:
 
 - **To Budget** = this month's income minus what you've budgeted this month.
+- **Pay at the end of the month:** click **Use next month** on an income category (on the Budget page or in Settings → Categories) and all of that category's income is budgeted in the month after it arrives. Pay that lands on September 29 or 30 then funds October's budget, and the category shows "From September". Other income categories still count in the month they arrive. Reports still show income in the month it was received.
 - A category's **balance** = what you budgeted for it this month minus what you spent. Nothing carries over: not unspent money, not overspending, and not income you never budgeted.
 - Click a Budgeted amount to edit it. **Enter**, **Tab** and the arrow keys move between categories. **Copy last month** fills in the previous month's amounts.
 - Click a Spent amount to see the transactions behind it. Drag categories and groups to reorder them.

@@ -56,6 +56,8 @@ export const updateAccountInput = z
     onBudget: z.boolean(),
     closed: z.boolean(),
     sortOrder: z.number().int(),
+    /** A folder in the account's sidebar section, or null for the top of the section. */
+    folderId: idSchema.nullable(),
   })
   .partial();
 export type UpdateAccountInput = z.infer<typeof updateAccountInput>;
@@ -73,6 +75,7 @@ export interface Account {
   onBudget: boolean;
   closed: boolean;
   sortOrder: number;
+  folderId: number | null;
   /** Sum of all transactions, in cents. */
   balance: number;
   /** Sum of cleared and reconciled transactions, in cents. */
@@ -81,6 +84,63 @@ export interface Account {
   holdingsValue: number;
   /** The payee that represents a transfer into this account. */
   transferPayeeId: number;
+}
+
+// --- Account folders ---
+
+/**
+ * The sidebar sections accounts are listed in. An account's section follows from whether it's
+ * on budget and its type; folders belong to one section and only hold that section's accounts.
+ */
+export const ACCOUNT_SECTIONS = ["budget", "offbudget", "investment"] as const;
+export type AccountSection = (typeof ACCOUNT_SECTIONS)[number];
+
+export function accountSection(a: { onBudget: boolean; type: AccountType }): AccountSection {
+  if (a.onBudget) return "budget";
+  return a.type === "investment" ? "investment" : "offbudget";
+}
+
+export const createAccountFolderInput = z.object({
+  name: nameSchema,
+  section: z.enum(ACCOUNT_SECTIONS),
+  /** Create it inside another folder of the same section. */
+  parentId: idSchema.nullable().optional(),
+});
+export type CreateAccountFolderInput = z.infer<typeof createAccountFolderInput>;
+
+export const updateAccountFolderInput = z.object({ name: nameSchema });
+export type UpdateAccountFolderInput = z.infer<typeof updateAccountFolderInput>;
+
+const sidebarItem = z.object({ kind: z.enum(["account", "folder"]), id: idSchema });
+export type SidebarItem = z.infer<typeof sidebarItem>;
+
+/** Move an account or folder into a folder (or the top of its section), before a sibling or to the end. */
+export const moveSidebarItemInput = z.object({
+  item: sidebarItem,
+  parentId: idSchema.nullable(),
+  before: sidebarItem.nullable(),
+});
+export type MoveSidebarItemInput = z.infer<typeof moveSidebarItemInput>;
+
+export interface AccountFolder {
+  id: number;
+  name: string;
+  section: AccountSection;
+  parentId: number | null;
+  sortOrder: number;
+}
+
+/**
+ * The order of a folder's (or section's) children: accounts and folders share one sort order,
+ * with folders first on a tie.
+ */
+export function compareSidebarItems(
+  a: { kind: SidebarItem["kind"]; id: number; sortOrder: number },
+  b: { kind: SidebarItem["kind"]; id: number; sortOrder: number },
+) {
+  if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+  if (a.kind !== b.kind) return a.kind === "folder" ? -1 : 1;
+  return a.id - b.id;
 }
 
 // --- Payees ---
@@ -118,7 +178,14 @@ export const createCategoryInput = z.object({
   name: nameSchema,
 });
 export const updateCategoryInput = z
-  .object({ name: nameSchema, groupId: idSchema, hidden: z.boolean(), sortOrder: z.number().int() })
+  .object({
+    name: nameSchema,
+    groupId: idSchema,
+    hidden: z.boolean(),
+    sortOrder: z.number().int(),
+    /** Income categories only: count this income toward the following month's budget. */
+    forNextMonth: z.boolean(),
+  })
   .partial();
 
 export type CreateCategoryGroupInput = z.infer<typeof createCategoryGroupInput>;
@@ -132,6 +199,8 @@ export interface Category {
   name: string;
   hidden: boolean;
   sortOrder: number;
+  /** Income received in this category is budgeted in the following month (e.g. end-of-month pay). */
+  forNextMonth: boolean;
 }
 
 export interface CategoryGroup {

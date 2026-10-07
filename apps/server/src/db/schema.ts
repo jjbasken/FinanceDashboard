@@ -1,4 +1,4 @@
-import { ACCOUNT_TYPES, INVESTMENT_ACTIONS, SECURITY_TYPES } from "@fd/shared";
+import { ACCOUNT_SECTIONS, ACCOUNT_TYPES, INVESTMENT_ACTIONS, SECURITY_TYPES } from "@fd/shared";
 import { sql } from "drizzle-orm";
 import { type AnySQLiteColumn, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
@@ -65,6 +65,24 @@ export const invites = sqliteTable("invites", {
   createdAt: createdAt(),
 });
 
+/** Sidebar folders for grouping accounts. They nest, and each belongs to one sidebar section. */
+export const accountFolders = sqliteTable(
+  "account_folders",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    householdId: integer("household_id")
+      .notNull()
+      .references(() => households.id),
+    name: text("name").notNull(),
+    section: text("section", { enum: ACCOUNT_SECTIONS }).notNull(),
+    parentId: integer("parent_id").references((): AnySQLiteColumn => accountFolders.id, { onDelete: "cascade" }),
+    /** Shared with the accounts beside it, so folders and accounts can be interleaved. */
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [index("account_folders_household_idx").on(t.householdId)],
+);
+
 export const accounts = sqliteTable(
   "accounts",
   {
@@ -77,6 +95,7 @@ export const accounts = sqliteTable(
     onBudget: flag("on_budget"),
     closed: flag("closed"),
     sortOrder: integer("sort_order").notNull().default(0),
+    folderId: integer("folder_id").references(() => accountFolders.id, { onDelete: "set null" }),
     gnucashGuid: text("gnucash_guid"),
     /** Set when an import created this row, so the import can be undone. */
     importBatchId: integer("import_batch_id").references((): AnySQLiteColumn => importBatches.id, {
@@ -148,6 +167,8 @@ export const categories = sqliteTable(
     name: text("name").notNull(),
     hidden: flag("hidden"),
     sortOrder: integer("sort_order").notNull().default(0),
+    /** Income in this category counts toward the following month's budget (e.g. pay at month end). */
+    forNextMonth: flag("for_next_month"),
     /** Set when an import created this row, so the import can be undone. */
     importBatchId: integer("import_batch_id").references((): AnySQLiteColumn => importBatches.id, {
       onDelete: "set null",

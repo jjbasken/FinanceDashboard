@@ -23,6 +23,7 @@ import { listAccounts } from "../../services/ledger";
 import { listCategories } from "../../services/categories";
 import type { Actor } from "../../services/ledger";
 import type { GncBook } from "./read";
+import { nextSidebarOrder } from "../../services/folders";
 import type { AccountRef, CategoryRef, ImportContext, Plan, PlannedRow, SecurityRef } from "./plan";
 
 const lower = (s: string) => s.trim().toLowerCase();
@@ -98,12 +99,7 @@ export function commitPlan(
 
   // Accounts, each with its transfer payee.
   const newAccountIds = new Map<string, number>();
-  let sortOrder =
-    db
-      .select({ n: sql<number>`coalesce(max(${accounts.sortOrder}), -1) + 1` })
-      .from(accounts)
-      .where(eq(accounts.householdId, householdId))
-      .get()?.n ?? 0;
+  let sortOrder = nextSidebarOrder(db, householdId);
   for (const a of plan.newAccounts) {
     const row = db
       .insert(accounts)

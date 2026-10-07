@@ -24,6 +24,7 @@ export function listCategories(db: DbOrTx, householdId: number): CategoryGroup[]
       name: categories.name,
       hidden: categories.hidden,
       sortOrder: categories.sortOrder,
+      forNextMonth: categories.forNextMonth,
     })
     .from(categories)
     .where(eq(categories.householdId, householdId))
