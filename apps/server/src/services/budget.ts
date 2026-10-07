@@ -25,8 +25,9 @@ export interface CategoryAmount {
  *
  * Income categories aren't budgeted; their activity is income. An income category marked
  * forNextMonth (pay that lands at the end of the month) is budgeted the month after it arrives,
- * so its activity is last month's. `budgets` and `activity` hold this month's totals per
- * category and `lastMonthActivity` last month's.
+ * so its activity is last month's. A category excluded from the budget (e.g. reimbursable work
+ * expenses) shows its activity but adds nothing to any total. `budgets` and `activity` hold this
+ * month's totals per category and `lastMonthActivity` last month's.
  */
 export function computeBudgetMonth(
   groups: CategoryGroup[],
@@ -48,21 +49,24 @@ export function computeBudgetMonth(
 
   const outGroups: BudgetGroup[] = groups.map((g) => {
     const cats = g.categories.map((c) => {
-      const forNextMonth = g.isIncome && c.forNextMonth;
+      const excludeFromBudget = c.excludeFromBudget;
+      const forNextMonth = g.isIncome && c.forNextMonth && !excludeFromBudget;
       const act = (forNextMonth ? lastActs : acts).get(c.id) ?? 0;
       if (forNextMonth) incomeFromLastMonth += act;
-      const b = g.isIncome ? 0 : (budgeted.get(c.id) ?? 0);
+      const b = g.isIncome || excludeFromBudget ? 0 : (budgeted.get(c.id) ?? 0);
       return {
         id: c.id,
         name: c.name,
         hidden: c.hidden,
         forNextMonth,
+        excludeFromBudget,
         budgeted: b,
         activity: act,
-        balance: g.isIncome ? 0 : b + act,
+        balance: g.isIncome || excludeFromBudget ? 0 : b + act,
       };
     });
-    const sum = (k: "budgeted" | "activity" | "balance") => cats.reduce((s, c) => s + c[k], 0);
+    const sum = (k: "budgeted" | "activity" | "balance") =>
+      cats.reduce((s, c) => (c.excludeFromBudget ? s : s + c[k]), 0);
     return {
       id: g.id,
       name: g.name,
@@ -156,23 +160,28 @@ export function getBudgetMonth(db: DbOrTx, householdId: number, month: string): 
  */
 function activityMonth(db: DbOrTx, householdId: number, month: string, categoryId: number) {
   const row = db
-    .select({ forNextMonth: categories.forNextMonth, isIncome: categoryGroups.isIncome })
+    .select({
+      forNextMonth: categories.forNextMonth,
+      excludeFromBudget: categories.excludeFromBudget,
+      isIncome: categoryGroups.isIncome,
+    })
     .from(categories)
     .innerJoin(categoryGroups, eq(categoryGroups.id, categories.groupId))
     .where(and(eq(categories.id, categoryId), eq(categories.householdId, householdId)))
     .get();
-  return row?.isIncome && row.forNextMonth ? addMonths(month, -1) : month;
+  return row?.isIncome && row.forNextMonth && !row.excludeFromBudget ? addMonths(month, -1) : month;
 }
 
 function expenseCategory(db: DbOrTx, householdId: number, categoryId: number) {
   const row = db
-    .select({ isIncome: categoryGroups.isIncome })
+    .select({ isIncome: categoryGroups.isIncome, excludeFromBudget: categories.excludeFromBudget })
     .from(categories)
     .innerJoin(categoryGroups, eq(categoryGroups.id, categories.groupId))
     .where(and(eq(categories.id, categoryId), eq(categories.householdId, householdId)))
     .get();
   if (!row) throw new HTTPException(404, { message: "Category not found" });
   if (row.isIncome) throw new HTTPException(400, { message: "Income categories aren't budgeted" });
+  if (row.excludeFromBudget) throw new HTTPException(400, { message: "This category is excluded from the budget" });
 }
 
 export function setBudget(

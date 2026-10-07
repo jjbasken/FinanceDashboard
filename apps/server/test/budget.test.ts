@@ -141,6 +141,39 @@ describe("budget API", () => {
     expect((await jeremy.patch(`/api/categories/${ids.Income}`, { forNextMonth: true, groupId: everyday.id })).status).toBe(400);
   });
 
+  test("categories excluded from the budget count toward nothing", async () => {
+    const { jeremy, ids, account, txn, budget } = await setUp();
+    const checking = await account({ name: "Checking", type: "checking" });
+    await txn({ accountId: checking.id, date: "2026-10-03", amount: 300000, categoryId: ids.Income });
+    await txn({ accountId: checking.id, date: "2026-10-05", amount: -12000, categoryId: ids.Groceries });
+    // A work trip and its reimbursement, both in the same category.
+    await txn({ accountId: checking.id, date: "2026-10-08", amount: -80000, categoryId: ids["Dining Out"] });
+    await txn({ accountId: checking.id, date: "2026-10-20", amount: 50000, categoryId: ids["Dining Out"] });
+    await jeremy.request("PUT", `/api/budget/2026-10/categories/${ids["Dining Out"]}`, { amount: 10000 });
+
+    expect((await jeremy.patch(`/api/categories/${ids["Dining Out"]}`, { excludeFromBudget: true })).status).toBe(200);
+    const groups = (await jeremy.get("/api/categories")).json as CategoryGroup[];
+    expect(groups.flatMap((g) => g.categories).find((c) => c.id === ids["Dining Out"])!.excludeFromBudget).toBe(true);
+
+    const oct = await budget("2026-10");
+    expect(oct).toMatchObject({ income: 300000, budgeted: 0, toBudget: 300000, spent: -12000, uncategorized: 0 });
+    expect(category(oct, ids["Dining Out"]!)).toMatchObject({
+      excludeFromBudget: true,
+      budgeted: 0,
+      activity: -30000,
+      balance: 0,
+    });
+    const items = (await jeremy.get(`/api/budget/2026-10/categories/${ids["Dining Out"]}/transactions`))
+      .json as CategoryActivityItem[];
+    expect(items).toHaveLength(2);
+    const set = await jeremy.request("PUT", `/api/budget/2026-10/categories/${ids["Dining Out"]}`, { amount: 100 });
+    expect(set.status).toBe(400);
+
+    // Including it again brings back its activity and the budget it had.
+    await jeremy.patch(`/api/categories/${ids["Dining Out"]}`, { excludeFromBudget: false });
+    expect(await budget("2026-10")).toMatchObject({ budgeted: 10000, spent: -42000 });
+  });
+
   test("income categories can't be budgeted", async () => {
     const { jeremy, ids } = await setUp();
     const res = await jeremy.request("PUT", `/api/budget/2026-10/categories/${ids.Income}`, { amount: 100 });
