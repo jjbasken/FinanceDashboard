@@ -177,6 +177,9 @@ function AccountMenu(props: { account: Account }) {
         {!account.closed && <button onClick={() => setMoving(true)}>Move to folder</button>}
         <button onClick={toggleBudget}>{account.onBudget ? "Move off budget" : "Move on budget"}</button>
         <button onClick={togglePrivate}>{account.private ? "Share with family" : "Make private"}</button>
+        <button onClick={() => update.mutate({ excludeFromNetWorth: !account.excludeFromNetWorth })}>
+          {account.excludeFromNetWorth ? "Include in net worth" : "Leave out of net worth"}
+        </button>
         {account.type === "investment" && (
           <button onClick={() => navigate(`/import?account=${account.id}`)}>Import from GnuCash</button>
         )}
@@ -313,6 +316,7 @@ export function AccountPage() {
             <span className="badge">
               {ACCOUNT_TYPE_LABELS[account.type]} · {account.onBudget ? "On budget" : "Off budget"}
               {account.private ? " · Private" : ""}
+              {account.excludeFromNetWorth ? " · Not in net worth" : ""}
               {account.closed ? " · Closed" : ""}
             </span>
           )}

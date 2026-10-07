@@ -147,6 +147,7 @@ export function listAccounts(db: DbOrTx, viewer: Actor): Account[] {
       type: accounts.type,
       onBudget: accounts.onBudget,
       closed: accounts.closed,
+      excludeFromNetWorth: accounts.excludeFromNetWorth,
       sortOrder: accounts.sortOrder,
       folderId: accounts.folderId,
       ownerId: accounts.ownerId,

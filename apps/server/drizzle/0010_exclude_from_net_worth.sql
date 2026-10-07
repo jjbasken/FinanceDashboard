@@ -1,0 +1,1 @@
+ALTER TABLE `accounts` ADD `exclude_from_net_worth` integer DEFAULT false NOT NULL;

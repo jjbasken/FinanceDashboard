@@ -6,7 +6,10 @@ import { STARTING_BALANCES } from "./household";
 import { inFamilyBudget, type Actor } from "./ledger";
 import { type HistoryRange, loadPriceSeries, loadTxns, Position, priceOn, sampleDates } from "./holdings";
 
-/** The value of every account the viewer can see (cash plus holdings at that day's price) at each sample date. */
+/**
+ * The value of every account the viewer can see (cash plus holdings at that day's price) at each
+ * sample date, except accounts excluded from net worth.
+ */
 export function netWorthHistory(db: DbOrTx, viewer: Actor, range: HistoryRange, today: string): NetWorthPoint[] {
   const { householdId } = viewer;
   const cash = db
@@ -22,12 +25,21 @@ export function netWorthHistory(db: DbOrTx, viewer: Actor, range: HistoryRange, 
         eq(transactions.householdId, householdId),
         isNull(transactions.parentId),
         or(isNull(accounts.ownerId), eq(accounts.ownerId, viewer.userId)),
+        eq(accounts.excludeFromNetWorth, false),
       ),
     )
     .groupBy(transactions.accountId, transactions.date)
     .orderBy(asc(transactions.date))
     .all();
-  const txns = loadTxns(db, householdId, viewer.userId);
+  const excluded = new Set(
+    db
+      .select({ id: accounts.id })
+      .from(accounts)
+      .where(and(eq(accounts.householdId, householdId), eq(accounts.excludeFromNetWorth, true)))
+      .all()
+      .map((a) => a.id),
+  );
+  const txns = loadTxns(db, householdId, viewer.userId).filter((t) => !excluded.has(t.accountId));
   const first = [cash[0]?.date, txns[0]?.date].filter((d): d is string => !!d).sort()[0];
   if (!first) return [];
   const series = loadPriceSeries(db, householdId, txns);

@@ -68,6 +68,29 @@ describe("reports", () => {
     expect((await c.get("/api/reports/net-worth?range=10y")).status).toBe(400);
   });
 
+  test("net worth leaves out excluded accounts, cash and holdings alike", async () => {
+    const { c } = await setUp();
+    const worth = async () =>
+      ((await c.get("/api/reports/net-worth?range=all")).json as NetWorthPoint[]).find((p) => p.date === "2026-02-28")!;
+    const all = (await c.get("/api/accounts")).json as Account[];
+    const brokerage = all.find((a) => a.name === "Brokerage")!;
+    expect(brokerage.excludeFromNetWorth).toBe(false);
+
+    expect((await c.patch(`/api/accounts/${brokerage.id}`, { excludeFromNetWorth: true })).status).toBe(200);
+    // Without the brokerage's 20,000 cash and 88,000 of shares.
+    expect(await worth()).toEqual({
+      date: "2026-02-28",
+      assets: 635_000 + 50_000,
+      liabilities: -18_000,
+      netWorth: 635_000 + 50_000 - 18_000,
+    });
+    const after = (await c.get("/api/accounts")).json as Account[];
+    expect(after.find((a) => a.id === brokerage.id)!.excludeFromNetWorth).toBe(true);
+
+    expect((await c.patch(`/api/accounts/${brokerage.id}`, { excludeFromNetWorth: false })).status).toBe(200);
+    expect((await worth()).netWorth).toBe(635_000 + 50_000 + 20_000 + 88_000 - 18_000);
+  });
+
   test("cash flow counts categorized income and spending per month", async () => {
     const { c } = await setUp();
     const months = (await c.get("/api/reports/cash-flow?from=2025-12&to=2026-03")).json as CashFlowMonth[];
