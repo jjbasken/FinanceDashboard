@@ -188,6 +188,8 @@ export interface Holding {
   /** Average-cost basis of the shares held, in cents. */
   cost: number;
   gain: number;
+  /** False when some shares came in with no cost basis (e.g. opening shares from a statement). */
+  costKnown: boolean;
 }
 
 export interface AccountHoldings {
@@ -201,7 +203,8 @@ export interface AccountHoldings {
 
 export interface HoldingsSummary {
   accounts: AccountHoldings[];
-  totals: { cash: number; value: number; cost: number; gain: number; holdingsValue: number };
+  /** cost and gain cover only holdings whose cost is known; costUnknownValue is the value of the rest. */
+  totals: { cash: number; value: number; cost: number; gain: number; holdingsValue: number; costUnknownValue: number };
 }
 
 export interface ValuePoint {

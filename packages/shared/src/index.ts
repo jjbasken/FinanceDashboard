@@ -6,3 +6,4 @@ export * from "./import";
 export * from "./investments";
 export * from "./reports";
 export * from "./bank";
+export * from "./fund";

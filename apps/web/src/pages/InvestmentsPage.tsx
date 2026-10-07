@@ -132,12 +132,21 @@ export function InvestmentsPage() {
           <>
             <div className="kpi-row">
               <Tile hero label="Total value" value={formatCents(summary.totals.value)} />
-              <Tile
-                label="Unrealized gain"
-                value={formatCents(summary.totals.gain)}
-                detail={`${percent(summary.totals.gain, summary.totals.cost)} on ${formatCents(summary.totals.cost)} cost`}
-                tone={summary.totals.gain >= 0 ? "positive" : "negative"}
-              />
+              {summary.totals.costUnknownValue === summary.totals.holdingsValue && summary.totals.holdingsValue ? (
+                <Tile label="Unrealized gain" value="Unknown" detail="Your holdings came in without a cost basis" />
+              ) : (
+                <Tile
+                  label="Unrealized gain"
+                  value={formatCents(summary.totals.gain)}
+                  detail={
+                    `${percent(summary.totals.gain, summary.totals.cost)} on ${formatCents(summary.totals.cost)} cost` +
+                    (summary.totals.costUnknownValue
+                      ? ` · leaves out ${formatCents(summary.totals.costUnknownValue)} with unknown cost`
+                      : "")
+                  }
+                  tone={summary.totals.gain >= 0 ? "positive" : "negative"}
+                />
+              )}
               <Tile label="Holdings" value={formatCents(summary.totals.holdingsValue)} />
               <Tile label="Cash" value={formatCents(summary.totals.cash)} />
             </div>

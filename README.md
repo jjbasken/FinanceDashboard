@@ -102,6 +102,15 @@ On the same Import page, choose an account and upload an **OFX/QFX** or **CSV** 
 - New rows are cleared, and their category is suggested from the last time you used that payee. You can untick rows or change categories before importing.
 - Each import can be undone from the Past imports list. Undo removes the transactions it added and puts the ones it matched back the way they were.
 
+## Importing 529 plan statements
+
+For a 529 plan (or another fund company whose CSV download lists your funds and then your transaction history), add an **Investment** account for it, then on the Import page use **529 or fund statement**: choose the account and upload the CSV.
+
+- Each fund becomes a security, matched by name. Funds without a ticker get a symbol made from their name (e.g. `LARGE-CAP-STOCK-INDEX`) and use the prices from your statements rather than automatic daily prices.
+- A contribution is recorded as a cash deposit in the account that then buys shares, so the account's cash stays at zero. Withdrawals and fees sell shares and take the cash out; reinvested earnings and exchanges between funds move shares only. Rows of any other type are listed and skipped.
+- The first import adds **opening shares** for each fund, dated the day before the file's first transaction, so the account matches the statement's share counts. They have no cost basis, so cost and gain show as Unknown for those funds.
+- Importing a later statement only adds transactions you haven't imported yet. If the share counts still don't match the statement afterwards, the preview says so.
+
 ## Investments
 
 Investments live in **Investment** accounts. An account's register holds its cash, and the **Investments** page tracks the securities it holds:

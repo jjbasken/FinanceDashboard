@@ -4,6 +4,8 @@ import {
   gnucashImportInput,
   type BankUpload,
   type CsvMapping,
+  type FundImportResult,
+  type FundStatementPreview,
   type GnucashMapping,
   type GnucashUpload,
 } from "@fd/shared";
@@ -30,7 +32,9 @@ import {
   suggestCsvMapping,
   type BankTxn,
 } from "../importers/bank/parse";
+import { commitFundImport, parseFundStatement, planFundImport, type Statement } from "../importers/fund/statement";
 import { getAccount } from "../services/ledger";
+import { localDate } from "../util";
 import { listCategories } from "../services/categories";
 
 export const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
@@ -59,9 +63,21 @@ interface BankFile {
 /** Bank statement files waiting for review. */
 const bankUploads = new Map<string, BankFile>();
 
+interface FundFile {
+  householdId: number;
+  accountId: number;
+  fileName: string;
+  statement: Statement;
+  expiresAt: number;
+}
+
+/** Fund (529) statements waiting for review. */
+const fundUploads = new Map<string, FundFile>();
+
 function purgeExpired(now = Date.now()) {
   for (const [id, u] of uploads) if (u.expiresAt <= now) uploads.delete(id);
   for (const [id, u] of bankUploads) if (u.expiresAt <= now) bankUploads.delete(id);
+  for (const [id, u] of fundUploads) if (u.expiresAt <= now) fundUploads.delete(id);
 }
 
 function getBankUpload(id: string, householdId: number) {
@@ -300,6 +316,61 @@ export const importRoutes = new Hono<AppEnv>()
       });
     });
     bankUploads.delete(uploadId);
+    return c.json(result, 201);
+  })
+
+  /** Upload a fund statement CSV (e.g. from a 529 plan) for an account; returns the preview. */
+  .post("/fund", async (c) => {
+    const { householdId } = actorOf(c);
+    const accountId = Number(c.req.query("accountId"));
+    if (!Number.isInteger(accountId) || accountId <= 0) throw new HTTPException(400, { message: "Pick an account" });
+    const account = getAccount(c.var.db, householdId, accountId);
+    if (account.closed) throw new HTTPException(400, { message: "That account is closed" });
+    const body = await c.req.arrayBuffer();
+    if (body.byteLength === 0) throw new HTTPException(400, { message: "The file is empty" });
+    if (body.byteLength > 5 * 1024 * 1024) throw new HTTPException(413, { message: "That file is too large (5 MB max)" });
+    let statement: Statement;
+    try {
+      statement = parseFundStatement(new TextDecoder().decode(body));
+    } catch (err) {
+      if (err instanceof BankFileError) throw new HTTPException(400, { message: err.message });
+      throw err;
+    }
+    purgeExpired();
+    const uploadId = randomUUID();
+    const fileName = cleanFileName(c.req.query("name"));
+    fundUploads.set(uploadId, { householdId, accountId, fileName, statement, expiresAt: Date.now() + UPLOAD_TTL_MS });
+    const plan = planFundImport(c.var.db, householdId, accountId, statement, localDate());
+    const items = plan.items.map(({ importedId: _id, ...i }) => i);
+    const preview: FundStatementPreview = {
+      uploadId,
+      fileName,
+      accountId,
+      openingDate: plan.openingDate,
+      funds: plan.funds,
+      items,
+      counts: {
+        new: items.filter((i) => i.status === "new").length,
+        duplicate: items.filter((i) => i.status === "duplicate").length,
+      },
+      errors: statement.errors,
+    };
+    return c.json(preview, 201);
+  })
+
+  .post("/fund/:uploadId/commit", (c) => {
+    const actor = actorOf(c);
+    const uploadId = c.req.param("uploadId");
+    purgeExpired();
+    const upload = fundUploads.get(uploadId);
+    if (!upload || upload.householdId !== actor.householdId) {
+      throw new HTTPException(404, { message: "That upload has expired. Upload the file again." });
+    }
+    const result: FundImportResult = c.var.db.transaction((tx) => {
+      const plan = planFundImport(tx, actor.householdId, upload.accountId, upload.statement, localDate());
+      return commitFundImport(tx, actor, upload.accountId, upload.fileName, plan);
+    });
+    fundUploads.delete(uploadId);
     return c.json(result, 201);
   })
 
