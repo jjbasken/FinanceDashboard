@@ -154,6 +154,7 @@ There are no signing secrets to configure, `JWT_SECRET` included. Sessions use r
 - Every change must be sent as JSON (or as a raw file upload), which browsers can't do from another site without permission. This blocks cross-site request forgery.
 - Responses carry a strict Content-Security-Policy, block framing, and turn off content sniffing and referrers.
 - Failed sign-ins are limited per visitor: 10 for one username, or 30 across usernames, within 15 minutes. Someone guessing at your username can't lock you out from your own devices. Behind a reverse proxy, set `TRUST_PROXY=true` so the limit uses each visitor's address rather than the proxy's.
+- Pending sign-in attempts count toward those limits. Anonymous password work (sign-in, setup and invite acceptance) also has a shared limit of 4 concurrent requests and 60 starts per minute per server process; excess requests receive HTTP 429. Closed setup and unavailable invites are rejected before hashing passwords.
 - Changing a password, an owner reset and removing a member all end the affected sessions straight away.
 - Everyone in the household sees and can change everything. Only the owner can create invite links and download backups.
 

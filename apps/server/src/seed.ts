@@ -15,6 +15,9 @@ export type SeedResult =
  * config throws, so a typo fails loudly at startup instead of leaving setup open.
  */
 export async function seedOwnerFromEnv(db: Db, env: Record<string, string | undefined>): Promise<SeedResult> {
+  const [existing] = db.select({ n: count() }).from(users).all();
+  if ((existing?.n ?? 0) > 0) return { status: "skipped", reason: "database already has users" };
+
   const raw = {
     householdName: env.SEED_HOUSEHOLD_NAME,
     displayName: env.SEED_OWNER_DISPLAY_NAME || env.SEED_OWNER_USERNAME,
@@ -35,9 +38,6 @@ export async function seedOwnerFromEnv(db: Db, env: Record<string, string | unde
     throw new Error(`Invalid SEED_* configuration: ${issue?.path.join(".")}: ${issue?.message}`);
   }
   const input = parsed.data;
-
-  const [existing] = db.select({ n: count() }).from(users).all();
-  if ((existing?.n ?? 0) > 0) return { status: "skipped", reason: "database already has users" };
 
   const passwordHash = await Bun.password.hash(input.password);
   return db.transaction((tx) => {

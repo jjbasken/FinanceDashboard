@@ -24,8 +24,8 @@ export const setupInput = z.object({
 export type SetupInput = z.infer<typeof setupInput>;
 
 export const loginInput = z.object({
-  username: z.string().trim().toLowerCase().min(1),
-  password: z.string().min(1),
+  username: z.string().trim().toLowerCase().min(1).max(32),
+  password: z.string().min(1).max(256),
 });
 export type LoginInput = z.infer<typeof loginInput>;
 

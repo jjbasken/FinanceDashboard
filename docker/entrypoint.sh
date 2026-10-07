@@ -10,8 +10,12 @@ if [ "$(id -u)" = "0" ]; then
   mkdir -p "$DATA"
   if [ "$(stat -c %u "$DATA")" != "$(id -u bun)" ]; then
     echo "Giving the bun user (uid $(id -u bun)) ownership of $DATA"
-    chown -R bun:bun "$DATA" || echo "Warning: couldn't change the owner of $DATA; the app may not be able to write to it."
+    chown -R bun:bun "$DATA"
   fi
+  # A restored database may be root-owned even when its parent already belongs to bun.
+  for file in "$DATA/finance.db" "$DATA/finance.db-wal" "$DATA/finance.db-shm"; do
+    if [ -e "$file" ]; then chown -h bun:bun "$file"; fi
+  done
   exec setpriv --reuid=bun --regid=bun --init-groups -- "$@"
 fi
 

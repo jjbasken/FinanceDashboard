@@ -34,8 +34,10 @@ export const authRoutes = new Hono<AppEnv>()
 
   .post("/setup", async (c) => {
     const input = await parseBody(c, setupInput);
-    const passwordHash = await Bun.password.hash(input.password);
     const db = c.var.db;
+    const [existing] = db.select({ n: count() }).from(users).all();
+    if ((existing?.n ?? 0) > 0) throw new HTTPException(409, { message: "Setup has already been completed" });
+    const passwordHash = await c.var.passwordWork.run(() => Bun.password.hash(input.password));
 
     const userId = db.transaction((tx) => {
       const [row] = tx.select({ n: count() }).from(users).all();
@@ -63,25 +65,33 @@ export const authRoutes = new Hono<AppEnv>()
     const input = await parseBody(c, loginInput);
     const limiter = c.var.loginLimiter;
     const client = clientAddress(c);
-    if (limiter.isBlocked(client, input.username)) {
+    const finish = limiter.start(client, input.username);
+    if (!finish) {
       throw new HTTPException(429, { message: "Too many failed attempts. Try again in a few minutes." });
     }
 
-    const user = c.var.db.select().from(users).where(eq(users.username, input.username)).get();
-    const ok = user ? await Bun.password.verify(input.password, user.passwordHash) : await burnTime(input.password);
-    if (!user || !ok) {
-      limiter.recordFailure(client, input.username);
-      throw new HTTPException(401, { message: "Incorrect username or password" });
-    }
+    try {
+      const user = c.var.db.select().from(users).where(eq(users.username, input.username)).get();
+      const ok = await c.var.passwordWork.run(() =>
+        user ? Bun.password.verify(input.password, user.passwordHash) : burnTime(input.password),
+      );
+      if (!user || !ok) {
+        finish(false);
+        throw new HTTPException(401, { message: "Incorrect username or password" });
+      }
 
-    if (user.disabledAt) {
-      // They knew the password, so saying why doesn't reveal anything new.
-      throw new HTTPException(403, { message: "This account has been removed from the household" });
+      if (user.disabledAt) {
+        // They knew the password, so saying why doesn't reveal anything new.
+        throw new HTTPException(403, { message: "This account has been removed from the household" });
+      }
+      finish(true);
+      const { token, expiresAt } = createSession(c.var.db, user.id);
+      setSessionCookie(c, token, expiresAt);
+      return c.json({ ok: true });
+    } finally {
+      // Release reservations after throttling or unexpected verification failures, too.
+      finish(null);
     }
-    limiter.reset(client, input.username);
-    const { token, expiresAt } = createSession(c.var.db, user.id);
-    setSessionCookie(c, token, expiresAt);
-    return c.json({ ok: true });
   })
 
   /** Change your own password. Your other sessions are signed out; this one stays. */
@@ -125,9 +135,15 @@ export const authRoutes = new Hono<AppEnv>()
 
   .post("/accept-invite", async (c) => {
     const input = await parseBody(c, acceptInviteInput);
-    const passwordHash = await Bun.password.hash(input.password);
     const db = c.var.db;
     const inviteId = hashToken(input.token);
+    const available = db
+      .select({ id: invites.id })
+      .from(invites)
+      .where(and(eq(invites.id, inviteId), isNull(invites.usedBy), gt(invites.expiresAt, Date.now())))
+      .get();
+    if (!available) throw new HTTPException(404, { message: "This invite link is invalid or has expired" });
+    const passwordHash = await c.var.passwordWork.run(() => Bun.password.hash(input.password));
 
     let userId: number;
     try {
