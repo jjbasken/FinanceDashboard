@@ -118,6 +118,7 @@ Investments live in **Investment** accounts. An account's register holds its cas
   - **Net worth:** every account over time, with investments at market value.
   - **Cash flow:** income and spending per month, by category. Opening balances aren't counted as income.
   - **Spending by category:** totals for any period.
+  - Transfers between your accounts aren't counted in either, even with a category. So for a mortgage payment split into principal (a transfer to the loan) and interest, only the interest is spending. The budget still counts the whole payment.
 - **Live updates:** when one of you changes something, the other's open window refreshes on its own.
 - **Backups:** each night the server saves a copy of the database to `backups/` in the data folder and keeps the newest 14. The household owner can also download a fresh copy from **Settings → Backups**. To restore, stop the app, delete `finance.db-wal` and `finance.db-shm` if they exist, and replace `finance.db` with the backup file.
 

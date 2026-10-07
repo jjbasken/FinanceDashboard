@@ -59,9 +59,10 @@ export function netWorthHistory(db: DbOrTx, householdId: number, range: HistoryR
 const monthStart = (m: string) => `${m}-01`;
 
 /**
- * Income and spending per month, by category, from on-budget accounts (as on the budget page).
- * Opening balances aren't income earned in their month, so they're left out, as are categories
- * excluded from the budget.
+ * Income and spending per month, by category, from on-budget accounts. Unlike the budget page,
+ * transfers are left out even when categorised: paying down a loan's principal or moving money
+ * to a brokerage doesn't change net worth, so it isn't spending. Opening balances aren't income
+ * earned in their month, so they're left out too, as are categories excluded from the budget.
  */
 export function cashFlow(db: DbOrTx, householdId: number, from: string, to: string): CashFlowMonth[] {
   const rows = db.all<{ month: string; isIncome: number; amount: number }>(sql`
@@ -73,6 +74,7 @@ export function cashFlow(db: DbOrTx, householdId: number, from: string, to: stri
     where t.household_id = ${householdId}
       and a.on_budget = 1
       and t.is_parent = 0
+      and t.transfer_id is null
       and c.exclude_from_budget = 0
       and not (g.is_income = 1 and c.name = ${STARTING_BALANCES})
       and t.date >= ${monthStart(from)}
@@ -90,8 +92,8 @@ export function cashFlow(db: DbOrTx, householdId: number, from: string, to: stri
 
 /**
  * Spending per expense category over a range of months, largest first. Uncategorized outflows
- * (excluding transfers between on-budget accounts) are included as their own row; categories
- * excluded from the budget are left out.
+ * are included as their own row. Transfers are left out, as in cashFlow, and so are categories
+ * excluded from the budget.
  */
 export function spendingByCategory(db: DbOrTx, householdId: number, from: string, to: string): SpendingRow[] {
   const range = sql`t.date >= ${monthStart(from)} and t.date < ${monthStart(addMonths(to, 1))}`;
@@ -102,17 +104,15 @@ export function spendingByCategory(db: DbOrTx, householdId: number, from: string
     join categories c on c.id = t.category_id
     join category_groups g on g.id = c.group_id
     where t.household_id = ${householdId} and a.on_budget = 1 and t.is_parent = 0 and g.is_income = 0
-      and c.exclude_from_budget = 0 and ${range}
+      and t.transfer_id is null and c.exclude_from_budget = 0 and ${range}
     group by c.id
   `);
   const [uncategorized] = db.all<{ amount: number | null }>(sql`
     select -sum(t.amount) as amount
     from transactions t
     join accounts a on a.id = t.account_id
-    left join transactions o on o.id = t.transfer_id
-    left join accounts oa on oa.id = o.account_id
     where t.household_id = ${householdId} and a.on_budget = 1 and t.is_parent = 0 and t.category_id is null
-      and t.amount < 0 and (t.transfer_id is null or oa.on_budget = 0) and ${range}
+      and t.amount < 0 and t.transfer_id is null and ${range}
   `);
   if (uncategorized?.amount) {
     rows.push({ categoryId: null, name: "Uncategorized", groupName: "", amount: uncategorized.amount });
