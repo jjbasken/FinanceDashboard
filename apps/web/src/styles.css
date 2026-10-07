@@ -862,6 +862,25 @@ select {
 .register-edit-actions .error-text {
   margin-right: auto;
 }
+.register-edit-actions .in-budget-toggle {
+  margin: 0 auto 0 0;
+  font-size: 13px;
+}
+.register-edit-actions .in-budget-toggle + .error-text {
+  margin-right: 0;
+}
+.family-badge {
+  margin-left: 6px;
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+.private-mark {
+  font-size: 0.75em;
+  opacity: 0.75;
+}
 .register-edit-actions .hint {
   font-size: 12px;
 }

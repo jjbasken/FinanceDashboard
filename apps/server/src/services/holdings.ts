@@ -1,8 +1,8 @@
 import { addMonths, sharesValueCents, type AccountHoldings, type HoldingsSummary, type ValuePoint } from "@fd/shared";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
 import type { DbOrTx } from "../db";
 import { accounts, investmentTxns, prices, securities, transactions } from "../db/schema";
-import { listAccounts } from "./ledger";
+import { listAccounts, type Actor } from "./ledger";
 
 type TxnRow = {
   accountId: number;
@@ -14,7 +14,8 @@ type TxnRow = {
   amount: number;
 };
 
-export function loadTxns(db: DbOrTx, householdId: number): TxnRow[] {
+/** Investment transactions, oldest first; with a viewer, only in accounts they can see. */
+export function loadTxns(db: DbOrTx, householdId: number, viewerId?: number): TxnRow[] {
   return db
     .select({
       accountId: investmentTxns.accountId,
@@ -26,7 +27,13 @@ export function loadTxns(db: DbOrTx, householdId: number): TxnRow[] {
       amount: investmentTxns.amount,
     })
     .from(investmentTxns)
-    .where(eq(investmentTxns.householdId, householdId))
+    .innerJoin(accounts, eq(accounts.id, investmentTxns.accountId))
+    .where(
+      and(
+        eq(investmentTxns.householdId, householdId),
+        viewerId === undefined ? undefined : or(isNull(accounts.ownerId), eq(accounts.ownerId, viewerId)),
+      ),
+    )
     .orderBy(asc(investmentTxns.date), asc(investmentTxns.id))
     .all();
 }
@@ -101,8 +108,9 @@ export function priceOn(series: { date: string; close: number }[] | undefined, d
   return found < 0 ? null : series[found]!;
 }
 
-export function getHoldings(db: DbOrTx, householdId: number): HoldingsSummary {
-  const txns = loadTxns(db, householdId);
+export function getHoldings(db: DbOrTx, viewer: Actor): HoldingsSummary {
+  const { householdId } = viewer;
+  const txns = loadTxns(db, householdId, viewer.userId);
   const positions = new Map<string, Position>();
   for (const t of txns) {
     const key = `${t.accountId}:${t.securityId}`;
@@ -121,7 +129,7 @@ export function getHoldings(db: DbOrTx, householdId: number): HoldingsSummary {
   );
 
   const withHoldings = new Set(txns.map((t) => t.accountId));
-  const accts = listAccounts(db, householdId).filter(
+  const accts = listAccounts(db, viewer).filter(
     (a) => !a.closed && (a.type === "investment" || withHoldings.has(a.id)),
   );
   const result: AccountHoldings[] = accts.map((a) => {
@@ -237,14 +245,21 @@ export function sampleDates(range: HistoryRange, first: string, today: string) {
  * Value over time of every account that holds investments: cash plus holdings at each date's
  * price, and the amount invested (cash plus cost basis).
  */
-export function valueHistory(db: DbOrTx, householdId: number, range: HistoryRange, today: string): ValuePoint[] {
-  const txns = loadTxns(db, householdId);
+export function valueHistory(db: DbOrTx, viewer: Actor, range: HistoryRange, today: string): ValuePoint[] {
+  const { householdId } = viewer;
+  const txns = loadTxns(db, householdId, viewer.userId);
   const accountIds = new Set([
     ...txns.map((t) => t.accountId),
     ...db
       .select({ id: accounts.id })
       .from(accounts)
-      .where(and(eq(accounts.householdId, householdId), eq(accounts.type, "investment")))
+      .where(
+        and(
+          eq(accounts.householdId, householdId),
+          eq(accounts.type, "investment"),
+          or(isNull(accounts.ownerId), eq(accounts.ownerId, viewer.userId)),
+        ),
+      )
       .all()
       .map((a) => a.id),
   ]);

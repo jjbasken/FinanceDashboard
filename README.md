@@ -79,6 +79,15 @@ The budget is a plan for one month at a time. Each month stands on its own:
 - Click a Spent amount to see the transactions behind it. Drag categories and groups to reorder them.
 - Only on-budget accounts count. Transfers between on-budget accounts don't need a category; money moving to an off-budget account (for example, into a brokerage) does.
 
+## Private accounts
+
+Each member can keep accounts the others don't see, such as their own credit card. Tick **Private** when adding the account, or use **Make private** in the account's ⋯ menu (only the member who added a shared account can make it private). A lock marks it in your sidebar.
+
+- Nobody else sees a private account: not in the sidebar, the register, net worth, investments or imports.
+- **Counting purchases in the family budget:** in a private on-budget account, tick **Include in family budget** on a transaction when family money paid for it. Included transactions count in the budget and reports like any other, with a **Family** badge in your register, and everyone sees them in full when they look at that category's spending (marked with a lock, without a link to the account). Transactions you don't include stay out of the family budget.
+- **Paying the card:** a payment from a family account to your private card is a transfer, so it isn't spending; the purchases you included already count. Others see it in the family account as "Transfer: Private account", and only you can change or delete it (they can still mark it cleared).
+- **Share with family** in the ⋯ menu makes the account visible to everyone again.
+
 ## Importing from GnuCash
 
 Go to **Settings → Import transactions** and upload a **copy** of your `.gnucash` file as it is. GnuCash's normal (compressed XML) format works, and so does a book saved as sqlite3. Before anything is saved, you can review how each GnuCash account maps:
@@ -173,12 +182,13 @@ There are no signing secrets to configure, `JWT_SECRET` included. Sessions use r
 - Failed sign-ins are limited per visitor: 10 for one username, or 30 across usernames, within 15 minutes. Someone guessing at your username can't lock you out from your own devices. Behind a reverse proxy, set `TRUST_PROXY=true` so the limit uses each visitor's address rather than the proxy's.
 - Pending sign-in attempts count toward those limits. Anonymous password work (sign-in, setup and invite acceptance) also has a shared limit of 4 concurrent requests and 60 starts per minute per server process; excess requests receive HTTP 429. Closed setup and unavailable invites are rejected before hashing passwords.
 - Changing a password, an owner reset and removing a member all end the affected sessions straight away.
-- Everyone in the household sees and can change everything. Only the owner can create invite links and download backups.
+- Everyone in the household sees and can change everything except other members' private accounts. Only the owner can create invite links and download backups.
 
 **To reach the app from outside your home network,** put it behind a reverse proxy that handles HTTPS, such as Caddy or Traefik, and set `COOKIE_SECURE=true`. Finish first-run setup (or use the `SEED_*` variables) before exposing it: until an owner exists, anyone who can reach the app can create one.
 
 ## Known limitations
 
+- **Backups include private accounts.** A backup is a copy of the whole database, so the owner who downloads one can read every member's private accounts with a database tool. A removed member's private accounts stay hidden from everyone.
 - **One currency per household.** It's a display setting; amounts aren't converted. Accounts in other currencies import from GnuCash at their converted value, and securities priced in another currency aren't converted.
 - **No email.** Password resets go through the owner, or the command above for the owner.
 

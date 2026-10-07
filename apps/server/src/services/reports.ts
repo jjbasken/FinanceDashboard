@@ -1,12 +1,14 @@
 import { addMonths, sharesValueCents, type CashFlowMonth, type NetWorthPoint, type SpendingRow } from "@fd/shared";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
 import type { DbOrTx } from "../db";
-import { transactions } from "../db/schema";
+import { accounts, transactions } from "../db/schema";
 import { STARTING_BALANCES } from "./household";
+import { inFamilyBudget, type Actor } from "./ledger";
 import { type HistoryRange, loadPriceSeries, loadTxns, Position, priceOn, sampleDates } from "./holdings";
 
-/** Every account's value (cash plus holdings at that day's price) at each sample date. */
-export function netWorthHistory(db: DbOrTx, householdId: number, range: HistoryRange, today: string): NetWorthPoint[] {
+/** The value of every account the viewer can see (cash plus holdings at that day's price) at each sample date. */
+export function netWorthHistory(db: DbOrTx, viewer: Actor, range: HistoryRange, today: string): NetWorthPoint[] {
+  const { householdId } = viewer;
   const cash = db
     .select({
       accountId: transactions.accountId,
@@ -14,11 +16,18 @@ export function netWorthHistory(db: DbOrTx, householdId: number, range: HistoryR
       amount: sql<number>`sum(${transactions.amount})`,
     })
     .from(transactions)
-    .where(and(eq(transactions.householdId, householdId), isNull(transactions.parentId)))
+    .innerJoin(accounts, eq(accounts.id, transactions.accountId))
+    .where(
+      and(
+        eq(transactions.householdId, householdId),
+        isNull(transactions.parentId),
+        or(isNull(accounts.ownerId), eq(accounts.ownerId, viewer.userId)),
+      ),
+    )
     .groupBy(transactions.accountId, transactions.date)
     .orderBy(asc(transactions.date))
     .all();
-  const txns = loadTxns(db, householdId);
+  const txns = loadTxns(db, householdId, viewer.userId);
   const first = [cash[0]?.date, txns[0]?.date].filter((d): d is string => !!d).sort()[0];
   if (!first) return [];
   const series = loadPriceSeries(db, householdId, txns);
@@ -59,7 +68,8 @@ export function netWorthHistory(db: DbOrTx, householdId: number, range: HistoryR
 const monthStart = (m: string) => `${m}-01`;
 
 /**
- * Income and spending per month, by category, from on-budget accounts. Unlike the budget page,
+ * Income and spending per month, by category, from what counts in the family budget: shared
+ * on-budget accounts and private transactions their owner included. Unlike the budget page,
  * transfers are left out even when categorised: paying down a loan's principal or moving money
  * to a brokerage doesn't change net worth, so it isn't spending. Opening balances aren't income
  * earned in their month, so they're left out too, as are categories excluded from the budget.
@@ -72,7 +82,7 @@ export function cashFlow(db: DbOrTx, householdId: number, from: string, to: stri
     join categories c on c.id = t.category_id
     join category_groups g on g.id = c.group_id
     where t.household_id = ${householdId}
-      and a.on_budget = 1
+      and ${inFamilyBudget}
       and t.is_parent = 0
       and t.transfer_id is null
       and c.exclude_from_budget = 0
@@ -103,7 +113,7 @@ export function spendingByCategory(db: DbOrTx, householdId: number, from: string
     join accounts a on a.id = t.account_id
     join categories c on c.id = t.category_id
     join category_groups g on g.id = c.group_id
-    where t.household_id = ${householdId} and a.on_budget = 1 and t.is_parent = 0 and g.is_income = 0
+    where t.household_id = ${householdId} and ${inFamilyBudget} and t.is_parent = 0 and g.is_income = 0
       and t.transfer_id is null and c.exclude_from_budget = 0 and ${range}
     group by c.id
   `);
@@ -111,7 +121,7 @@ export function spendingByCategory(db: DbOrTx, householdId: number, from: string
     select -sum(t.amount) as amount
     from transactions t
     join accounts a on a.id = t.account_id
-    where t.household_id = ${householdId} and a.on_budget = 1 and t.is_parent = 0 and t.category_id is null
+    where t.household_id = ${householdId} and ${inFamilyBudget} and t.is_parent = 0 and t.category_id is null
       and t.amount < 0 and t.transfer_id is null and ${range}
   `);
   if (uncategorized?.amount) {

@@ -10,6 +10,7 @@ import { HTTPException } from "hono/http-exception";
 import type { DbOrTx } from "../db";
 import { budgetMonths, categories, categoryGroups } from "../db/schema";
 import { listCategories } from "./categories";
+import { inFamilyBudget, type Actor } from "./ledger";
 
 export interface CategoryAmount {
   categoryId: number;
@@ -97,14 +98,14 @@ export function computeBudgetMonth(
 
 const monthStart = (month: string) => `${month}-01`;
 
-/** Category activity for the month from on-budget accounts. */
+/** Category activity for the month from what counts in the family budget. */
 function loadActivity(db: DbOrTx, householdId: number, month: string): CategoryAmount[] {
   return db.all<CategoryAmount>(sql`
     select t.category_id as categoryId, sum(t.amount) as amount
     from transactions t
     join accounts a on a.id = t.account_id
     where t.household_id = ${householdId}
-      and a.on_budget = 1
+      and ${inFamilyBudget}
       and t.is_parent = 0
       and t.category_id is not null
       and t.date >= ${monthStart(month)}
@@ -133,7 +134,7 @@ function countUncategorized(db: DbOrTx, householdId: number, month: string) {
     left join transactions o on o.id = t.transfer_id
     left join accounts oa on oa.id = o.account_id
     where t.household_id = ${householdId}
-      and a.on_budget = 1
+      and ${inFamilyBudget}
       and t.is_parent = 0
       and t.category_id is null
       and t.date >= ${monthStart(month)}
@@ -227,15 +228,17 @@ export function copyLastMonth(db: DbOrTx, actor: { householdId: number; userId: 
 /** The transactions behind a category's activity in one month's budget, newest first. */
 export function categoryActivity(
   db: DbOrTx,
-  householdId: number,
+  viewer: Actor,
   budgetMonth: string,
   categoryId: number,
 ): CategoryActivityItem[] {
+  const { householdId } = viewer;
   const month = activityMonth(db, householdId, budgetMonth, categoryId);
-  return db.all<CategoryActivityItem>(sql`
+  const rows = db.all<Omit<CategoryActivityItem, "privateAccount"> & { privateAccount: number }>(sql`
     select t.id as id,
            coalesce(t.parent_id, t.id) as transactionId,
            t.account_id as accountId,
+           (a.owner_id is not null and a.owner_id != ${viewer.userId}) as privateAccount,
            a.name as accountName,
            t.date as date,
            case when p.transfer_account_id is not null then 'Transfer: ' || p.name else coalesce(p.name, '') end as payeeName,
@@ -245,11 +248,12 @@ export function categoryActivity(
     join accounts a on a.id = t.account_id
     left join payees p on p.id = t.payee_id
     where t.household_id = ${householdId}
-      and a.on_budget = 1
+      and ${inFamilyBudget}
       and t.is_parent = 0
       and t.category_id = ${categoryId}
       and t.date >= ${monthStart(month)}
       and t.date < ${monthStart(addMonths(month, 1))}
     order by t.date desc, t.id desc
   `);
+  return rows.map((r) => ({ ...r, privateAccount: !!r.privateAccount }));
 }

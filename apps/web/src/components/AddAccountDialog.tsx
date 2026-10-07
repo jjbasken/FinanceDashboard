@@ -14,6 +14,7 @@ export function AddAccountDialog(props: { onClose: () => void }) {
   const [date, setDate] = useState(today());
   const [error, setError] = useState<string | null>(null);
   const [importNext, setImportNext] = useState(false);
+  const [isPrivate, setIsPrivate] = useState(false);
 
   const create = useLedgerMutation((body: unknown) => api.post<Account>("/accounts", body));
 
@@ -25,7 +26,7 @@ export function AddAccountDialog(props: { onClose: () => void }) {
     if (startingBalance === null) return setError("Enter the balance as a number, like 1,234.56");
     setError(null);
     create.mutate(
-      { name, type, onBudget, startingBalance, startingDate: date },
+      { name, type, onBudget, startingBalance, startingDate: date, private: isPrivate },
       {
         onSuccess: (account) => {
           props.onClose();
@@ -69,6 +70,13 @@ export function AddAccountDialog(props: { onClose: () => void }) {
         <input type="checkbox" checked={onBudget} onChange={(e) => setOnBudget(e.target.checked)} />
         <span>
           On budget <small className="muted">(its spending is tracked against budget categories)</small>
+        </span>
+      </label>
+      <label className="checkbox">
+        <input type="checkbox" checked={isPrivate} onChange={(e) => setIsPrivate(e.target.checked)} />
+        <span>
+          Private <small className="muted">(only you can see it; you choose which transactions count in the family
+          budget)</small>
         </span>
       </label>
       {!importing && (

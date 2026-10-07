@@ -143,9 +143,13 @@ function ActivityDialog(props: { month: string; category: BudgetCategory; onClos
               <tr key={t.id}>
                 <td>{formatDate(t.date)}</td>
                 <td>
-                  <Link to={`/accounts/${t.accountId}`} onClick={props.onClose}>
-                    {t.accountName}
-                  </Link>
+                  {t.privateAccount ? (
+                    <span title="Another member's private account">{t.accountName} 🔒</span>
+                  ) : (
+                    <Link to={`/accounts/${t.accountId}`} onClick={props.onClose}>
+                      {t.accountName}
+                    </Link>
+                  )}
                 </td>
                 <td>{t.payeeName}</td>
                 <td className="muted">{t.notes}</td>

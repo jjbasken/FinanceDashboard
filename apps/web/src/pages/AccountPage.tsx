@@ -143,6 +143,13 @@ function AccountMenu(props: { account: Account }) {
     if (confirm(msg)) update.mutate({ onBudget: !account.onBudget });
   }
 
+  function togglePrivate() {
+    const msg = account.private
+      ? `Share "${account.name}" with the family? Everyone in the household will see it and all of its transactions.`
+      : `Make "${account.name}" private? Only you will see it, and only the transactions you include will count in the family budget.`;
+    if (confirm(msg)) update.mutate({ private: !account.private });
+  }
+
   function toggleClosed() {
     if (!account.closed && account.balance !== 0) {
       return alert("Move the remaining balance out of this account (for example, with a transfer) before closing it.");
@@ -169,6 +176,7 @@ function AccountMenu(props: { account: Account }) {
         <button onClick={rename}>Rename</button>
         {!account.closed && <button onClick={() => setMoving(true)}>Move to folder</button>}
         <button onClick={toggleBudget}>{account.onBudget ? "Move off budget" : "Move on budget"}</button>
+        <button onClick={togglePrivate}>{account.private ? "Share with family" : "Make private"}</button>
         {account.type === "investment" && (
           <button onClick={() => navigate(`/import?account=${account.id}`)}>Import from GnuCash</button>
         )}
@@ -304,6 +312,7 @@ export function AccountPage() {
           {account && (
             <span className="badge">
               {ACCOUNT_TYPE_LABELS[account.type]} · {account.onBudget ? "On budget" : "Off budget"}
+              {account.private ? " · Private" : ""}
               {account.closed ? " · Closed" : ""}
             </span>
           )}

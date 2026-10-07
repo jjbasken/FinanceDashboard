@@ -26,7 +26,7 @@ export const budgetRoutes = new Hono<AppEnv>()
   })
 
   .get("/:month/categories/:id/transactions", (c) =>
-    c.json(categoryActivity(c.var.db, actorOf(c).householdId, monthParam(c.req.param("month")), idParam(c))),
+    c.json(categoryActivity(c.var.db, actorOf(c), monthParam(c.req.param("month")), idParam(c))),
   )
 
   .post("/:month/copy-last-month", (c) => {

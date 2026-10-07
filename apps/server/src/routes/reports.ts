@@ -34,7 +34,7 @@ export const reportRoutes = new Hono<AppEnv>()
   .get("/net-worth", (c) => {
     const range = (c.req.query("range") ?? "1y") as HistoryRange;
     if (!HISTORY_RANGES.includes(range)) throw new HTTPException(400, { message: "Unknown range" });
-    return c.json(netWorthHistory(c.var.db, actorOf(c).householdId, range, localDate()));
+    return c.json(netWorthHistory(c.var.db, actorOf(c), range, localDate()));
   })
 
   .get("/cash-flow", (c) => {

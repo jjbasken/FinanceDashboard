@@ -96,6 +96,8 @@ export const accounts = sqliteTable(
     closed: flag("closed"),
     sortOrder: integer("sort_order").notNull().default(0),
     folderId: integer("folder_id").references(() => accountFolders.id, { onDelete: "set null" }),
+    /** Set for a private account: only this member sees it. Null for the family's shared accounts. */
+    ownerId: integer("owner_id").references(() => users.id),
     gnucashGuid: text("gnucash_guid"),
     /** Set when an import created this row, so the import can be undone. */
     importBatchId: integer("import_batch_id").references((): AnySQLiteColumn => importBatches.id, {
@@ -206,6 +208,11 @@ export const transactions = sqliteTable(
     cleared: flag("cleared"),
     reconciled: flag("reconciled"),
     isParent: flag("is_parent"),
+    /**
+     * For a private account's transactions: counts in the family budget (family money paid for it).
+     * Shared accounts ignore it. A split's children carry their parent's value.
+     */
+    inBudget: flag("in_budget"),
     parentId: integer("parent_id").references((): AnySQLiteColumn => transactions.id, { onDelete: "cascade" }),
     transferId: integer("transfer_id").references((): AnySQLiteColumn => transactions.id, { onDelete: "set null" }),
     /** Stable id from an import source (e.g. a GnuCash GUID) so re-imports are idempotent. */

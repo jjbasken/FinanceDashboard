@@ -10,11 +10,11 @@ import {
   type Security,
   type UpdateSecurityInput,
 } from "@fd/shared";
-import { and, asc, count, desc, eq, ne, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import type { DbOrTx } from "../db";
-import { households, investmentTxns, prices, securities, transactions } from "../db/schema";
-import { findOrCreatePayee, getAccount, type Actor } from "./ledger";
+import { accounts, households, investmentTxns, prices, securities, transactions } from "../db/schema";
+import { findOrCreatePayee, visibleAccount, type Actor } from "./ledger";
 
 const bad = (message: string) => new HTTPException(400, { message });
 
@@ -117,21 +117,26 @@ function toApi(r: Row): InvestmentTxn {
   };
 }
 
+/** Investment transactions in the accounts the viewer can see, newest first. */
 export function listInvestmentTxns(
   db: DbOrTx,
-  householdId: number,
+  viewer: Actor,
   filter: { accountId?: number; securityId?: number } = {},
 ): InvestmentTxn[] {
-  const conds = [eq(investmentTxns.householdId, householdId)];
+  const conds = [
+    eq(investmentTxns.householdId, viewer.householdId),
+    or(isNull(accounts.ownerId), eq(accounts.ownerId, viewer.userId)),
+  ];
   if (filter.accountId) conds.push(eq(investmentTxns.accountId, filter.accountId));
   if (filter.securityId) conds.push(eq(investmentTxns.securityId, filter.securityId));
   return db
-    .select()
+    .select({ txn: investmentTxns })
     .from(investmentTxns)
+    .innerJoin(accounts, eq(accounts.id, investmentTxns.accountId))
     .where(and(...conds))
     .orderBy(desc(investmentTxns.date), desc(investmentTxns.id))
     .all()
-    .map(toApi);
+    .map((r) => toApi(r.txn));
 }
 
 function getRow(db: DbOrTx, householdId: number, id: number) {
@@ -308,7 +313,7 @@ export function createInvestmentTxn(
   input: InvestmentTxnInput,
   extra: { importedId?: string; importBatchId?: number } = {},
 ) {
-  getAccount(db, actor.householdId, input.accountId);
+  visibleAccount(db, actor, input.accountId);
   const security = getSecurity(db, actor.householdId, input.securityId);
   const n = normalise(input, positionOn(db, input.accountId, input.securityId, input.date));
   const transactionId = syncCash(db, actor, null, { ...input, symbol: security.symbol, ...n });
@@ -347,7 +352,8 @@ export function createInvestmentTxn(
 
 export function updateInvestmentTxn(db: DbOrTx, actor: Actor, id: number, input: InvestmentTxnInput) {
   const existing = getRow(db, actor.householdId, id);
-  getAccount(db, actor.householdId, input.accountId);
+  visibleAccount(db, actor, existing.accountId);
+  visibleAccount(db, actor, input.accountId);
   const security = getSecurity(db, actor.householdId, input.securityId);
   const n = normalise(input, positionOn(db, input.accountId, input.securityId, input.date, id));
   const transactionId = syncCash(db, actor, existing.transactionId, { ...input, symbol: security.symbol, ...n });
@@ -376,8 +382,10 @@ export function updateInvestmentTxn(db: DbOrTx, actor: Actor, id: number, input:
   }
 }
 
-export function deleteInvestmentTxn(db: DbOrTx, householdId: number, id: number) {
+export function deleteInvestmentTxn(db: DbOrTx, actor: Actor, id: number) {
+  const { householdId } = actor;
   const row = getRow(db, householdId, id);
+  visibleAccount(db, actor, row.accountId);
   db.delete(investmentTxns).where(eq(investmentTxns.id, id)).run();
   if (row.transactionId) db.delete(transactions).where(eq(transactions.id, row.transactionId)).run();
   settleHolding(db, row.accountId, row.securityId, getSecurity(db, householdId, row.securityId).symbol);
