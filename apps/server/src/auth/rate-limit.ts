@@ -5,6 +5,7 @@
  */
 export class LoginRateLimiter {
   private failures = new Map<string, number[]>();
+  private inFlight = new Map<string, number>();
 
   constructor(
     private readonly perUser = 10,
@@ -14,9 +15,32 @@ export class LoginRateLimiter {
 
   isBlocked(client: string, username: string, now = Date.now()): boolean {
     return (
-      this.recent(pairKey(client, username), now).length >= this.perUser ||
-      this.recent(clientKey(client), now).length >= this.perClient
+      this.used(pairKey(client, username), now) >= this.perUser ||
+      this.used(clientKey(client), now) >= this.perClient
     );
+  }
+
+  /** Reserve capacity synchronously, before password verification yields to other requests. */
+  start(client: string, username: string) {
+    if (this.isBlocked(client, username)) return null;
+    const keys = [pairKey(client, username), clientKey(client)];
+    for (const key of keys) this.inFlight.set(key, (this.inFlight.get(key) ?? 0) + 1);
+    let finished = false;
+    return (success: boolean | null) => {
+      if (finished) return;
+      finished = true;
+      for (const key of keys) {
+        const remaining = (this.inFlight.get(key) ?? 1) - 1;
+        if (remaining) this.inFlight.set(key, remaining);
+        else this.inFlight.delete(key);
+      }
+      if (success === true) this.reset(client, username);
+      if (success === false) this.recordFailure(client, username);
+    };
+  }
+
+  private used(key: string, now: number) {
+    return this.recent(key, now).length + (this.inFlight.get(key) ?? 0);
   }
 
   recordFailure(client: string, username: string, now = Date.now()) {

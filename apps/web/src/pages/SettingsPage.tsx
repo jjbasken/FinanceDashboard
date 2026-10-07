@@ -1,8 +1,9 @@
 import type { InviteInfo } from "@fd/shared";
 import { useMutation } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "react-router";
 import { api } from "../api";
+import { copyInviteLink } from "../clipboard";
 import { useAuthStatus } from "../auth";
 import { CategoriesCard } from "../components/CategoriesCard";
 import { BackupCard } from "../components/BackupCard";
@@ -15,23 +16,19 @@ export function SettingsPage() {
   const invite = useMutation({ mutationFn: () => api.post<InviteInfo>("/household/invites") });
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
+  const inviteInput = useRef<HTMLInputElement>(null);
+  const copyAttempt = useRef(0);
 
   const inviteUrl = invite.data ? `${window.location.origin}/invite/${invite.data.token}` : null;
   const isOwner = status?.user?.role === "owner";
 
   async function copy() {
     if (!inviteUrl) return;
-    // The clipboard API needs HTTPS (or localhost); over plain HTTP, fall back to the older way.
-    try {
-      await navigator.clipboard.writeText(inviteUrl);
-      setCopied(true);
-      return;
-    } catch {
-      // Fall through.
-    }
-    const input = document.querySelector<HTMLInputElement>(".invite-link input");
-    input?.select();
-    const ok = !!input && document.execCommand("copy");
+    const attempt = ++copyAttempt.current;
+    setCopied(false);
+    setCopyFailed(false);
+    const ok = await copyInviteLink(inviteUrl, inviteInput.current);
+    if (attempt !== copyAttempt.current) return;
     setCopied(ok);
     setCopyFailed(!ok);
   }
@@ -68,6 +65,7 @@ export function SettingsPage() {
               <button
                 className="btn"
                 onClick={() => {
+                  copyAttempt.current++;
                   setCopied(false);
                   setCopyFailed(false);
                   invite.mutate();
@@ -79,7 +77,13 @@ export function SettingsPage() {
               {invite.error && <p className="error-text">{invite.error.message}</p>}
               {inviteUrl && (
                 <div className="invite-link">
-                  <input readOnly value={inviteUrl} onFocus={(e) => e.currentTarget.select()} />
+                  <input
+                    ref={inviteInput}
+                    aria-label="Invite link"
+                    readOnly
+                    value={inviteUrl}
+                    onFocus={(e) => e.currentTarget.select()}
+                  />
                   <button className="btn" onClick={copy}>
                     {copied ? "Copied" : "Copy"}
                   </button>

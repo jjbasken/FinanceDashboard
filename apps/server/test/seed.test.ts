@@ -46,6 +46,19 @@ describe("seedOwnerFromEnv", () => {
     expect(db.select().from(users).all()).toHaveLength(1);
   });
 
+  test("ignores removed or invalid seed configuration after first boot", async () => {
+    const { db } = testApp();
+    await seedOwnerFromEnv(db, env);
+    for (const remaining of [
+      {},
+      { SEED_HOUSEHOLD_NAME: env.SEED_HOUSEHOLD_NAME, SEED_OWNER_USERNAME: env.SEED_OWNER_USERNAME },
+      { ...env, SEED_OWNER_PASSWORD: "four" },
+    ]) {
+      expect((await seedOwnerFromEnv(db, remaining)).status).toBe("skipped");
+    }
+    expect(db.select().from(users).all()).toHaveLength(1);
+  });
+
   test("rejects partial configuration", async () => {
     const { db } = testApp();
     await expect(seedOwnerFromEnv(db, { SEED_OWNER_USERNAME: "jeremy" })).rejects.toThrow(/together/);

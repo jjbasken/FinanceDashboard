@@ -4,6 +4,7 @@ import { secureHeaders } from "hono/secure-headers";
 import type { Db } from "./db";
 import type { SessionContext } from "./auth/sessions";
 import { LoginRateLimiter } from "./auth/rate-limit";
+import { PasswordWorkLimiter } from "./auth/password-work";
 import { authRoutes } from "./routes/auth";
 import { accountRoutes } from "./routes/accounts";
 import { budgetRoutes } from "./routes/budget";
@@ -37,6 +38,7 @@ export type AppEnv = {
     db: Db;
     secureCookies: boolean;
     loginLimiter: LoginRateLimiter;
+    passwordWork: PasswordWorkLimiter;
     session: SessionContext | null;
     priceProvider: PriceProvider;
     events: EventHub;
@@ -53,6 +55,7 @@ export function createApp({
   trustProxy = false,
 }: AppOptions) {
   const loginLimiter = new LoginRateLimiter();
+  const passwordWork = new PasswordWorkLimiter();
   const events = new EventHub();
   const app = new Hono<AppEnv>();
 
@@ -86,6 +89,7 @@ export function createApp({
     c.set("db", db);
     c.set("secureCookies", secureCookies);
     c.set("loginLimiter", loginLimiter);
+    c.set("passwordWork", passwordWork);
     c.set("priceProvider", priceProvider);
     c.set("events", events);
     c.set("backupDir", backupDir);
