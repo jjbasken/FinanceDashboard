@@ -47,6 +47,11 @@ export interface BudgetCategory {
   hidden: boolean;
   /** Income category whose activity comes from the month before (pay received at the end of last month). */
   forNextMonth: boolean;
+  /**
+   * Kept out of the budget: never budgeted, and its activity (still shown) doesn't count toward
+   * any total. Its balance is 0.
+   */
+  excludeFromBudget: boolean;
   /** Assigned this month. Always 0 for income categories. */
   budgeted: number;
   /** Net transactions this month (last month for a forNextMonth category); spending is negative. */

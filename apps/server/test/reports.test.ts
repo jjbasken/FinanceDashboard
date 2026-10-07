@@ -101,4 +101,15 @@ describe("reports", () => {
     expect((await c.get("/api/reports/cash-flow?from=1990-01&to=2026-01")).status).toBe(400);
     expect(((await c.get("/api/reports/cash-flow")).json as CashFlowMonth[]).length).toBe(12);
   });
+
+  test("categories excluded from the budget are left out", async () => {
+    const { c } = await setUp();
+    const groups = (await c.get("/api/categories")).json as CategoryGroup[];
+    const dining = groups.flatMap((g) => g.categories).find((x) => x.name === "Dining Out")!.id;
+    expect((await c.patch(`/api/categories/${dining}`, { excludeFromBudget: true })).status).toBe(200);
+    const feb = (await c.get("/api/reports/cash-flow?from=2026-02&to=2026-02")).json as CashFlowMonth[];
+    expect(feb).toEqual([{ month: "2026-02", income: 300_000, expenses: 100_000, net: 200_000 }]);
+    const rows = (await c.get("/api/reports/spending?from=2026-01&to=2026-02")).json as SpendingRow[];
+    expect(rows.map((r) => r.name)).not.toContain("Dining Out");
+  });
 });

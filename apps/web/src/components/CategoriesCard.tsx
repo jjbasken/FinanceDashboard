@@ -106,9 +106,10 @@ export function CategoriesCard() {
             <div key={c.id} className={c.hidden ? "category-row hidden" : "category-row"}>
               <span>{c.name}</span>
               {c.hidden && <span className="badge">Hidden</span>}
-              {g.isIncome && c.forNextMonth && <span className="badge">Budgeted next month</span>}
+              {g.isIncome && c.forNextMonth && !c.excludeFromBudget && <span className="badge">Budgeted next month</span>}
+              {c.excludeFromBudget && <span className="badge">Not in budget</span>}
               <span className="spacer" />
-              {g.isIncome && (
+              {g.isIncome && !c.excludeFromBudget && (
                 <button
                   className="link-button"
                   title="Budget this income in the month after it arrives, e.g. pay that lands at the end of the month"
@@ -133,6 +134,19 @@ export function CategoriesCard() {
                 onClick={() => mutate.mutate({ method: "patch", path: `/categories/${c.id}`, body: { hidden: !c.hidden } })}
               >
                 {c.hidden ? "Show" : "Hide"}
+              </button>
+              <button
+                className="link-button"
+                title="Keep this category out of the budget and reports, e.g. reimbursable work expenses"
+                onClick={() =>
+                  mutate.mutate({
+                    method: "patch",
+                    path: `/categories/${c.id}`,
+                    body: { excludeFromBudget: !c.excludeFromBudget },
+                  })
+                }
+              >
+                {c.excludeFromBudget ? "Include in budget" : "Exclude from budget"}
               </button>
               <button className="link-button danger" onClick={() => setDeleting(c)}>
                 Delete

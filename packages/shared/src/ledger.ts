@@ -185,6 +185,8 @@ export const updateCategoryInput = z
     sortOrder: z.number().int(),
     /** Income categories only: count this income toward the following month's budget. */
     forNextMonth: z.boolean(),
+    /** Keep this category's transactions out of the budget and reports (e.g. reimbursable work expenses). */
+    excludeFromBudget: z.boolean(),
   })
   .partial();
 
@@ -201,6 +203,8 @@ export interface Category {
   sortOrder: number;
   /** Income received in this category is budgeted in the following month (e.g. end-of-month pay). */
   forNextMonth: boolean;
+  /** Its transactions don't count toward the budget or reports (e.g. reimbursable work expenses). */
+  excludeFromBudget: boolean;
 }
 
 export interface CategoryGroup {

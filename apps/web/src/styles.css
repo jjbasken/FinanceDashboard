@@ -213,7 +213,7 @@ input:focus {
   height: 100%;
 }
 .sidebar {
-  width: 240px;
+  width: var(--sidebar-width, 240px);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -222,6 +222,25 @@ input:focus {
   padding: 14px 10px;
   gap: 18px;
   overflow-y: auto;
+}
+.sidebar-resizer {
+  flex-shrink: 0;
+  width: 6px;
+  margin-left: -3px;
+  margin-right: -3px;
+  z-index: 1;
+  cursor: col-resize;
+  touch-action: none;
+}
+.sidebar-resizer:hover,
+.sidebar-resizer:focus-visible,
+.resizing-sidebar .sidebar-resizer {
+  background: var(--accent);
+  outline: none;
+}
+.resizing-sidebar {
+  cursor: col-resize;
+  user-select: none;
 }
 .sidebar a {
   display: block;
@@ -1091,6 +1110,10 @@ select {
 .category-line.hidden .name {
   opacity: 0.55;
 }
+.category-line.excluded .activity-cell {
+  color: var(--text-muted);
+  font-style: italic;
+}
 .drag-handle {
   color: var(--text-muted);
   cursor: grab;
@@ -1622,6 +1645,9 @@ select {
 @media (max-width: 720px) {
   .shell {
     flex-direction: column;
+  }
+  .sidebar-resizer {
+    display: none;
   }
   .sidebar {
     width: 100%;

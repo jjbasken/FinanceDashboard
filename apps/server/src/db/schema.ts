@@ -169,6 +169,8 @@ export const categories = sqliteTable(
     sortOrder: integer("sort_order").notNull().default(0),
     /** Income in this category counts toward the following month's budget (e.g. pay at month end). */
     forNextMonth: flag("for_next_month"),
+    /** Kept out of the budget and reports, e.g. work expenses and their reimbursements. */
+    excludeFromBudget: flag("exclude_from_budget"),
     /** Set when an import created this row, so the import can be undone. */
     importBatchId: integer("import_batch_id").references((): AnySQLiteColumn => importBatches.id, {
       onDelete: "set null",

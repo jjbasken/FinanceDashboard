@@ -204,7 +204,7 @@ export function BudgetPage() {
     .filter((g) => !g.isIncome && visible(g))
     .map((g) => ({ ...g, categories: g.categories.filter(visible) }));
   const incomeGroups = (data?.groups ?? []).filter((g) => g.isIncome && visible(g));
-  const order = expenseGroups.flatMap((g) => g.categories.map((c) => c.id));
+  const order = expenseGroups.flatMap((g) => g.categories.filter((c) => !c.excludeFromBudget).map((c) => c.id));
 
   function finishEdit(category: BudgetCategory, amount: number | null, step: Move) {
     if (amount !== null && amount !== category.budgeted) setAmount.mutate({ id: category.id, amount });
@@ -307,7 +307,7 @@ export function BudgetPage() {
   function categoryActions(c: BudgetCategory, isIncome = false) {
     return (
       <span className="row-actions-inline">
-        {isIncome && (
+        {isIncome && !c.excludeFromBudget && (
           <button
             className="link-button"
             title={
@@ -337,9 +337,32 @@ export function BudgetPage() {
         >
           {c.hidden ? "Show" : "Hide"}
         </button>
+        <button
+          className="link-button"
+          title={
+            c.excludeFromBudget
+              ? "Count this category in the budget and reports again"
+              : "Keep this category out of the budget and reports, e.g. reimbursable work expenses"
+          }
+          onClick={() =>
+            edit.mutate({
+              method: "patch",
+              path: `/categories/${c.id}`,
+              body: { excludeFromBudget: !c.excludeFromBudget },
+            })
+          }
+        >
+          {c.excludeFromBudget ? "Include in budget" : "Exclude from budget"}
+        </button>
       </span>
     );
   }
+
+  const excludedBadge = (
+    <span className="badge" title="Shown for reference; not counted in the budget or reports">
+      Not in budget
+    </span>
+  );
 
   const shownBudgeted = (c: BudgetCategory) =>
     setAmount.isPending && setAmount.variables.id === c.id ? setAmount.variables.amount : c.budgeted;
@@ -448,7 +471,7 @@ export function BudgetPage() {
               {g.categories.map((c) => (
                 <div
                   key={c.id}
-                  className={`budget-row category-line${c.hidden ? " hidden" : ""} drop-before${dropClass(`c${c.id}`)}`}
+                  className={`budget-row category-line${c.hidden ? " hidden" : ""}${c.excludeFromBudget ? " excluded" : ""} drop-before${dropClass(`c${c.id}`)}`}
                   {...dragProps({ kind: "category", id: c.id })}
                   {...dropOnCategory(g, c)}
                 >
@@ -457,10 +480,11 @@ export function BudgetPage() {
                       ⋮⋮
                     </span>
                     <span className="truncate">{c.name}</span>
+                    {c.excludeFromBudget && excludedBadge}
                     {categoryActions(c)}
                   </div>
                   <div className="amount">
-                    {editing === c.id ? (
+                    {c.excludeFromBudget ? null : editing === c.id ? (
                       <BudgetInput initial={c.budgeted} onDone={(amount, step) => finishEdit(c, amount, step)} />
                     ) : (
                       <button
@@ -477,9 +501,7 @@ export function BudgetPage() {
                       {formatCents(c.activity)}
                     </button>
                   </div>
-                  <div className="amount">
-                    <BalancePill cents={c.balance} />
-                  </div>
+                  <div className="amount">{!c.excludeFromBudget && <BalancePill cents={c.balance} />}</div>
                 </div>
               ))}
             </div>
@@ -512,7 +534,7 @@ export function BudgetPage() {
               {g.categories.filter(visible).map((c) => (
                 <div
                   key={c.id}
-                  className={`budget-row category-line${c.hidden ? " hidden" : ""} drop-before${dropClass(`c${c.id}`)}`}
+                  className={`budget-row category-line${c.hidden ? " hidden" : ""}${c.excludeFromBudget ? " excluded" : ""} drop-before${dropClass(`c${c.id}`)}`}
                   {...dragProps({ kind: "category", id: c.id })}
                   {...dropOnCategory(g, c)}
                 >
@@ -521,6 +543,7 @@ export function BudgetPage() {
                       ⋮⋮
                     </span>
                     <span className="truncate">{c.name}</span>
+                    {c.excludeFromBudget && excludedBadge}
                     {c.forNextMonth && (
                       <span className="badge" title="Received last month, budgeted this month">
                         From {monthName(addMonths(month, -1))}

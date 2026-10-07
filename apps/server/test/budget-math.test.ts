@@ -5,6 +5,7 @@ import { computeBudgetMonth, type CategoryAmount } from "../src/services/budget"
 const GROCERIES = 1;
 const RENT = 2;
 const SALARY = 10;
+const WORK = 3;
 const PAY = 11;
 
 const groups: CategoryGroup[] = [
@@ -15,8 +16,9 @@ const groups: CategoryGroup[] = [
     hidden: false,
     sortOrder: 0,
     categories: [
-      { id: GROCERIES, groupId: 1, name: "Groceries", hidden: false, sortOrder: 0, forNextMonth: false },
-      { id: RENT, groupId: 1, name: "Rent", hidden: true, sortOrder: 1, forNextMonth: false },
+      { id: GROCERIES, groupId: 1, name: "Groceries", hidden: false, sortOrder: 0, forNextMonth: false, excludeFromBudget: false },
+      { id: RENT, groupId: 1, name: "Rent", hidden: true, sortOrder: 1, forNextMonth: false, excludeFromBudget: false },
+      { id: WORK, groupId: 1, name: "Work expenses", hidden: false, sortOrder: 2, forNextMonth: false, excludeFromBudget: true },
     ],
   },
   {
@@ -26,8 +28,8 @@ const groups: CategoryGroup[] = [
     hidden: false,
     sortOrder: 0,
     categories: [
-      { id: SALARY, groupId: 2, name: "Salary", hidden: false, sortOrder: 0, forNextMonth: false },
-      { id: PAY, groupId: 2, name: "Month-end pay", hidden: false, sortOrder: 1, forNextMonth: true },
+      { id: SALARY, groupId: 2, name: "Salary", hidden: false, sortOrder: 0, forNextMonth: false, excludeFromBudget: false },
+      { id: PAY, groupId: 2, name: "Month-end pay", hidden: false, sortOrder: 1, forNextMonth: true, excludeFromBudget: false },
     ],
   },
 ];
@@ -90,5 +92,17 @@ describe("computeBudgetMonth", () => {
     expect(cat(m, SALARY)).toMatchObject({ forNextMonth: false, activity: 2000 });
     expect(cat(m, GROCERIES)).toMatchObject({ forNextMonth: false, activity: -5000 });
     expect(m).toMatchObject({ income: 402000, incomeFromLastMonth: 400000, toBudget: 302000, spent: -5000 });
+  });
+
+  test("excluded categories show their activity but count toward nothing", () => {
+    const m = computeBudgetMonth(
+      groups,
+      [row(GROCERIES, 50000), row(WORK, 20000)],
+      [row(SALARY, 300000), row(GROCERIES, -10000), row(WORK, -45000)],
+      "2026-01",
+    );
+    expect(cat(m, WORK)).toMatchObject({ excludeFromBudget: true, budgeted: 0, activity: -45000, balance: 0 });
+    expect(m).toMatchObject({ income: 300000, budgeted: 50000, toBudget: 250000, spent: -10000 });
+    expect(m.groups.find((g) => g.id === 1)).toMatchObject({ budgeted: 50000, activity: -10000, balance: 40000 });
   });
 });
