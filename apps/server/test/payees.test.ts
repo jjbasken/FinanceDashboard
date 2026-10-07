@@ -25,6 +25,20 @@ describe("payees", () => {
     expect((await byName("Checking")).transferAccountId).not.toBeNull();
   });
 
+  test("remember the category of each payee's latest categorised transaction", async () => {
+    const { c, checking, add, byName } = await setUp();
+    const groups = (await c.get("/api/categories")).json as { categories: { id: number; name: string }[] }[];
+    const cat = (name: string) => groups.flatMap((g) => g.categories).find((x) => x.name === name)!.id;
+    const post = (date: string, categoryId: number | null) =>
+      c.post("/api/transactions", { accountId: checking.id, date, amount: -100, payeeName: "Corner Grocer", categoryId });
+    await add("Gas Station");
+    expect((await byName("Gas Station")).lastCategoryId).toBeNull();
+    await post("2026-10-01", cat("Groceries"));
+    await post("2026-09-01", cat("Household"));
+    await post("2026-10-02", null);
+    expect((await byName("Corner Grocer")).lastCategoryId).toBe(cat("Groceries"));
+  });
+
   test("rename, but not onto an existing name", async () => {
     const { c, add, byName } = await setUp();
     await add("CORNER GROCER #12");

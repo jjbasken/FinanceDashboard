@@ -19,6 +19,8 @@ type Field = "date" | "payee" | "notes" | "category" | "payment" | "deposit";
 interface SplitDraft {
   key: number;
   categoryId: number | null;
+  /** Move this line to another account, e.g. a loan payment's principal. */
+  transferAccountId: number | null;
   notes: string;
   payment: string;
   deposit: string;
@@ -85,6 +87,7 @@ function draftFrom(t: Transaction, payeeName: string): Draft {
     splits: t.splits.map((s) => ({
       key: ++splitKey,
       categoryId: s.categoryId,
+      transferAccountId: s.transferAccountId,
       notes: s.notes,
       ...amountFields(s.amount),
     })),
@@ -102,7 +105,12 @@ function buildBody(d: Draft, original?: Draft): Built {
   if (amount === null) return { error: "Enter amounts as numbers, like 12.34" };
 
   const splits = d.split
-    ? d.splits.map((s) => ({ amount: amountOf(s), categoryId: s.categoryId, notes: s.notes.trim() }))
+    ? d.splits.map((s) => ({
+        amount: amountOf(s),
+        categoryId: s.categoryId,
+        transferAccountId: s.transferAccountId,
+        notes: s.notes.trim(),
+      }))
     : [];
   if (splits.some((s) => s.amount === null)) return { error: "Enter split amounts as numbers, like 12.34" };
   if (d.split && splits.reduce((sum, s) => sum + s.amount!, 0) !== amount) {
@@ -150,6 +158,8 @@ interface Lookups {
   categoryName: Map<number, string>;
   categoryOptions: Option<CategoryValue>[];
   splitCategoryOptions: Option<CategoryValue>[];
+  /** Accounts a split line can transfer to. */
+  transferOptions: Option<number>[];
 }
 
 function payeeLabel(p: Payee | undefined) {
@@ -159,9 +169,17 @@ function payeeLabel(p: Payee | undefined) {
 
 /** Transfers between two on-budget accounts don't take a category. */
 function isBudgetTransfer(l: Lookups, payeeId: number | null) {
-  const target = payeeId != null ? l.payeeById.get(payeeId)?.transferAccountId : null;
-  if (!target) return false;
-  return l.account.onBudget && !!l.accounts.find((a) => a.id === target)?.onBudget;
+  return isBudgetTransferTo(l, payeeId != null ? l.payeeById.get(payeeId)?.transferAccountId : null);
+}
+
+function isBudgetTransferTo(l: Lookups, accountId: number | null | undefined) {
+  if (!accountId) return false;
+  return l.account.onBudget && !!l.accounts.find((a) => a.id === accountId)?.onBudget;
+}
+
+function transferLabel(l: Lookups, accountId: number | null) {
+  if (accountId == null) return "";
+  return `Transfer: ${l.accounts.find((a) => a.id === accountId)?.name ?? ""}`;
 }
 
 function useLookups(account: Account, accounts: Account[], payees: Payee[], groups: CategoryGroup[]): Lookups {
@@ -195,7 +213,21 @@ function useLookups(account: Account, accounts: Account[], payees: Payee[], grou
       { key: "split", label: "Split transaction", value: "split" },
       ...splitCategoryOptions,
     ];
-    return { account, accounts, payeeById, payeeOptions, categoryName, categoryOptions, splitCategoryOptions };
+    const transferOptions: Option<number>[] = transfers.map((p) => ({
+      key: `a${p.transferAccountId}`,
+      label: payeeLabel(p),
+      value: p.transferAccountId!,
+    }));
+    return {
+      account,
+      accounts,
+      payeeById,
+      payeeOptions,
+      categoryName,
+      categoryOptions,
+      splitCategoryOptions,
+      transferOptions,
+    };
   }, [account, accounts, payees, groups]);
 }
 
@@ -257,6 +289,7 @@ function EditRow(props: {
     const first: SplitDraft = {
       key: ++splitKey,
       categoryId: d.categoryId,
+      transferAccountId: null,
       notes: "",
       payment: d.payment,
       deposit: d.deposit,
@@ -264,7 +297,10 @@ function EditRow(props: {
     set({
       split: true,
       categoryId: null,
-      splits: [first, { key: ++splitKey, categoryId: null, notes: "", payment: "", deposit: "" }],
+      splits: [
+        first,
+        { key: ++splitKey, categoryId: null, transferAccountId: null, notes: "", payment: "", deposit: "" },
+      ],
     });
   }
 
@@ -274,7 +310,7 @@ function EditRow(props: {
 
   function addSplit() {
     const rest = amountFields(remaining);
-    set({ splits: [...d.splits, { key: ++splitKey, categoryId: null, notes: "", ...rest }] });
+    set({ splits: [...d.splits, { key: ++splitKey, categoryId: null, transferAccountId: null, notes: "", ...rest }] });
   }
 
   const register = (f: Field) => (el: HTMLInputElement | null) => {
@@ -304,6 +340,10 @@ function EditRow(props: {
             onSelect={(v) => {
               const patch: Partial<Draft> = { payeeId: v.id, payeeName: v.name };
               if (isBudgetTransfer(l, v.id)) Object.assign(patch, { categoryId: null, split: false, splits: [] });
+              else if (props.showCategory && !d.split && d.categoryId == null && v.id != null) {
+                // Carry the payee's last category forward when none has been chosen yet.
+                patch.categoryId = l.payeeById.get(v.id)?.lastCategoryId ?? null;
+              }
               set(patch);
             }}
             onClear={() => set({ payeeId: null, payeeName: "" })}
@@ -379,7 +419,21 @@ function EditRow(props: {
           {d.splits.map((s) => (
             <div className="register-row split-line" key={s.key}>
               <div className="cell" />
-              <div className="cell" />
+              <div className="cell">
+                <Autocomplete
+                  ariaLabel="Split transfer"
+                  value={transferLabel(l, s.transferAccountId)}
+                  options={l.transferOptions}
+                  onSelect={(v) =>
+                    setSplit(s.key, {
+                      transferAccountId: v,
+                      ...(isBudgetTransferTo(l, v) ? { categoryId: null } : {}),
+                    })
+                  }
+                  onClear={() => setSplit(s.key, { transferAccountId: null })}
+                  placeholder="Transfer to…"
+                />
+              </div>
               <div className="cell">
                 <input
                   className="cell-input"
@@ -393,8 +447,15 @@ function EditRow(props: {
               <div className="cell">
                 <Autocomplete
                   ariaLabel="Split category"
-                  value={s.categoryId != null ? (l.categoryName.get(s.categoryId) ?? "") : ""}
+                  value={
+                    isBudgetTransferTo(l, s.transferAccountId)
+                      ? "Transfer"
+                      : s.categoryId != null
+                        ? (l.categoryName.get(s.categoryId) ?? "")
+                        : ""
+                  }
                   options={l.splitCategoryOptions}
+                  disabled={isBudgetTransferTo(l, s.transferAccountId)}
                   onSelect={(v) => setSplit(s.key, { categoryId: v as number })}
                   onClear={() => setSplit(s.key, { categoryId: null })}
                   placeholder="Category"
@@ -542,11 +603,13 @@ function DisplayRow(props: {
       {t.splits.map((s) => (
         <div className="register-row split-line display" key={s.id} onClick={() => props.onEdit("category")}>
           <div className="cell" />
-          <div className="cell" />
+          <div className="cell truncate">{transferLabel(l, s.transferAccountId)}</div>
           <div className="cell truncate muted">{s.notes}</div>
           {props.showCategory && (
             <div className="cell truncate">
-              {s.categoryId != null ? (
+              {isBudgetTransferTo(l, s.transferAccountId) ? (
+                <span className="muted">Transfer</span>
+              ) : s.categoryId != null ? (
                 l.categoryName.get(s.categoryId)
               ) : (
                 <span className="uncategorized">Uncategorized</span>
@@ -570,6 +633,9 @@ export function Register(props: {
   payees: Payee[];
   categories: CategoryGroup[];
   search: string;
+  /** Whether the row for entering a new transaction is open. */
+  adding: boolean;
+  onCloseAdding: () => void;
 }) {
   const { account, transactions } = props;
   const lookups = useLookups(account, props.accounts, props.payees, props.categories);
@@ -586,7 +652,8 @@ export function Register(props: {
   const [editDraft, setEditDraft] = useState<Draft>(() => blankDraft());
   const [editError, setEditError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [linkedNotice, setLinkedNotice] = useState(false);
+  /** Why the row the user tried to edit has to be edited somewhere else. */
+  const [linkedNotice, setLinkedNotice] = useState<"investment" | "split" | null>(null);
 
   // Reset the entry row when switching accounts.
   useEffect(() => {
@@ -613,7 +680,14 @@ export function Register(props: {
       const cats = ids
         .map((id) => (id != null ? (lookups.categoryName.get(id) ?? "") : needsCategory ? "uncategorized" : ""))
         .join(" ");
-      const text = [payee, t.notes, ...t.splits.map((s) => s.notes), cats, plain(t.amount), formatDate(t.date)];
+      const text = [
+        payee,
+        t.notes,
+        ...t.splits.map((s) => `${transferLabel(lookups, s.transferAccountId)} ${s.notes}`),
+        cats,
+        plain(t.amount),
+        formatDate(t.date),
+      ];
       return text.join(" ").toLowerCase().includes(q);
     });
   }, [transactions, props.search, lookups, showCategory]);
@@ -686,9 +760,9 @@ export function Register(props: {
   function startEdit(t: Transaction, field: Field) {
     if (editing?.id === t.id) return;
     if (editing && !saveEdit()) return;
-    if (t.investmentTxnId) {
+    if (t.investmentTxnId || t.fromSplit) {
       setEditing(null);
-      setLinkedNotice(true);
+      setLinkedNotice(t.investmentTxnId ? "investment" : "split");
       return;
     }
     if (t.reconciled && !confirm("This transaction is reconciled. Edit it anyway?")) return;
@@ -735,21 +809,24 @@ export function Register(props: {
         </div>
       </div>
 
-      <EditRow
-        isNew
-        draft={newDraft}
-        setDraft={setNewDraft}
-        lookups={lookups}
-        focus={newFocus}
-        error={newError}
-        showCategory={showCategory}
-        onCommit={commitNew}
-        onCancel={() => {
-          setNewDraft(blankDraft(newDraft.date));
-          setNewError(null);
-        }}
-        onBlurOut={() => {}}
-      />
+      {props.adding && (
+        <EditRow
+          isNew
+          draft={newDraft}
+          setDraft={setNewDraft}
+          lookups={lookups}
+          focus={newFocus}
+          error={newError}
+          showCategory={showCategory}
+          onCommit={commitNew}
+          onCancel={() => {
+            setNewDraft(blankDraft(newDraft.date));
+            setNewError(null);
+            props.onCloseAdding();
+          }}
+          onBlurOut={() => {}}
+        />
+      )}
       {saveError && (
         <p className="error-text register-banner" role="alert">
           Couldn't save: {saveError}
@@ -757,9 +834,15 @@ export function Register(props: {
       )}
       {linkedNotice && (
         <p className="notice register-notice" role="status">
-          That row is the cash side of an investment transaction. Edit it on the{" "}
-          <Link to="/investments">Investments page</Link>.{" "}
-          <button className="link-button" onClick={() => setLinkedNotice(false)}>
+          {linkedNotice === "investment" ? (
+            <>
+              That row is the cash side of an investment transaction. Edit it on the{" "}
+              <Link to="/investments">Investments page</Link>.
+            </>
+          ) : (
+            "That row is one line of a split transaction in the account it came from. Edit it there."
+          )}{" "}
+          <button className="link-button" onClick={() => setLinkedNotice(null)}>
             Dismiss
           </button>
         </p>
@@ -768,7 +851,7 @@ export function Register(props: {
       <div className="register-scroll" ref={scrollRef}>
         {rows.length === 0 ? (
           <div className="register-empty muted">
-            {props.search ? "No transactions match your search." : "No transactions yet. Add one above."}
+            {props.search ? "No transactions match your search." : "No transactions yet. Use Add transaction to enter one."}
           </div>
         ) : (
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { Account, CategoryGroup, Payee, Transaction } from "@fd/shared";
+import type { Account, BudgetMonth, CategoryGroup, Payee, Transaction } from "@fd/shared";
 import { createSession } from "../src/auth/sessions";
 import { users } from "../src/db/schema";
 import { createHousehold } from "../src/services/household";
@@ -433,5 +433,111 @@ describe("split transactions", () => {
     const unsplit = (await jeremy.patch(`/api/transactions/${txn.id}`, { splits: [], categoryId: groceries }))
       .json as Transaction;
     expect(unsplit).toMatchObject({ splits: [], categoryId: groceries, amount: -500, date: "2026-04-01" });
+  });
+});
+
+describe("split lines that are transfers", () => {
+  /** A mortgage payment: principal to the loan account, interest as an expense, all under one category. */
+  async function mortgagePayment() {
+    const ctx = await setUp();
+    const { jeremy } = ctx;
+    const checking = await newAccount(jeremy, { name: "Checking", type: "checking", startingBalance: 500000 });
+    const loan = await newAccount(jeremy, { name: "Mortgage", type: "loan", startingBalance: -30000000, startingDate: "2026-01-01" });
+    const mortgage = await categoryId(jeremy, "Housing");
+    const payment = await addTxn(jeremy, {
+      accountId: checking.id,
+      date: "2026-10-01",
+      amount: -200000,
+      payeeName: "Bank",
+      splits: [
+        { amount: -150000, categoryId: mortgage, notes: "Principal", transferAccountId: loan.id },
+        { amount: -50000, categoryId: mortgage, notes: "Interest" },
+      ],
+    });
+    return { ...ctx, checking, loan, mortgage, payment };
+  }
+
+  test("move the principal to the loan and count the whole payment in one category", async () => {
+    const { jeremy, checking, loan, mortgage, payment } = await mortgagePayment();
+    expect(payment.splits.map((s) => [s.amount, s.categoryId, s.transferAccountId])).toEqual([
+      [-150000, mortgage, loan.id],
+      [-50000, mortgage, null],
+    ]);
+    expect(await balanceOf(jeremy, checking.id)).toBe(300000);
+    expect(await balanceOf(jeremy, loan.id)).toBe(-29850000);
+
+    const [principal] = await register(jeremy, loan.id);
+    expect(principal).toMatchObject({
+      amount: 150000,
+      date: "2026-10-01",
+      payeeId: checking.transferPayeeId,
+      categoryId: null,
+      notes: "Principal",
+      fromSplit: true,
+    });
+
+    const budget = (await jeremy.get("/api/budget/2026-10")).json as BudgetMonth;
+    const line = budget.groups.flatMap((g) => g.categories).find((c) => c.id === mortgage)!;
+    expect(line.activity).toBe(-200000);
+    expect(budget.uncategorized).toBe(0);
+  });
+
+  test("the loan side can only be cleared; edits and deletes go through the split", async () => {
+    const { jeremy, loan, payment } = await mortgagePayment();
+    const [principal] = await register(jeremy, loan.id);
+    expect((await jeremy.patch(`/api/transactions/${principal!.id}`, { amount: 1 })).status).toBe(400);
+    expect((await jeremy.delete(`/api/transactions/${principal!.id}`)).status).toBe(400);
+    expect((await jeremy.patch(`/api/transactions/${principal!.id}`, { cleared: true })).status).toBe(200);
+    expect((await register(jeremy, loan.id))[0]).toMatchObject({ cleared: true, amount: 150000 });
+    expect((await jeremy.get(`/api/transactions/${payment.id}`)).json).toMatchObject({ amount: -200000 });
+  });
+
+  test("editing the split moves the loan side with it, and deleting removes it", async () => {
+    const { jeremy, loan, mortgage, payment } = await mortgagePayment();
+    await jeremy.patch(`/api/transactions/${payment.id}`, { date: "2026-10-03", payeeName: "New Bank" });
+    let [principal] = await register(jeremy, loan.id);
+    expect(principal).toMatchObject({ date: "2026-10-03", amount: 150000 });
+    const moved = (await jeremy.get(`/api/transactions/${payment.id}`)).json as Transaction;
+    expect(moved.splits[0]!.transferAccountId).toBe(loan.id);
+
+    await jeremy.patch(`/api/transactions/${payment.id}`, {
+      amount: -200000,
+      splits: [
+        { amount: -151000, categoryId: mortgage, transferAccountId: loan.id },
+        { amount: -49000, categoryId: mortgage },
+      ],
+    });
+    const loanRows = await register(jeremy, loan.id);
+    expect(loanRows.filter((t) => t.fromSplit).map((t) => t.amount)).toEqual([151000]);
+    expect(await balanceOf(jeremy, loan.id)).toBe(-29849000);
+
+    await jeremy.delete(`/api/transactions/${payment.id}`);
+    [principal] = await register(jeremy, loan.id);
+    expect(principal!.fromSplit).toBe(false);
+    expect(await balanceOf(jeremy, loan.id)).toBe(-30000000);
+  });
+
+  test("an on-budget transfer line takes no category, and can't go to the same account", async () => {
+    const { jeremy } = await setUp();
+    const checking = await newAccount(jeremy, { name: "Checking", type: "checking" });
+    const savings = await newAccount(jeremy, { name: "Savings", type: "savings" });
+    const groceries = await categoryId(jeremy, "Groceries");
+    const txn = await addTxn(jeremy, {
+      accountId: checking.id,
+      amount: -300,
+      splits: [
+        { amount: -100, categoryId: groceries, transferAccountId: savings.id },
+        { amount: -200, categoryId: groceries },
+      ],
+    });
+    expect(txn.splits[0]).toMatchObject({ categoryId: null, transferAccountId: savings.id });
+
+    const self = await jeremy.post("/api/transactions", {
+      accountId: checking.id,
+      date: "2026-01-01",
+      amount: -2,
+      splits: [{ amount: -1, transferAccountId: checking.id }, { amount: -1 }],
+    });
+    expect(self.status).toBe(400);
   });
 });

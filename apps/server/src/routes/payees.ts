@@ -30,7 +30,10 @@ export const payeeRoutes = new Hono<AppEnv>()
   .get("/", (c) => {
     const list: Payee[] = c.var.db.all<Payee>(sql`
       select p.id as id, p.name as name, p.transfer_account_id as transferAccountId,
-             (select count(*) from transactions t where t.payee_id = p.id and t.parent_id is null) as transactionCount
+             (select count(*) from transactions t where t.payee_id = p.id and t.parent_id is null) as transactionCount,
+             (select t.category_id from transactions t
+              where t.payee_id = p.id and t.parent_id is null and t.category_id is not null
+              order by t.date desc, t.id desc limit 1) as lastCategoryId
       from payees p
       where p.household_id = ${householdOf(c)}
       order by lower(p.name)
