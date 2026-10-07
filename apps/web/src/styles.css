@@ -1052,6 +1052,8 @@ select {
   font-size: 13px;
 }
 .budget-grid {
+  /* .main is a flex column; without this a tall grid shrinks to the window and is clipped. */
+  flex-shrink: 0;
   margin: 0 24px 24px;
   background: var(--surface);
   border: 1px solid var(--border);
