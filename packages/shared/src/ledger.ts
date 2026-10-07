@@ -57,6 +57,8 @@ export const updateAccountInput = z
     type: z.enum(ACCOUNT_TYPES),
     onBudget: z.boolean(),
     closed: z.boolean(),
+    /** Leave the account out of the net worth report. */
+    excludeFromNetWorth: z.boolean(),
     sortOrder: z.number().int(),
     /** A folder in the account's sidebar section, or null for the top of the section. */
     folderId: idSchema.nullable(),
@@ -78,6 +80,8 @@ export interface Account {
   type: AccountType;
   onBudget: boolean;
   closed: boolean;
+  /** Left out of the net worth report. */
+  excludeFromNetWorth: boolean;
   sortOrder: number;
   folderId: number | null;
   /** Only its owner (you) can see a private account; the family's accounts are shared. */

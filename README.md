@@ -133,7 +133,7 @@ Investments live in **Investment** accounts. An account's register holds its cas
 ## Reports, live updates and backups
 
 - **Reports**
-  - **Net worth:** every account over time, with investments at market value.
+  - **Net worth:** every account over time, with investments at market value. To leave an account out (say, a child's 529 plan), use **Leave out of net worth** in its ⋯ menu.
   - **Cash flow:** income and spending per month, by category. Opening balances aren't counted as income.
   - **Spending by category:** totals for any period.
   - Transfers between your accounts aren't counted in either, even with a category. So for a mortgage payment split into principal (a transfer to the loan) and interest, only the interest is spending. The budget still counts the whole payment.

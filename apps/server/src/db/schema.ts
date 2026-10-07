@@ -94,6 +94,8 @@ export const accounts = sqliteTable(
     type: text("type", { enum: ACCOUNT_TYPES }).notNull(),
     onBudget: flag("on_budget"),
     closed: flag("closed"),
+    /** Left out of the net worth report, e.g. a child's college savings. */
+    excludeFromNetWorth: flag("exclude_from_net_worth"),
     sortOrder: integer("sort_order").notNull().default(0),
     folderId: integer("folder_id").references(() => accountFolders.id, { onDelete: "set null" }),
     /** Set for a private account: only this member sees it. Null for the family's shared accounts. */
