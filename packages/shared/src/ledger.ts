@@ -222,6 +222,11 @@ export const splitInput = z.object({
   amount: centsSchema,
   categoryId: idSchema.nullable().optional(),
   notes: notesSchema.optional(),
+  /**
+   * Move this part of the transaction to another account, e.g. the principal of a mortgage
+   * payment to the loan, while the rest stays an expense.
+   */
+  transferAccountId: idSchema.nullable().optional(),
 });
 export type SplitInput = z.infer<typeof splitInput>;
 
@@ -253,6 +258,8 @@ export interface TransactionSplit {
   amount: number;
   categoryId: number | null;
   notes: string;
+  /** Set when this line is a transfer to (or from) that account. */
+  transferAccountId: number | null;
 }
 
 export interface Transaction {
@@ -269,6 +276,8 @@ export interface Transaction {
   transferId: number | null;
   /** Set when this row is the cash side of an investment transaction; edit it there. */
   investmentTxnId: number | null;
+  /** Set when this row is the other side of one line of a split transaction; edit it there. */
+  fromSplit: boolean;
   /** Empty unless this is a split transaction. */
   splits: TransactionSplit[];
   /** Account balance after this transaction, in register order (date, then id). */

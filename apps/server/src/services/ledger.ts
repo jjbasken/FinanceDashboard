@@ -11,6 +11,7 @@ import {
   type UpdateTransactionInput,
 } from "@fd/shared";
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 import { HTTPException } from "hono/http-exception";
 import type { DbOrTx } from "../db";
 import { accounts, categories, categoryGroups, investmentTxns, payees, transactions } from "../db/schema";
@@ -260,9 +261,21 @@ function linkedToInvestment(db: DbOrTx, transactionId: number) {
 }
 
 type TxRow = typeof transactions.$inferSelect;
+type AccountRow = typeof accounts.$inferSelect;
+
+const splitLineMessage = (verb: string) =>
+  `This is one line of a split transaction in another account. ${verb} it there.`;
+
+/** The other side of a transfer that's one line of a split, or null. */
+function splitPartner(db: DbOrTx, householdId: number, row: TxRow) {
+  if (!row.transferId) return null;
+  const partner = getTransactionRow(db, householdId, row.transferId);
+  return partner.parentId ? partner : null;
+}
 
 export function listTransactions(db: DbOrTx, householdId: number, accountId: number): Transaction[] {
   getAccount(db, householdId, accountId);
+  const partner = alias(transactions, "partner");
   const running = sql<number>`sum(${transactions.amount}) over (order by ${transactions.date}, ${transactions.id})`;
   const rows = db
     .select({
@@ -278,12 +291,14 @@ export function listTransactions(db: DbOrTx, householdId: number, accountId: num
       isParent: transactions.isParent,
       transferId: transactions.transferId,
       investmentTxnId: investmentTxns.id,
+      fromSplit: sql<boolean>`${partner.parentId} is not null`.mapWith(Boolean),
       createdBy: transactions.createdBy,
       updatedBy: transactions.updatedBy,
       runningBalance: running,
     })
     .from(transactions)
     .leftJoin(investmentTxns, eq(investmentTxns.transactionId, transactions.id))
+    .leftJoin(partner, eq(partner.id, transactions.transferId))
     .where(and(eq(transactions.accountId, accountId), isNull(transactions.parentId)))
     .orderBy(sql`${transactions.date} desc`, sql`${transactions.id} desc`)
     .all();
@@ -295,8 +310,12 @@ export function listTransactions(db: DbOrTx, householdId: number, accountId: num
       amount: transactions.amount,
       categoryId: transactions.categoryId,
       notes: transactions.notes,
+      transferAccountId: sql<
+        number | null
+      >`case when ${transactions.transferId} is not null then ${payees.transferAccountId} end`,
     })
     .from(transactions)
+    .leftJoin(payees, eq(payees.id, transactions.payeeId))
     .where(and(eq(transactions.accountId, accountId), isNotNull(transactions.parentId)))
     .orderBy(asc(transactions.id))
     .all();
@@ -325,30 +344,61 @@ function resolvePayee(db: DbOrTx, householdId: number, input: { payeeId?: number
   return null;
 }
 
-function checkSplits(db: DbOrTx, householdId: number, amount: number, splits: SplitInput[]) {
+function checkSplits(db: DbOrTx, householdId: number, account: AccountRow, amount: number, splits: SplitInput[]) {
   const total = splits.reduce((sum, s) => sum + s.amount, 0);
   if (total !== amount) throw badRequest("Split amounts must add up to the transaction amount");
-  for (const s of splits) assertCategory(db, householdId, s.categoryId);
+  for (const s of splits) {
+    assertCategory(db, householdId, s.categoryId);
+    if (s.transferAccountId == null) continue;
+    getAccount(db, householdId, s.transferAccountId);
+    if (s.transferAccountId === account.id) throw badRequest("An account can't transfer to itself");
+  }
 }
 
-function insertSplits(db: DbOrTx, actor: Actor, parent: TxRow, splits: SplitInput[]) {
-  db.insert(transactions)
-    .values(
-      splits.map((s) => ({
+/**
+ * Write a parent's split lines. A line with a transfer account becomes one side of a transfer,
+ * taking that account's transfer payee instead of the parent's.
+ */
+function insertSplits(db: DbOrTx, actor: Actor, parent: TxRow, account: AccountRow, splits: SplitInput[]) {
+  for (const s of splits) {
+    const target = s.transferAccountId != null ? getAccount(db, actor.householdId, s.transferAccountId) : null;
+    const categoryId = s.categoryId ?? null;
+    const child = db
+      .insert(transactions)
+      .values({
         householdId: actor.householdId,
         accountId: parent.accountId,
         date: parent.date,
         amount: s.amount,
-        payeeId: parent.payeeId,
-        categoryId: s.categoryId ?? null,
+        payeeId: target ? transferPayeeFor(db, target.id).id : parent.payeeId,
+        categoryId: target ? transferCategory(account, target, categoryId) : categoryId,
         notes: s.notes ?? "",
         cleared: parent.cleared,
         parentId: parent.id,
         createdBy: actor.userId,
         updatedBy: actor.userId,
-      })),
-    )
-    .run();
+      })
+      .returning()
+      .get();
+    if (target) insertTransferSide(db, actor, child, account, target, categoryId);
+  }
+}
+
+/** The other sides of a parent's transfer split lines. */
+function splitTransferIds(db: DbOrTx, parentId: number) {
+  return db
+    .select({ id: transactions.transferId })
+    .from(transactions)
+    .where(and(eq(transactions.parentId, parentId), isNotNull(transactions.transferId)))
+    .all()
+    .map((r) => r.id!);
+}
+
+/** Delete a parent's split lines along with the other sides of any transfers among them. */
+function deleteSplits(db: DbOrTx, parentId: number) {
+  const others = splitTransferIds(db, parentId);
+  db.delete(transactions).where(eq(transactions.parentId, parentId)).run();
+  if (others.length) db.delete(transactions).where(inArray(transactions.id, others)).run();
 }
 
 /**
@@ -394,7 +444,7 @@ export function createTransaction(db: DbOrTx, actor: Actor, input: CreateTransac
   const splits = input.splits ?? [];
   const categoryId = splits.length ? null : (input.categoryId ?? null);
   assertCategory(db, householdId, categoryId);
-  if (splits.length) checkSplits(db, householdId, input.amount, splits);
+  if (splits.length) checkSplits(db, householdId, account, input.amount, splits);
 
   const target = payee?.transferAccountId ? getAccount(db, householdId, payee.transferAccountId) : null;
   if (target) {
@@ -419,7 +469,7 @@ export function createTransaction(db: DbOrTx, actor: Actor, input: CreateTransac
     })
     .returning()
     .get();
-  if (splits.length) insertSplits(db, actor, row, splits);
+  if (splits.length) insertSplits(db, actor, row, account, splits);
   if (target) insertTransferSide(db, actor, row, account, target, categoryId);
   return row.id;
 }
@@ -430,6 +480,16 @@ export function updateTransaction(db: DbOrTx, actor: Actor, id: number, input: U
   if (row.parentId) throw badRequest("Edit the split through its parent transaction");
   if (linkedToInvestment(db, id) && Object.keys(input).some((k) => k !== "cleared")) {
     throw badRequest("This is the cash side of an investment transaction. Edit it on the Investments page.");
+  }
+  // The other side of a split line follows the split; only its cleared state is its own.
+  if (splitPartner(db, householdId, row)) {
+    if (Object.keys(input).some((k) => k !== "cleared")) throw badRequest(splitLineMessage("Edit"));
+    const cleared = input.cleared ?? row.cleared;
+    db.update(transactions)
+      .set({ cleared, reconciled: cleared ? row.reconciled : false, updatedBy: userId })
+      .where(eq(transactions.id, id))
+      .run();
+    return;
   }
   const account = getAccount(db, householdId, row.accountId);
 
@@ -446,7 +506,7 @@ export function updateTransaction(db: DbOrTx, actor: Actor, id: number, input: U
   // Splits: an explicit array replaces them; otherwise the existing ones must still add up.
   const splits = input.splits;
   const willBeSplit = splits ? splits.length > 0 : row.isParent;
-  if (splits?.length) checkSplits(db, householdId, amount, splits);
+  if (splits?.length) checkSplits(db, householdId, account, amount, splits);
   else if (!splits && row.isParent && input.amount !== undefined && input.amount !== row.amount) {
     throw badRequest("Update the splits along with the amount");
   }
@@ -480,13 +540,19 @@ export function updateTransaction(db: DbOrTx, actor: Actor, id: number, input: U
   const updated = getTransactionRow(db, householdId, id);
 
   if (splits) {
-    db.delete(transactions).where(eq(transactions.parentId, id)).run();
-    if (splits.length) insertSplits(db, actor, updated, splits);
+    deleteSplits(db, id);
+    if (splits.length) insertSplits(db, actor, updated, account, splits);
   } else if (row.isParent) {
+    db.update(transactions).set({ date, cleared, updatedBy: userId }).where(eq(transactions.parentId, id)).run();
+    // Transfer lines keep their transfer payee, and the other sides move with the date.
     db.update(transactions)
-      .set({ date, payeeId: updated.payeeId, cleared, updatedBy: userId })
-      .where(eq(transactions.parentId, id))
+      .set({ payeeId: updated.payeeId })
+      .where(and(eq(transactions.parentId, id), isNull(transactions.transferId)))
       .run();
+    const others = splitTransferIds(db, id);
+    if (others.length) {
+      db.update(transactions).set({ date, updatedBy: userId }).where(inArray(transactions.id, others)).run();
+    }
   }
 
   // Keep the other side of a transfer in step, creating, moving or removing it as needed.
@@ -520,6 +586,8 @@ export function deleteTransaction(db: DbOrTx, householdId: number, id: number) {
   if (linkedToInvestment(db, id)) {
     throw badRequest("This is the cash side of an investment transaction. Delete it on the Investments page.");
   }
+  if (splitPartner(db, householdId, row)) throw badRequest(splitLineMessage("Delete"));
+  if (row.isParent) deleteSplits(db, id);
   const ids = row.transferId ? [row.id, row.transferId] : [row.id];
   db.delete(transactions).where(inArray(transactions.id, ids)).run();
 }
