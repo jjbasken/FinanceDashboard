@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { Account, CashFlowMonth, CategoryGroup, NetWorthPoint, SpendingRow } from "@fd/shared";
+import type { Account, BudgetMonth, CashFlowMonth, CategoryGroup, NetWorthPoint, SpendingRow } from "@fd/shared";
 import { Client, fakePrices, owner, testApp } from "./helpers";
 
 async function setUp() {
@@ -30,7 +30,7 @@ async function setUp() {
   await txn({ accountId: checking.id, date: "2026-02-15", amount: 300_000, categoryId: cat("Income") });
   // Transfers between on-budget accounts are neither income, spending nor uncategorized.
   await txn({ accountId: checking.id, date: "2026-02-20", amount: -50_000, payeeId: savings.transferPayeeId });
-  // Money into the brokerage, then shares.
+  // Money into the brokerage, then shares. Moving money isn't spending, even with a category.
   await txn({
     accountId: checking.id,
     date: "2026-02-21",
@@ -48,7 +48,7 @@ async function setUp() {
     price: 200_000_000,
   });
   await c.post("/api/investments/prices/refresh");
-  return { c };
+  return { c, account, cat };
 }
 
 describe("reports", () => {
@@ -75,8 +75,8 @@ describe("reports", () => {
       { month: "2025-12", income: 0, expenses: 0, net: 0 },
       // The account's opening balance isn't counted as income.
       { month: "2026-01", income: 0, expenses: 12_000, net: -12_000 },
-      // Dining $200 less a $20 refund, plus $1,000 moved to the brokerage under Emergency Fund.
-      { month: "2026-02", income: 300_000, expenses: 18_000 + 100_000, net: 182_000 },
+      // Dining $200 less a $20 refund; the $1,000 moved to the brokerage isn't spending.
+      { month: "2026-02", income: 300_000, expenses: 18_000, net: 282_000 },
       { month: "2026-03", income: 0, expenses: 0, net: 0 },
     ]);
   });
@@ -85,13 +85,42 @@ describe("reports", () => {
     const { c } = await setUp();
     const rows = (await c.get("/api/reports/spending?from=2026-01&to=2026-02")).json as SpendingRow[];
     expect(rows.map((r) => [r.name, r.groupName, r.amount])).toEqual([
-      ["Emergency Fund", "Savings", 100_000],
       ["Dining Out", "Everyday", 18_000],
       ["Groceries", "Everyday", 12_000],
       ["Uncategorized", "", 3_000],
     ]);
     const feb = (await c.get("/api/reports/spending?from=2026-02&to=2026-02")).json as SpendingRow[];
     expect(feb.map((r) => r.name)).not.toContain("Groceries");
+  });
+
+  test("a loan payment's principal isn't spending, but its interest is", async () => {
+    const { c, account, cat } = await setUp();
+    const checking = (await c.get("/api/accounts")).json as Account[];
+    const loan = await account({ name: "Mortgage", type: "loan", startingBalance: -30_000_000, startingDate: "2026-01-01" });
+    // Uncategorised principal sent straight to the loan isn't spending either.
+    await c.post("/api/transactions", {
+      accountId: checking[0]!.id,
+      date: "2026-03-02",
+      amount: -5_000,
+      payeeId: loan.transferPayeeId,
+    });
+    await c.post("/api/transactions", {
+      accountId: checking[0]!.id,
+      date: "2026-03-01",
+      amount: -200_000,
+      payeeName: "Bank",
+      splits: [
+        { amount: -150_000, categoryId: cat("Housing"), transferAccountId: loan.id },
+        { amount: -50_000, categoryId: cat("Housing") },
+      ],
+    });
+    const rows = (await c.get("/api/reports/spending?from=2026-03&to=2026-03")).json as SpendingRow[];
+    expect(rows.map((r) => [r.name, r.amount])).toEqual([["Housing", 50_000]]);
+    const [march] = (await c.get("/api/reports/cash-flow?from=2026-03&to=2026-03")).json as CashFlowMonth[];
+    expect(march!.expenses).toBe(50_000);
+    // The budget still counts the whole payment against Housing.
+    const budget = (await c.get("/api/budget/2026-03")).json as BudgetMonth;
+    expect(budget.groups.flatMap((g) => g.categories).find((x) => x.name === "Housing")!.activity).toBe(-200_000);
   });
 
   test("validates ranges and defaults to the last twelve months", async () => {
@@ -108,7 +137,7 @@ describe("reports", () => {
     const dining = groups.flatMap((g) => g.categories).find((x) => x.name === "Dining Out")!.id;
     expect((await c.patch(`/api/categories/${dining}`, { excludeFromBudget: true })).status).toBe(200);
     const feb = (await c.get("/api/reports/cash-flow?from=2026-02&to=2026-02")).json as CashFlowMonth[];
-    expect(feb).toEqual([{ month: "2026-02", income: 300_000, expenses: 100_000, net: 200_000 }]);
+    expect(feb).toEqual([{ month: "2026-02", income: 300_000, expenses: 0, net: 300_000 }]);
     const rows = (await c.get("/api/reports/spending?from=2026-01&to=2026-02")).json as SpendingRow[];
     expect(rows.map((r) => r.name)).not.toContain("Dining Out");
   });
