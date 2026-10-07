@@ -9,7 +9,7 @@ import {
   type InvestmentTxn,
   type Security,
 } from "@fd/shared";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, useNavigate, useParams, useSearchParams } from "react-router";
 import { api } from "../api";
 import { Dialog } from "../components/Dialog";
@@ -280,6 +280,8 @@ export function AccountPage() {
   const register = useRegister(id);
   const [search, setSearch] = useState("");
   const [reconciling, setReconciling] = useState(false);
+  const [adding, setAdding] = useState(false);
+  useEffect(() => setAdding(false), [id]);
   const [params, setParams] = useSearchParams();
 
   const account = accounts.data?.find((a) => a.id === id);
@@ -349,6 +351,11 @@ export function AccountPage() {
           />
         )}
         <span className="spacer" />
+        {account && !showHoldings && !adding && (
+          <button className="btn btn-primary" onClick={() => setAdding(true)}>
+            Add transaction
+          </button>
+        )}
         {account && !showHoldings && !reconciling && (
           <button className="btn" onClick={() => setReconciling(true)}>
             Reconcile
@@ -370,6 +377,8 @@ export function AccountPage() {
           payees={payees.data!}
           categories={categories.data!}
           search={search}
+          adding={adding}
+          onCloseAdding={() => setAdding(false)}
         />
       ) : (
         !error && <p className="muted page-error">Loading…</p>

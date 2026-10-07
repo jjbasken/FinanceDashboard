@@ -1,4 +1,5 @@
 import { type KeyboardEvent, type Ref, useEffect, useId, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 export interface Option<T> {
   key: string;
@@ -168,40 +169,46 @@ export function Autocomplete<T>(props: {
         }}
         onKeyDown={onKeyDown}
       />
-      {open && rect && shown.length > 0 && (
-        <ul
-          id={listId}
-          role="listbox"
-          className="autocomplete-list"
-          style={{
-            left: rect.left,
-            width: Math.max(rect.width, 220),
-            ...(below ? { top: rect.bottom + 2 } : { bottom: window.innerHeight - rect.top + 2 }),
-          }}
-        >
-          {shown.map((o, i) => (
-            <li key={o.key} role="presentation">
-              {o.group && o.group !== shown[i - 1]?.group && <div className="autocomplete-group">{o.group}</div>}
-              <div
-                role="option"
-                id={`${listId}-${i}`}
-                aria-selected={i === highlight}
-                className={i === highlight ? "autocomplete-option active" : "autocomplete-option"}
-                ref={(el) => {
-                  if (i === highlight) el?.scrollIntoView({ block: "nearest" });
-                }}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  choose(o);
-                }}
-                onMouseEnter={() => setHighlight(i)}
-              >
-                {o.label}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+      {/* Rendered into <body>: a transformed ancestor (the register's virtual rows) would
+          otherwise become the containing block for position: fixed and push the list away. */}
+      {open &&
+        rect &&
+        shown.length > 0 &&
+        createPortal(
+          <ul
+            id={listId}
+            role="listbox"
+            className="autocomplete-list"
+            style={{
+              left: rect.left,
+              width: Math.max(rect.width, 220),
+              ...(below ? { top: rect.bottom + 2 } : { bottom: window.innerHeight - rect.top + 2 }),
+            }}
+          >
+            {shown.map((o, i) => (
+              <li key={o.key} role="presentation">
+                {o.group && o.group !== shown[i - 1]?.group && <div className="autocomplete-group">{o.group}</div>}
+                <div
+                  role="option"
+                  id={`${listId}-${i}`}
+                  aria-selected={i === highlight}
+                  className={i === highlight ? "autocomplete-option active" : "autocomplete-option"}
+                  ref={(el) => {
+                    if (i === highlight) el?.scrollIntoView({ block: "nearest" });
+                  }}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    choose(o);
+                  }}
+                  onMouseEnter={() => setHighlight(i)}
+                >
+                  {o.label}
+                </div>
+              </li>
+            ))}
+          </ul>,
+          document.body,
+        )}
     </>
   );
 }

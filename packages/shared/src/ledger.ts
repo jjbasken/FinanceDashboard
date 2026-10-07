@@ -161,6 +161,8 @@ export interface Payee {
   transferAccountId: number | null;
   /** How many transactions use this payee. */
   transactionCount: number;
+  /** The category of this payee's latest categorised transaction, offered for the next one. */
+  lastCategoryId: number | null;
 }
 
 // --- Categories ---

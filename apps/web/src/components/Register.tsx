@@ -340,6 +340,10 @@ function EditRow(props: {
             onSelect={(v) => {
               const patch: Partial<Draft> = { payeeId: v.id, payeeName: v.name };
               if (isBudgetTransfer(l, v.id)) Object.assign(patch, { categoryId: null, split: false, splits: [] });
+              else if (props.showCategory && !d.split && d.categoryId == null && v.id != null) {
+                // Carry the payee's last category forward when none has been chosen yet.
+                patch.categoryId = l.payeeById.get(v.id)?.lastCategoryId ?? null;
+              }
               set(patch);
             }}
             onClear={() => set({ payeeId: null, payeeName: "" })}
@@ -629,6 +633,9 @@ export function Register(props: {
   payees: Payee[];
   categories: CategoryGroup[];
   search: string;
+  /** Whether the row for entering a new transaction is open. */
+  adding: boolean;
+  onCloseAdding: () => void;
 }) {
   const { account, transactions } = props;
   const lookups = useLookups(account, props.accounts, props.payees, props.categories);
@@ -802,21 +809,24 @@ export function Register(props: {
         </div>
       </div>
 
-      <EditRow
-        isNew
-        draft={newDraft}
-        setDraft={setNewDraft}
-        lookups={lookups}
-        focus={newFocus}
-        error={newError}
-        showCategory={showCategory}
-        onCommit={commitNew}
-        onCancel={() => {
-          setNewDraft(blankDraft(newDraft.date));
-          setNewError(null);
-        }}
-        onBlurOut={() => {}}
-      />
+      {props.adding && (
+        <EditRow
+          isNew
+          draft={newDraft}
+          setDraft={setNewDraft}
+          lookups={lookups}
+          focus={newFocus}
+          error={newError}
+          showCategory={showCategory}
+          onCommit={commitNew}
+          onCancel={() => {
+            setNewDraft(blankDraft(newDraft.date));
+            setNewError(null);
+            props.onCloseAdding();
+          }}
+          onBlurOut={() => {}}
+        />
+      )}
       {saveError && (
         <p className="error-text register-banner" role="alert">
           Couldn't save: {saveError}
@@ -841,7 +851,7 @@ export function Register(props: {
       <div className="register-scroll" ref={scrollRef}>
         {rows.length === 0 ? (
           <div className="register-empty muted">
-            {props.search ? "No transactions match your search." : "No transactions yet. Add one above."}
+            {props.search ? "No transactions match your search." : "No transactions yet. Use Add transaction to enter one."}
           </div>
         ) : (
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
