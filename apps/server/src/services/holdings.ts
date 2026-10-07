@@ -35,16 +35,22 @@ export function loadTxns(db: DbOrTx, householdId: number): TxnRow[] {
 export class Position {
   shares = 0;
   cost = 0;
+  /** False once shares arrive with no cost basis (shares moved in without an amount). */
+  costKnown = true;
 
   apply(t: TxnRow) {
     if (t.action === "buy" || t.action === "reinvest" || t.action === "transfer_in") {
+      if (t.action === "transfer_in" && t.amount === 0 && t.shares > 0) this.costKnown = false;
       this.shares += t.shares;
       this.cost += t.amount;
     } else if (t.action === "sell" || t.action === "transfer_out") {
       // Selling some shares removes their share of the cost basis.
       if (this.shares > 0) this.cost -= Math.round((this.cost * -t.shares) / this.shares);
       this.shares += t.shares;
-      if (this.shares === 0) this.cost = 0;
+      if (this.shares === 0) {
+        this.cost = 0;
+        this.costKnown = true;
+      }
     } else if (t.action === "split") {
       this.shares += t.shares;
     }
@@ -137,6 +143,7 @@ export function getHoldings(db: DbOrTx, householdId: number): HoldingsSummary {
           value,
           cost: p.cost,
           gain: value - p.cost,
+          costKnown: p.costKnown,
         };
       })
       .sort((x, y) => y.value - x.value);
@@ -146,11 +153,21 @@ export function getHoldings(db: DbOrTx, householdId: number): HoldingsSummary {
 
   const all = result.flatMap((r) => r.holdings);
   const holdingsValue = all.reduce((s, h) => s + h.value, 0);
-  const cost = all.reduce((s, h) => s + h.cost, 0);
+  // Gains only count holdings whose cost is known.
+  const known = all.filter((h) => h.costKnown);
+  const cost = known.reduce((s, h) => s + h.cost, 0);
+  const gain = known.reduce((s, h) => s + h.gain, 0);
   const cash = result.reduce((s, r) => s + r.cash, 0);
   return {
     accounts: result,
-    totals: { cash, holdingsValue, value: cash + holdingsValue, cost, gain: holdingsValue - cost },
+    totals: {
+      cash,
+      holdingsValue,
+      value: cash + holdingsValue,
+      cost,
+      gain,
+      costUnknownValue: holdingsValue - known.reduce((s, h) => s + h.value, 0),
+    },
   };
 }
 

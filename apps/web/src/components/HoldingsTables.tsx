@@ -82,10 +82,21 @@ export function HoldingsTable(props: {
                   {h.price !== null ? formatPrice(h.price) : "–"}
                 </td>
                 <td className="amount">{formatCents(h.value)}</td>
-                <td className="amount">{formatCents(h.cost)}</td>
-                <td className={h.gain >= 0 ? "amount positive" : "amount negative"}>
-                  {formatCents(h.gain)} <span className="small">({percent(h.gain, h.cost)})</span>
-                </td>
+                {h.costKnown ? (
+                  <>
+                    <td className="amount">{formatCents(h.cost)}</td>
+                    <td className={h.gain >= 0 ? "amount positive" : "amount negative"}>
+                      {formatCents(h.gain)} <span className="small">({percent(h.gain, h.cost)})</span>
+                    </td>
+                  </>
+                ) : (
+                  <>
+                    <td className="amount muted" title="Some shares came in without a cost basis">
+                      Unknown
+                    </td>
+                    <td className="amount muted">–</td>
+                  </>
+                )}
               </tr>
             ))}
             <tr>

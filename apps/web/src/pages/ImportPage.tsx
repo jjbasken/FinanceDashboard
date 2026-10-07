@@ -21,10 +21,16 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { api } from "../api";
 import { BankImport } from "../components/BankImport";
+import { FundImport } from "../components/FundImport";
 import { formatDate, useAccounts, useCategories, useLedgerMutation, useSecurities } from "../ledger";
 
 const CATEGORY_TYPES = new Set(["INCOME", "EXPENSE"]);
-const SOURCE_LABELS: Record<string, string> = { gnucash: "GnuCash", ofx: "OFX", csv: "CSV" };
+const SOURCE_LABELS: Record<string, string> = {
+  gnucash: "GnuCash",
+  ofx: "OFX",
+  csv: "CSV",
+  fund_csv: "Fund statement",
+};
 
 /** Encodes a mapping as the value of the "Import as" select. */
 function choiceOf(m: GnucashMapping) {
@@ -501,6 +507,7 @@ export function ImportPage() {
       </header>
       <div className="page-body">
         {!upload && <BankImport />}
+        {!upload && <FundImport />}
         {!upload && (
           <section className="card">
             <h2>GnuCash</h2>
