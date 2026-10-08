@@ -28,6 +28,40 @@ export function monthName(month: string, locale = "en-US"): string {
   return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(locale, { month: "long", timeZone: "UTC" });
 }
 
+// --- Usual months: a 12-bit mask, bit 0 = January. 0 means every month (nothing set). ---
+
+/** The highest valid mask: all twelve months. */
+export const ALL_MONTHS = 0xfff;
+
+/** Whether a "YYYY-MM" month is one of the mask's months. Always false for an empty mask. */
+export function monthInMask(mask: number, month: string): boolean {
+  const m = Number(month.slice(5, 7));
+  return (mask & (1 << (m - 1))) !== 0;
+}
+
+/** The mask's months as numbers 1-12, in calendar order. */
+export function maskMonths(mask: number): number[] {
+  return Array.from({ length: 12 }, (_, i) => i + 1).filter((m) => mask & (1 << (m - 1)));
+}
+
+function shortMonth(m: number, locale: string, style: "short" | "long") {
+  return new Date(Date.UTC(2000, m - 1, 1)).toLocaleDateString(locale, { month: style, timeZone: "UTC" });
+}
+
+/** A short label for a badge: "Mar", "Jan · Jul", or "8 months" when there are more than four. */
+export function formatMonthMask(mask: number, locale = "en-US"): string {
+  const months = maskMonths(mask);
+  if (months.length > 4) return `${months.length} months`;
+  return months.map((m) => shortMonth(m, locale, "short")).join(" · ");
+}
+
+/** The full list, e.g. "January, July", for a tooltip. */
+export function describeMonthMask(mask: number, locale = "en-US"): string {
+  return maskMonths(mask)
+    .map((m) => shortMonth(m, locale, "long"))
+    .join(", ");
+}
+
 export const setBudgetInput = z.object({ amount: centsSchema });
 export type SetBudgetInput = z.infer<typeof setBudgetInput>;
 
@@ -52,6 +86,10 @@ export interface BudgetCategory {
    * any total. Its balance is 0.
    */
   excludeFromBudget: boolean;
+  /** Months this usually comes up (bit 0 = January); 0 means every month. */
+  months: number;
+  /** It has usual months and this is one of them. */
+  due: boolean;
   /** Assigned this month. Always 0 for income categories. */
   budgeted: number;
   /** Net transactions this month (last month for a forNextMonth category); spending is negative. */

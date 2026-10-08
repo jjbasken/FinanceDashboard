@@ -77,6 +77,7 @@ The budget is a plan for one month at a time. Each month stands on its own:
 - A category's **balance** = what you budgeted for it this month minus what you spent. Nothing carries over: not unspent money, not overspending, and not income you never budgeted.
 - Click a Budgeted amount to edit it. **Enter**, **Tab** and the arrow keys move between categories. **Copy last month** fills in the previous month's amounts.
 - Click a Spent amount to see the transactions behind it. Drag categories and groups to reorder them.
+- **Usual months:** for spending that only comes up at certain times of year (car registration in March, insurance in January and July), click **Months** on a category and pick them. The category gets a badge listing those months. In a month it's due, the badge is highlighted, with ⚠ if nothing is budgeted for it yet. In other months the row is dimmed unless something was budgeted or spent. This is only a reminder; it doesn't change any amounts.
 - Only on-budget accounts count. Transfers between on-budget accounts don't need a category; money moving to an off-budget account (for example, into a brokerage) does.
 
 ## Private accounts
@@ -88,22 +89,26 @@ Each member can keep accounts the others don't see, such as their own credit car
 - **Paying the card:** a payment from a family account to your private card is a transfer, so it isn't spending; the purchases you included already count. Others see it in the family account as "Transfer: Private account", and only you can change or delete it (they can still mark it cleared).
 - **Share with family** in the ⋯ menu makes the account visible to everyone again.
 
+## Importing
+
+Go to **Settings → Import transactions**, or choose **Import transactions** in an account's menu to import straight into that account. When adding an account, you can also tick **Then import transactions from a file**. At the top of the Import page, pick what you're importing from: a **bank or card statement**, a **529 or fund statement**, or **GnuCash**. Each import can be undone from the Past imports list.
+
 ## Importing from GnuCash
 
-Go to **Settings → Import transactions** and upload a **copy** of your `.gnucash` file as it is. GnuCash's normal (compressed XML) format works, and so does a book saved as sqlite3. Before anything is saved, you can review how each GnuCash account maps:
+On the Import page, choose **GnuCash** and upload a **copy** of your `.gnucash` file as it is. GnuCash's normal (compressed XML) format works, and so does a book saved as sqlite3. Before anything is saved, you can review how each GnuCash account maps:
 
 - Bank, cash, credit card, asset and liability accounts become accounts. You choose whether each one is on budget.
 - Income and expense accounts become categories. For example, `Expenses:Auto:Fuel` becomes the group "Auto" and the category "Fuel". Accounts that match an existing category name use that category.
 - Equity is treated as opening balances. `Imbalance-*` and `Orphan-*` accounts are skipped, so their share of a transaction is imported as uncategorized.
 - Stock and mutual fund accounts become investment holdings in the account their parent GnuCash account is imported into. Buys, sells and splits come in with their share counts, along with the book's price history.
 
-To bring in a single investment account (a 401k, say), export just that account instead: in GnuCash, select it and use File → Export → Export Transactions to CSV, leaving "Use simple layout" unticked, then upload the CSV the same way. When you add an Investment account here, tick **Then import its history from GnuCash** (or use **Import from GnuCash** in the account's menu) and the file's investment account is mapped to it automatically. A CSV has no price history, and funds without a ticker symbol (common in 401k plans) don't get automatic daily prices; add prices for them on the Investments page.
+To bring in a single investment account (a 401k, say), export just that account instead: in GnuCash, select it and use File → Export → Export Transactions to CSV, leaving "Use simple layout" unticked, then upload the CSV the same way. When you add an Investment account here, tick **Then import transactions from a file** (or use **Import transactions** in the account's menu). The Import page then opens on GnuCash, and the file's investment account is mapped to it automatically. A CSV has no price history, and funds without a ticker symbol (common in 401k plans) don't get automatic daily prices; add prices for them on the Investments page.
 
 The preview shows how many transactions will be imported and compares each account's balance with GnuCash's. You can import the same book again later: only transactions you haven't imported yet are added, and your previous mapping is remembered. A transaction you deleted here is not brought back. Each import can be undone from the same page.
 
 ## Importing bank statements
 
-On the same Import page, choose an account and upload an **OFX/QFX** or **CSV** file from your bank:
+On the Import page, choose **Bank or card statement**, pick an account and upload an **OFX/QFX** or **CSV** file from your bank:
 
 - For a CSV, confirm which columns hold the date, payee and amount. The app guesses these, including separate debit and credit columns and the date format. Tick the box if spending shows as positive numbers, as is common for credit cards.
 - Rows already imported from an earlier statement are skipped, so overlapping files are fine.

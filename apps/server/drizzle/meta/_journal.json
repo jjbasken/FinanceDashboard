@@ -78,6 +78,13 @@
       "when": 1791398463277,
       "tag": "0010_exclude_from_net_worth",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1791471187208,
+      "tag": "0011_category_months",
+      "breakpoints": true
     }
   ]
 }

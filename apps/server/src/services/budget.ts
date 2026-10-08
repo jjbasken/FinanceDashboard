@@ -1,5 +1,6 @@
 import {
   addMonths,
+  monthInMask,
   type BudgetGroup,
   type BudgetMonth,
   type CategoryActivityItem,
@@ -61,6 +62,8 @@ export function computeBudgetMonth(
         hidden: c.hidden,
         forNextMonth,
         excludeFromBudget,
+        months: c.months,
+        due: monthInMask(c.months, month),
         budgeted: b,
         activity: act,
         balance: g.isIncome || excludeFromBudget ? 0 : b + act,

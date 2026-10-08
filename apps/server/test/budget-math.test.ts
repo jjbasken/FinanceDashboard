@@ -16,9 +16,9 @@ const groups: CategoryGroup[] = [
     hidden: false,
     sortOrder: 0,
     categories: [
-      { id: GROCERIES, groupId: 1, name: "Groceries", hidden: false, sortOrder: 0, forNextMonth: false, excludeFromBudget: false },
-      { id: RENT, groupId: 1, name: "Rent", hidden: true, sortOrder: 1, forNextMonth: false, excludeFromBudget: false },
-      { id: WORK, groupId: 1, name: "Work expenses", hidden: false, sortOrder: 2, forNextMonth: false, excludeFromBudget: true },
+      { id: GROCERIES, groupId: 1, name: "Groceries", hidden: false, sortOrder: 0, forNextMonth: false, excludeFromBudget: false, months: 0 },
+      { id: RENT, groupId: 1, name: "Rent", hidden: true, sortOrder: 1, forNextMonth: false, excludeFromBudget: false, months: 0b1000001 },
+      { id: WORK, groupId: 1, name: "Work expenses", hidden: false, sortOrder: 2, forNextMonth: false, excludeFromBudget: true, months: 0 },
     ],
   },
   {
@@ -28,8 +28,8 @@ const groups: CategoryGroup[] = [
     hidden: false,
     sortOrder: 0,
     categories: [
-      { id: SALARY, groupId: 2, name: "Salary", hidden: false, sortOrder: 0, forNextMonth: false, excludeFromBudget: false },
-      { id: PAY, groupId: 2, name: "Month-end pay", hidden: false, sortOrder: 1, forNextMonth: true, excludeFromBudget: false },
+      { id: SALARY, groupId: 2, name: "Salary", hidden: false, sortOrder: 0, forNextMonth: false, excludeFromBudget: false, months: 0 },
+      { id: PAY, groupId: 2, name: "Month-end pay", hidden: false, sortOrder: 1, forNextMonth: true, excludeFromBudget: false, months: 0 },
     ],
   },
 ];
@@ -39,6 +39,15 @@ const cat = (m: ReturnType<typeof computeBudgetMonth>, id: number) =>
   m.groups.flatMap((g) => g.categories).find((c) => c.id === id)!;
 
 describe("computeBudgetMonth", () => {
+  test("a category is due only in its usual months, and that doesn't change the math", () => {
+    const jan = computeBudgetMonth(groups, [row(RENT, 1000)], [], "2026-01");
+    expect(cat(jan, RENT)).toMatchObject({ months: 0b1000001, due: true, balance: 1000 });
+    expect(cat(computeBudgetMonth(groups, [], [], "2026-07"), RENT).due).toBe(true);
+    expect(cat(computeBudgetMonth(groups, [], [], "2026-02"), RENT).due).toBe(false);
+    // No usual months: never flagged.
+    expect(cat(jan, GROCERIES)).toMatchObject({ months: 0, due: false });
+  });
+
   test("an empty month is all zeros", () => {
     const m = computeBudgetMonth(groups, [], [], "2026-01");
     expect(m).toMatchObject({ month: "2026-01", toBudget: 0, income: 0, budgeted: 0, spent: 0 });

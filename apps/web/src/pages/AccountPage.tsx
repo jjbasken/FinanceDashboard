@@ -180,8 +180,8 @@ function AccountMenu(props: { account: Account }) {
         <button onClick={() => update.mutate({ excludeFromNetWorth: !account.excludeFromNetWorth })}>
           {account.excludeFromNetWorth ? "Include in net worth" : "Leave out of net worth"}
         </button>
-        {account.type === "investment" && (
-          <button onClick={() => navigate(`/import?account=${account.id}`)}>Import from GnuCash</button>
+        {!account.closed && (
+          <button onClick={() => navigate(`/import?account=${account.id}`)}>Import transactions</button>
         )}
         <button onClick={toggleClosed}>{account.closed ? "Reopen account" : "Close account"}</button>
         <button className="danger" onClick={del}>

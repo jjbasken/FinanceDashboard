@@ -18,7 +18,7 @@ export function AddAccountDialog(props: { onClose: () => void }) {
 
   const create = useLedgerMutation((body: unknown) => api.post<Account>("/accounts", body));
 
-  // The imported history brings the balance with it.
+  // An investment account's imported history brings the balance with it.
   const importing = importNext && type === "investment";
 
   function submit() {
@@ -30,7 +30,7 @@ export function AddAccountDialog(props: { onClose: () => void }) {
       {
         onSuccess: (account) => {
           props.onClose();
-          navigate(importing ? `/import?account=${account.id}` : `/accounts/${account.id}`);
+          navigate(importNext ? `/import?account=${account.id}` : `/accounts/${account.id}`);
         },
       },
     );
@@ -96,14 +96,13 @@ export function AddAccountDialog(props: { onClose: () => void }) {
           </label>
         </div>
       )}
-      {type === "investment" && (
-        <label className="checkbox">
-          <input type="checkbox" checked={importNext} onChange={(e) => setImportNext(e.target.checked)} />
-          <span>
-            Then import its history from GnuCash <small className="muted">(a .gnucash file or a CSV export)</small>
-          </span>
-        </label>
-      )}
+      <label className="checkbox">
+        <input type="checkbox" checked={importNext} onChange={(e) => setImportNext(e.target.checked)} />
+        <span>
+          Then import transactions from a file{" "}
+          <small className="muted">(a bank statement, a 529 statement, or GnuCash)</small>
+        </span>
+      </label>
       {type === "credit" || type === "loan" ? (
         <small className="muted">Enter money you owe as a negative number.</small>
       ) : null}
