@@ -12,3 +12,4 @@ dist/
 *.gnucash
 .DS_Store
 docker/data/
+docker/secrets/

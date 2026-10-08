@@ -31,11 +31,11 @@ setInterval(() => purgeExpiredSessions(db), 6 * 60 * 60 * 1000);
 const priceProvider = yahooProvider();
 const backupDir = join(dataDir, "backups");
 const trustProxy = process.env.TRUST_PROXY === "true";
-const app = createApp({ db, secureCookies, priceProvider, backupDir, trustProxy });
+const keepBackups = Number(process.env.BACKUP_KEEP ?? 14);
+const app = createApp({ db, secureCookies, priceProvider, backupDir, backupsEnabled: keepBackups > 0, trustProxy });
 
 // Nightly backups: check hourly and make today's copy if it's missing, keeping the newest
 // BACKUP_KEEP (default 14). Set BACKUP_KEEP=0 to turn them off.
-const keepBackups = Number(process.env.BACKUP_KEEP ?? 14);
 if (keepBackups > 0) {
   const backup = () => {
     try {

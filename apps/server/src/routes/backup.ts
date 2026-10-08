@@ -14,7 +14,7 @@ export const backupRoutes = new Hono<AppEnv>()
   .get("/status", (c) => {
     const dir = c.var.backupDir;
     const backups = dir ? listBackups(dir) : [];
-    return c.json({ enabled: !!dir, latest: backups[0] ?? null, count: backups.length });
+    return c.json({ enabled: c.var.backupsEnabled, latest: backups[0] ?? null, count: backups.length });
   })
 
   /** Download a fresh copy of the whole database. It holds everything, so only the owner may. */

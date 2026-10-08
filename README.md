@@ -180,11 +180,42 @@ There are no signing secrets to configure, `JWT_SECRET` included. Sessions use r
 - Every change must be sent as JSON (or as a raw file upload), which browsers can't do from another site without permission. This blocks cross-site request forgery.
 - Responses carry a strict Content-Security-Policy, block framing, and turn off content sniffing and referrers.
 - Failed sign-ins are limited per visitor: 10 for one username, or 30 across usernames, within 15 minutes. Someone guessing at your username can't lock you out from your own devices. Behind a reverse proxy, set `TRUST_PROXY=true` so the limit uses each visitor's address rather than the proxy's.
-- Pending sign-in attempts count toward those limits. Anonymous password work (sign-in, setup and invite acceptance) also has a shared limit of 4 concurrent requests and 60 starts per minute per server process; excess requests receive HTTP 429. Closed setup and unavailable invites are rejected before hashing passwords.
+- Pending sign-in attempts count toward those limits. Password work (sign-in, setup, invite acceptance, password changes and owner resets) also has a shared limit of 4 concurrent requests and 60 starts per minute per server process; excess requests receive HTTP 429. Closed setup and unavailable invites are rejected before hashing passwords.
 - Changing a password, an owner reset and removing a member all end the affected sessions straight away.
 - Everyone in the household sees and can change everything except other members' private accounts. Only the owner can create invite links and download backups.
 
 **To reach the app from outside your home network,** put it behind a reverse proxy that handles HTTPS, such as Caddy or Traefik, and set `COOKIE_SECURE=true`. Finish first-run setup (or use the `SEED_*` variables) before exposing it: until an owner exists, anyone who can reach the app can create one.
+
+### Remote access with Cloudflare Tunnel
+
+Use the standalone `docker/docker-compose.tunnel.yml` configuration for a remotely managed Cloudflare Tunnel. It uses the same `docker/data/` database as the normal deployment, enables secure cookies, and binds the host port to localhost. Use the HTTPS hostname even when at home; signing in through a plain HTTP LAN address will not work with secure cookies enabled.
+
+1. Finish setup locally using the normal Docker deployment, or configure all required `SEED_*` settings in the root `.env` before starting. Use a long, unique owner password.
+2. In Cloudflare, create a remotely managed tunnel and a published application route for your hostname (for example `finance.example.com`). Set the service type to **HTTP** and its URL to **`finance:8080`** (`http://finance:8080` as a full URL). Here `finance` is the Docker service name; `localhost` would refer to the connector container.
+3. Create a Cloudflare Access self-hosted application for that exact hostname, with an Allow policy restricted to your household's email addresses or identity provider. Complete this before starting the tunnel. Keep the app's own household login as well.
+4. From the `docker/` directory, create `secrets/` and save **only the tunnel token** into `secrets/cloudflare-tunnel-token`. This file is ignored by Git and excluded from Docker builds. Docker Compose mounts it as a secret into the connector only. Ensure the container can read the file; keep the containing directory accessible only to your server administrator. Never paste the token into a committed file.
+5. Switch deployments from the `docker/` directory:
+
+   ```sh
+   docker compose down
+   docker compose -f docker-compose.tunnel.yml up -d --build
+   docker compose -f docker-compose.tunnel.yml logs --tail=50 cloudflared
+   ```
+
+   Stopping the normal deployment preserves the database. Use the tunnel filename for subsequent `up`, `down`, `logs`, and `pull` commands.
+6. Open the HTTPS hostname from your phone with Wi-Fi disabled. Check the Access challenge, household login, a report, a small import, and live updates from a second browser. Do not forward router ports. Configure Cloudflare cache rules to bypass caching for this hostname; API responses also send `Cache-Control: no-store`.
+
+The connector token uses Cloudflare's [`--token-file` option](https://developers.cloudflare.com/tunnel/reference/run-parameters/). See the official [tunnel setup guide](https://developers.cloudflare.com/tunnel/get-started/) for account and hostname setup. The connector image follows `latest`; update it deliberately with `docker compose -f docker-compose.tunnel.yml pull cloudflared` followed by `up -d` (or pin a tested tag for controlled updates).
+
+`TRUST_PROXY` is forced off in this configuration, so forwarded addresses cannot bypass rate limits through the localhost port. All visitors through the tunnel share the visitor rate limit. For a small household this is conservative, but repeated failed logins from one visitor can temporarily throttle others.
+
+Cloudflare's upload limit depends on your plan and can be smaller than this app's 200 MiB limit. Large GnuCash imports may need to be done locally before switching to the tunnel. If Cloudflare Access expires while a page is open, refresh and authenticate again.
+
+To return to LAN access, run `docker compose -f docker-compose.tunnel.yml down`, then `docker compose up -d`. Ensure the root `.env` does not enable `COOKIE_SECURE` when using plain HTTP. Both deployments retain the same database. Stopping the connector removes remote access; remove the published route in Cloudflare if it is no longer needed.
+
+### Import resource limits
+
+Import previews expire after one hour and are released after a successful import. The server permits three open previews per user, eight overall, and two simultaneous uploads (one per user). Retained preview data is limited to an estimated 128 MiB per file and 256 MiB overall. CSV imports have a 100,000-row and 1,000,000-cell ceiling; OFX and GnuCash parsing also bound records, and GnuCash XML is limited to 128 MiB after decompression. Complex records may reach the preview memory limit sooner. Split oversized files into smaller imports; finish existing previews or wait for them to expire if the server reports that preview storage is full.
 
 ## Known limitations
 

@@ -1,3 +1,4 @@
+import { MAX_IMPORT_RECORDS } from "../limits";
 import { Database } from "bun:sqlite";
 import { rationalToCents } from "@fd/shared";
 
@@ -123,6 +124,12 @@ export function readBook(path: string): GncBook {
     const tables = tableNames(db);
     for (const t of ["books", "accounts", "transactions", "splits", "commodities"]) {
       if (!tables.has(t)) throw new BookError("That SQLite file isn't a GnuCash book (it has no GnuCash tables).");
+    }
+
+    for (const table of ["books", "accounts", "transactions", "splits", "commodities", "prices", "slots"]) {
+      if (!tables.has(table)) continue;
+      const count = db.query<{ n: number }, []>(`select count(*) as n from (select 1 from "${table}" limit ${MAX_IMPORT_RECORDS + 1})`).get()!.n;
+      if (count > MAX_IMPORT_RECORDS) throw new BookError("That book has too many records. Split it into smaller files.");
     }
 
     const book = db.query<{ root: string }, []>("select root_account_guid as root from books limit 1").get();

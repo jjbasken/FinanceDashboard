@@ -10,7 +10,7 @@ import { accountRoutes } from "./routes/accounts";
 import { budgetRoutes } from "./routes/budget";
 import { categoryRoutes } from "./routes/categories";
 import { householdRoutes } from "./routes/household";
-import { importRoutes } from "./routes/import";
+import { createImportRoutes } from "./routes/import";
 import { backupRoutes } from "./routes/backup";
 import { eventRoutes } from "./routes/events";
 import { folderRoutes } from "./routes/folders";
@@ -28,8 +28,10 @@ export interface AppOptions {
   secureCookies?: boolean;
   /** Where daily prices come from (Yahoo by default). */
   priceProvider?: PriceProvider;
-  /** Folder for nightly backups, or null when they're off (tests). */
+  /** Folder containing backups, or null when unavailable (tests). */
   backupDir?: string | null;
+  /** Whether the nightly scheduler is running; the directory can still contain older copies. */
+  backupsEnabled?: boolean;
   /** Trust X-Forwarded-For for the client's address (only behind a reverse proxy you run). */
   trustProxy?: boolean;
 }
@@ -44,6 +46,7 @@ export type AppEnv = {
     priceProvider: PriceProvider;
     events: EventHub;
     backupDir: string | null;
+    backupsEnabled: boolean;
     trustProxy: boolean;
   };
 };
@@ -53,6 +56,7 @@ export function createApp({
   secureCookies = false,
   priceProvider = yahooProvider(),
   backupDir = null,
+  backupsEnabled = !!backupDir,
   trustProxy = false,
 }: AppOptions) {
   const loginLimiter = new LoginRateLimiter();
@@ -87,6 +91,8 @@ export function createApp({
   );
 
   app.use("/api/*", async (c, next) => {
+    // Financial data and authentication responses must not be cached by browsers or proxies.
+    c.header("Cache-Control", "no-store");
     c.set("db", db);
     c.set("secureCookies", secureCookies);
     c.set("loginLimiter", loginLimiter);
@@ -94,6 +100,7 @@ export function createApp({
     c.set("priceProvider", priceProvider);
     c.set("events", events);
     c.set("backupDir", backupDir);
+    c.set("backupsEnabled", backupsEnabled);
     c.set("trustProxy", trustProxy);
     await next();
   });
@@ -117,7 +124,7 @@ export function createApp({
   app.route("/api/categories", categoryRoutes);
   app.route("/api/payees", payeeRoutes);
   app.route("/api/budget", budgetRoutes);
-  app.route("/api/import", importRoutes);
+  app.route("/api/import", createImportRoutes());
   app.route("/api/investments", investmentRoutes);
   app.route("/api/events", eventRoutes);
   app.route("/api/backup", backupRoutes);

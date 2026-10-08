@@ -99,10 +99,12 @@ export const authRoutes = new Hono<AppEnv>()
     const input = await parseBody(c, changePasswordInput);
     const { user, sessionId } = sessionOf(c);
     const row = c.var.db.select().from(users).where(eq(users.id, user.id)).get()!;
-    if (!(await Bun.password.verify(input.currentPassword, row.passwordHash))) {
-      throw new HTTPException(400, { message: "Your current password is incorrect" });
-    }
-    const passwordHash = await Bun.password.hash(input.newPassword);
+    const passwordHash = await c.var.passwordWork.run(async () => {
+      if (!(await Bun.password.verify(input.currentPassword, row.passwordHash))) {
+        throw new HTTPException(400, { message: "Your current password is incorrect" });
+      }
+      return Bun.password.hash(input.newPassword);
+    });
     c.var.db.update(users).set({ passwordHash }).where(eq(users.id, user.id)).run();
     const signedOut = deleteUserSessions(c.var.db, user.id, sessionId);
     return c.json({ ok: true, signedOut });

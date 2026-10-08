@@ -1,4 +1,4 @@
-import { type FormEvent, type ReactNode, useEffect, useRef } from "react";
+import { type FormEvent, type ReactNode, useEffect, useId, useRef } from "react";
 
 /** A modal built on <dialog>, which gives us focus trapping and Escape-to-close for free. */
 export function Dialog(props: {
@@ -14,6 +14,7 @@ export function Dialog(props: {
   wide?: boolean;
   children: ReactNode;
 }) {
+  const titleId = useId();
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     ref.current?.showModal();
@@ -25,9 +26,15 @@ export function Dialog(props: {
   }
 
   return (
-    <dialog ref={ref} className={props.wide ? "dialog wide" : "dialog"} onClose={props.onClose} onCancel={props.onClose}>
+    <dialog
+      aria-labelledby={titleId}
+      ref={ref}
+      className={props.wide ? "dialog wide" : "dialog"}
+      onClose={props.onClose}
+      onCancel={props.onClose}
+    >
       <form onSubmit={submit}>
-        <h2>{props.title}</h2>
+        <h2 id={titleId}>{props.title}</h2>
         {props.children}
         {props.error && (
           <p className="error-text" role="alert">
