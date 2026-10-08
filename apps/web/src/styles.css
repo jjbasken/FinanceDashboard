@@ -1775,3 +1775,72 @@ select {
     height: 70vh;
   }
 }
+
+/* Add transaction dialog (Budget page) */
+.txn-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.txn-form .cell-input {
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.txn-form input.amount {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.txn-amount,
+.txn-category {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.txn-amount input {
+  flex: 1;
+  width: 100%;
+}
+.txn-amount .segmented button {
+  height: 34px;
+}
+.txn-category > :first-child {
+  flex: 1;
+}
+.txn-splits {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: normal;
+}
+.txn-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.8fr) minmax(0, 1.4fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+.txn-split-footer {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  font-size: 13px;
+}
+.activity-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -8px;
+}
+@media (max-width: 720px) {
+  .txn-form .field-row {
+    grid-template-columns: 1fr;
+  }
+  .txn-split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.7fr) auto;
+  }
+  /* Notes drop to their own full-width line under category, amount and remove. */
+  .txn-split > .txn-split-notes {
+    grid-column: 1 / -1;
+    order: 1;
+  }
+}

@@ -17,6 +17,7 @@ import { type DragEvent, type KeyboardEvent, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { api } from "../api";
 import { Dialog } from "../components/Dialog";
+import { TransactionDialog } from "../components/TransactionDialog";
 import { formatDate, ledgerKeys, thisMonth, useBudget, useLedgerMutation } from "../ledger";
 
 type Move = -1 | 0 | 1;
@@ -105,7 +106,7 @@ function ToBudget(props: { budget: BudgetMonth }) {
   );
 }
 
-function ActivityDialog(props: { month: string; category: BudgetCategory; onClose: () => void }) {
+function ActivityDialog(props: { month: string; category: BudgetCategory; onClose: () => void; onAdd: () => void }) {
   const items = useQuery({
     queryKey: ["budget", props.month, "activity", props.category.id],
     queryFn: () =>
@@ -125,6 +126,11 @@ function ActivityDialog(props: { month: string; category: BudgetCategory; onClos
       onSubmit={props.onClose}
       error={items.error?.message}
     >
+      <div className="activity-actions">
+        <button type="button" className="btn btn-small" onClick={props.onAdd}>
+          Add transaction
+        </button>
+      </div>
       {items.isPending && <p className="muted">Loading…</p>}
       {items.data?.length === 0 && <p className="muted">No transactions in this category this month.</p>}
       {items.data && items.data.length > 0 && (
@@ -163,6 +169,8 @@ function ActivityDialog(props: { month: string; category: BudgetCategory; onClos
   );
 }
 
+type CategoryPick = { category: BudgetCategory; isIncome: boolean };
+
 type Dragging = { kind: "category"; id: number } | { kind: "group"; id: number; isIncome: boolean };
 
 export function BudgetPage() {
@@ -175,7 +183,9 @@ export function BudgetPage() {
   const budget = useBudget(month);
   const [showHidden, setShowHidden] = useState(false);
   const [editing, setEditing] = useState<number | null>(null);
-  const [activityFor, setActivityFor] = useState<BudgetCategory | null>(null);
+  // isIncome decides whether a new transaction defaults to a payment or a deposit.
+  const [activityFor, setActivityFor] = useState<CategoryPick | null>(null);
+  const [addFor, setAddFor] = useState<CategoryPick | null>(null);
   const [dragging, setDragging] = useState<Dragging | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
 
@@ -311,6 +321,9 @@ export function BudgetPage() {
   function categoryActions(c: BudgetCategory, isIncome = false) {
     return (
       <span className="row-actions-inline">
+        <button className="link-button" onClick={() => setAddFor({ category: c, isIncome })}>
+          Add transaction
+        </button>
         {isIncome && !c.excludeFromBudget && (
           <button
             className="link-button"
@@ -501,7 +514,10 @@ export function BudgetPage() {
                     )}
                   </div>
                   <div className="amount">
-                    <button className="activity-cell" onClick={() => setActivityFor(c)}>
+                    <button
+                      className="activity-cell"
+                      onClick={() => setActivityFor({ category: c, isIncome: g.isIncome })}
+                    >
                       {formatCents(c.activity)}
                     </button>
                   </div>
@@ -557,7 +573,10 @@ export function BudgetPage() {
                   </div>
                   <div />
                   <div className="amount">
-                    <button className="activity-cell" onClick={() => setActivityFor(c)}>
+                    <button
+                      className="activity-cell"
+                      onClick={() => setActivityFor({ category: c, isIncome: g.isIncome })}
+                    >
                       {formatCents(c.activity)}
                     </button>
                   </div>
@@ -569,7 +588,25 @@ export function BudgetPage() {
         </div>
       )}
 
-      {activityFor && <ActivityDialog month={month} category={activityFor} onClose={() => setActivityFor(null)} />}
+      {activityFor && (
+        <ActivityDialog
+          month={month}
+          category={activityFor.category}
+          onClose={() => setActivityFor(null)}
+          onAdd={() => {
+            setAddFor(activityFor);
+            setActivityFor(null);
+          }}
+        />
+      )}
+      {addFor && (
+        <TransactionDialog
+          month={month}
+          category={addFor.category}
+          isIncome={addFor.isIncome}
+          onClose={() => setAddFor(null)}
+        />
+      )}
     </>
   );
 }
