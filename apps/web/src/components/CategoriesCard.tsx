@@ -1,7 +1,8 @@
-import type { Category, CategoryGroup } from "@fd/shared";
+import { describeMonthMask, formatMonthMask, type Category, type CategoryGroup } from "@fd/shared";
 import { useState } from "react";
 import { api } from "../api";
 import { useCategories, useLedgerMutation } from "../ledger";
+import { CategoryMonthsDialog } from "./CategoryMonthsDialog";
 import { Dialog } from "./Dialog";
 
 function DeleteCategoryDialog(props: { category: Category; groups: CategoryGroup[]; onClose: () => void }) {
@@ -43,6 +44,7 @@ function DeleteCategoryDialog(props: { category: Category; groups: CategoryGroup
 export function CategoriesCard() {
   const { data: groups, error } = useCategories();
   const [deleting, setDeleting] = useState<Category | null>(null);
+  const [monthsFor, setMonthsFor] = useState<Category | null>(null);
   const mutate = useLedgerMutation(({ method, path, body }: { method: "post" | "patch" | "delete"; path: string; body?: unknown }) =>
     method === "delete" ? api.delete(path) : api[method](path, body),
   );
@@ -108,7 +110,21 @@ export function CategoriesCard() {
               {c.hidden && <span className="badge">Hidden</span>}
               {g.isIncome && c.forNextMonth && !c.excludeFromBudget && <span className="badge">Budgeted next month</span>}
               {c.excludeFromBudget && <span className="badge">Not in budget</span>}
+              {c.months !== 0 && !c.excludeFromBudget && (
+                <span className="badge" title={`Usually ${describeMonthMask(c.months)}`}>
+                  {formatMonthMask(c.months)}
+                </span>
+              )}
               <span className="spacer" />
+              {!c.excludeFromBudget && (
+                <button
+                  className="link-button"
+                  title="Set the months this usually comes up"
+                  onClick={() => setMonthsFor(c)}
+                >
+                  Months
+                </button>
+              )}
               {g.isIncome && !c.excludeFromBudget && (
                 <button
                   className="link-button"
@@ -164,6 +180,7 @@ export function CategoriesCard() {
         </button>
       </div>
       {deleting && groups && <DeleteCategoryDialog category={deleting} groups={groups} onClose={() => setDeleting(null)} />}
+      {monthsFor && <CategoryMonthsDialog category={monthsFor} onClose={() => setMonthsFor(null)} />}
     </section>
   );
 }

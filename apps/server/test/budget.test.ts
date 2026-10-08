@@ -174,6 +174,22 @@ describe("budget API", () => {
     expect(await budget("2026-10")).toMatchObject({ budgeted: 10000, spent: -42000 });
   });
 
+  test("a category's usual months are saved and flag it in those months", async () => {
+    const { jeremy, ids, budget } = await setUp();
+    const marchAndSeptember = (1 << 2) | (1 << 8);
+    expect((await jeremy.patch(`/api/categories/${ids.Groceries}`, { months: marchAndSeptember })).status).toBe(200);
+    const groups = (await jeremy.get("/api/categories")).json as CategoryGroup[];
+    expect(groups.flatMap((g) => g.categories).find((c) => c.id === ids.Groceries)!.months).toBe(marchAndSeptember);
+
+    expect(category(await budget("2026-09"), ids.Groceries!)).toMatchObject({ months: marchAndSeptember, due: true });
+    expect(category(await budget("2026-10"), ids.Groceries!)).toMatchObject({ months: marchAndSeptember, due: false });
+
+    expect((await jeremy.patch(`/api/categories/${ids.Groceries}`, { months: 0x1000 })).status).toBe(400);
+    expect((await jeremy.patch(`/api/categories/${ids.Groceries}`, { months: -1 })).status).toBe(400);
+    expect((await jeremy.patch(`/api/categories/${ids.Groceries}`, { months: 0 })).status).toBe(200);
+    expect(category(await budget("2026-09"), ids.Groceries!)).toMatchObject({ months: 0, due: false });
+  });
+
   test("income categories can't be budgeted", async () => {
     const { jeremy, ids } = await setUp();
     const res = await jeremy.request("PUT", `/api/budget/2026-10/categories/${ids.Income}`, { amount: 100 });

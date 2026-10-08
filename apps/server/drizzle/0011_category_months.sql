@@ -1,0 +1,1 @@
+ALTER TABLE `categories` ADD `months` integer DEFAULT 0 NOT NULL;

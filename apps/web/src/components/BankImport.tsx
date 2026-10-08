@@ -121,11 +121,11 @@ function CsvMappingEditor(props: { rows: string[][]; mapping: CsvMapping; onChan
   );
 }
 
-export function BankImport() {
+export function BankImport(props: { defaultAccountId?: number }) {
   const qc = useQueryClient();
   const accounts = useAccounts();
   const categories = useCategories();
-  const [accountId, setAccountId] = useState<number | null>(null);
+  const [accountId, setAccountId] = useState<number | null>(props.defaultAccountId ?? null);
   const [upload, setUpload] = useState<BankUpload | null>(null);
   const [mapping, setMapping] = useState<CsvMapping | undefined>(undefined);
   const [included, setIncluded] = useState<Set<number>>(new Set());

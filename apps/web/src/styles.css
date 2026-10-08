@@ -1844,3 +1844,65 @@ select {
     order: 1;
   }
 }
+
+/* Usual months for a category */
+.badge + .badge.months {
+  margin-left: 6px;
+}
+.badge.months.due {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 500;
+}
+.category-line.off-month .name > .truncate,
+.category-line.off-month .budget-cell,
+.category-line.off-month .activity-cell,
+.category-line.off-month .balance-pill {
+  opacity: 0.5;
+}
+.month-picker {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.month-picker button {
+  border: 0;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  padding: 10px 0;
+  cursor: pointer;
+}
+.month-picker button:nth-child(4n) {
+  border-right: 0;
+}
+.month-picker button:nth-last-child(-n + 4) {
+  border-bottom: 0;
+}
+.month-picker button.active {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.month-picker-clear {
+  align-self: flex-start;
+}
+
+/* Import page source picker */
+.import-sources {
+  align-self: flex-start;
+  flex-wrap: wrap;
+}
+@media (max-width: 720px) {
+  .import-sources {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    align-self: stretch;
+  }
+  .import-sources button {
+    padding: 6px 4px;
+  }
+}

@@ -15,10 +15,10 @@ import { formatDate, useAccounts, useLedgerMutation } from "../ledger";
 const shares = (micro: number | null) => (micro === null ? "—" : sharesToString(micro));
 
 /** Import a 529 plan's (or similar fund company's) CSV download into an investment account. */
-export function FundImport() {
+export function FundImport(props: { defaultAccountId?: number }) {
   const qc = useQueryClient();
   const accounts = useAccounts();
-  const [accountId, setAccountId] = useState<number | null>(null);
+  const [accountId, setAccountId] = useState<number | null>(props.defaultAccountId ?? null);
 
   const choices = (accounts.data ?? []).filter((a) => !a.closed && a.type === "investment");
   const account = choices.find((a) => a.id === (accountId ?? choices[0]?.id));

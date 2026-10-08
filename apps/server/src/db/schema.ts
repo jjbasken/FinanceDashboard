@@ -175,6 +175,8 @@ export const categories = sqliteTable(
     forNextMonth: flag("for_next_month"),
     /** Kept out of the budget and reports, e.g. work expenses and their reimbursements. */
     excludeFromBudget: flag("exclude_from_budget"),
+    /** Months this usually comes up, as a bitmask (bit 0 = January). 0 means every month. */
+    months: integer("months").notNull().default(0),
     /** Set when an import created this row, so the import can be undone. */
     importBatchId: integer("import_batch_id").references((): AnySQLiteColumn => importBatches.id, {
       onDelete: "set null",

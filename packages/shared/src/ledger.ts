@@ -199,6 +199,8 @@ export const updateCategoryInput = z
     forNextMonth: z.boolean(),
     /** Keep this category's transactions out of the budget and reports (e.g. reimbursable work expenses). */
     excludeFromBudget: z.boolean(),
+    /** Months this usually comes up, as a bitmask (bit 0 = January). 0 means every month. */
+    months: z.number().int().min(0).max(0xfff),
   })
   .partial();
 
@@ -217,6 +219,8 @@ export interface Category {
   forNextMonth: boolean;
   /** Its transactions don't count toward the budget or reports (e.g. reimbursable work expenses). */
   excludeFromBudget: boolean;
+  /** Months this usually comes up, as a bitmask (bit 0 = January). 0 means every month. */
+  months: number;
 }
 
 export interface CategoryGroup {

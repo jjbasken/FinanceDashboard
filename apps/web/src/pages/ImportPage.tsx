@@ -25,6 +25,14 @@ import { FundImport } from "../components/FundImport";
 import { formatDate, useAccounts, useCategories, useLedgerMutation, useSecurities } from "../ledger";
 
 const CATEGORY_TYPES = new Set(["INCOME", "EXPENSE"]);
+
+const SOURCES = [
+  ["bank", "Bank or card statement"],
+  ["fund", "529 or fund statement"],
+  ["gnucash", "GnuCash"],
+] as const;
+type Source = (typeof SOURCES)[number][0];
+const isSource = (s: string | null): s is Source => SOURCES.some(([key]) => key === s);
 const SOURCE_LABELS: Record<string, string> = {
   gnucash: "GnuCash",
   ofx: "OFX",
@@ -404,9 +412,27 @@ export function ImportPage() {
   const accounts = useAccounts();
   const categories = useCategories();
   const securities = useSecurities();
-  const [params] = useSearchParams();
-  const targetAccount = accounts.data?.find((a) => a.id === Number(params.get("account")));
+  const [params, setParams] = useSearchParams();
+  const accountParam = Number(params.get("account")) || undefined;
+  const targetAccount = accounts.data?.find((a) => a.id === accountParam);
+  // Coming from an investment account keeps the old default (its GnuCash history); otherwise a statement.
+  const requestedSource = params.get("source");
+  const source: Source = isSource(requestedSource)
+    ? requestedSource
+    : targetAccount?.type === "investment"
+      ? "gnucash"
+      : "bank";
+  const chooseSource = (next: Source) =>
+    setParams(
+      (p) => {
+        p.set("source", next);
+        return p;
+      },
+      { replace: true },
+    );
   const [upload, setUpload] = useState<GnucashUpload | null>(null);
+  // Which source to show depends on the account's type, so wait for it.
+  const choosing = !upload && !(accountParam && !accounts.data);
   const [mappings, setMappings] = useState<Record<string, GnucashMapping>>({});
   const [showEmpty, setShowEmpty] = useState(false);
   const [debounced, setDebounced] = useState(mappings);
@@ -506,9 +532,24 @@ export function ImportPage() {
         <h1>Import</h1>
       </header>
       <div className="page-body">
-        {!upload && <BankImport />}
-        {!upload && <FundImport />}
-        {!upload && (
+        {!upload && !choosing && <p className="muted">Loading…</p>}
+        {choosing && (
+          <div className="segmented import-sources" role="group" aria-label="Import from">
+            {SOURCES.map(([key, label]) => (
+              <button
+                key={key}
+                className={source === key ? "active" : undefined}
+                aria-pressed={source === key}
+                onClick={() => chooseSource(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        {choosing && source === "bank" && <BankImport defaultAccountId={accountParam} />}
+        {choosing && source === "fund" && <FundImport defaultAccountId={accountParam} />}
+        {choosing && source === "gnucash" && (
           <section className="card">
             <h2>GnuCash</h2>
             {targetAccount && (

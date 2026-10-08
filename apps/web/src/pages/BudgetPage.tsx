@@ -1,8 +1,10 @@
 import {
   addMonths,
   centsToInput,
+  describeMonthMask,
   formatCents,
   formatMonth,
+  formatMonthMask,
   monthName,
   monthSchema,
   parseCents,
@@ -16,6 +18,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type DragEvent, type KeyboardEvent, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { api } from "../api";
+import { CategoryMonthsDialog } from "../components/CategoryMonthsDialog";
 import { Dialog } from "../components/Dialog";
 import { TransactionDialog } from "../components/TransactionDialog";
 import { formatDate, ledgerKeys, thisMonth, useBudget, useLedgerMutation } from "../ledger";
@@ -186,6 +189,7 @@ export function BudgetPage() {
   // isIncome decides whether a new transaction defaults to a payment or a deposit.
   const [activityFor, setActivityFor] = useState<CategoryPick | null>(null);
   const [addFor, setAddFor] = useState<CategoryPick | null>(null);
+  const [monthsFor, setMonthsFor] = useState<BudgetCategory | null>(null);
   const [dragging, setDragging] = useState<Dragging | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
 
@@ -354,6 +358,15 @@ export function BudgetPage() {
         >
           {c.hidden ? "Show" : "Hide"}
         </button>
+        {!c.excludeFromBudget && (
+          <button
+            className="link-button"
+            title="Set the months this usually comes up"
+            onClick={() => setMonthsFor(c)}
+          >
+            Months
+          </button>
+        )}
         <button
           className="link-button"
           title={
@@ -380,6 +393,31 @@ export function BudgetPage() {
       Not in budget
     </span>
   );
+
+  /** The usual-months badge: highlighted in a month it's due, with a warning if nothing is budgeted. */
+  function monthsBadge(c: BudgetCategory, isIncome: boolean) {
+    if (!c.months || c.excludeFromBudget) return null;
+    const unbudgeted = c.due && !isIncome && c.budgeted === 0;
+    return (
+      <span
+        className={c.due ? "badge months due" : "badge months"}
+        title={`Usually ${describeMonthMask(c.months)}${unbudgeted ? ". Due this month, but nothing is budgeted" : ""}`}
+      >
+        {unbudgeted && <span aria-label="Nothing budgeted">⚠ </span>}
+        {formatMonthMask(c.months)}
+      </span>
+    );
+  }
+
+  /** Not one of its usual months, and nothing's happened in it: dim it so the due ones stand out. */
+  const offMonth = (c: BudgetCategory) => c.months !== 0 && !c.due && c.budgeted === 0 && c.activity === 0;
+
+  const categoryClass = (c: BudgetCategory) =>
+    "budget-row category-line" +
+    (c.hidden ? " hidden" : "") +
+    (c.excludeFromBudget ? " excluded" : "") +
+    (offMonth(c) ? " off-month" : "") +
+    ` drop-before${dropClass(`c${c.id}`)}`;
 
   const shownBudgeted = (c: BudgetCategory) =>
     setAmount.isPending && setAmount.variables.id === c.id ? setAmount.variables.amount : c.budgeted;
@@ -488,7 +526,7 @@ export function BudgetPage() {
               {g.categories.map((c) => (
                 <div
                   key={c.id}
-                  className={`budget-row category-line${c.hidden ? " hidden" : ""}${c.excludeFromBudget ? " excluded" : ""} drop-before${dropClass(`c${c.id}`)}`}
+                  className={categoryClass(c)}
                   {...dragProps({ kind: "category", id: c.id })}
                   {...dropOnCategory(g, c)}
                 >
@@ -498,6 +536,7 @@ export function BudgetPage() {
                     </span>
                     <span className="truncate">{c.name}</span>
                     {c.excludeFromBudget && excludedBadge}
+                    {monthsBadge(c, false)}
                     {categoryActions(c)}
                   </div>
                   <div className="amount">
@@ -554,7 +593,7 @@ export function BudgetPage() {
               {g.categories.filter(visible).map((c) => (
                 <div
                   key={c.id}
-                  className={`budget-row category-line${c.hidden ? " hidden" : ""}${c.excludeFromBudget ? " excluded" : ""} drop-before${dropClass(`c${c.id}`)}`}
+                  className={categoryClass(c)}
                   {...dragProps({ kind: "category", id: c.id })}
                   {...dropOnCategory(g, c)}
                 >
@@ -569,6 +608,7 @@ export function BudgetPage() {
                         From {monthName(addMonths(month, -1))}
                       </span>
                     )}
+                    {monthsBadge(c, true)}
                     {categoryActions(c, true)}
                   </div>
                   <div />
@@ -599,6 +639,7 @@ export function BudgetPage() {
           }}
         />
       )}
+      {monthsFor && <CategoryMonthsDialog category={monthsFor} onClose={() => setMonthsFor(null)} />}
       {addFor && (
         <TransactionDialog
           month={month}
