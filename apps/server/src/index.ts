@@ -72,6 +72,16 @@ if (process.env.PRICE_REFRESH !== "off") {
 if (existsSync(join(webDist, "index.html"))) {
   const assets = serveStatic({ root: webDist });
   const indexHtml = join(webDist, "index.html");
+  // The service worker and app manifest must be re-checked on every load so app updates reach installed copies.
+  app.get("/sw.js", async (c, next) => {
+    await next();
+    c.header("Cache-Control", "no-cache");
+  });
+  app.get("/manifest.webmanifest", async (c, next) => {
+    await next();
+    c.header("Cache-Control", "no-cache");
+    c.header("Content-Type", "application/manifest+json");
+  });
   app.get("*", (c, next) => (c.req.path.startsWith("/api/") ? next() : assets(c, next)));
   // Client-side routes (e.g. /budget) all get the SPA shell.
   app.get("*", (c, next) =>

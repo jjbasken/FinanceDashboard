@@ -15,12 +15,13 @@ import {
   type CategoryGroup,
 } from "@fd/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type DragEvent, type KeyboardEvent, useRef, useState } from "react";
+import { type DragEvent, type KeyboardEvent, type ReactNode, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { api } from "../api";
 import { CategoryMonthsDialog } from "../components/CategoryMonthsDialog";
 import { Dialog } from "../components/Dialog";
 import { TransactionDialog } from "../components/TransactionDialog";
+import { useMediaQuery } from "../components/useMediaQuery";
 import { formatDate, ledgerKeys, thisMonth, useBudget, useLedgerMutation } from "../ledger";
 
 type Move = -1 | 0 | 1;
@@ -190,6 +191,9 @@ export function BudgetPage() {
   const [activityFor, setActivityFor] = useState<CategoryPick | null>(null);
   const [addFor, setAddFor] = useState<CategoryPick | null>(null);
   const [monthsFor, setMonthsFor] = useState<BudgetCategory | null>(null);
+  // Touch screens have no hover to reveal a row's actions, so tapping its name opens them in a sheet.
+  const touch = useMediaQuery("(hover: none)");
+  const [sheet, setSheet] = useState<{ title: string; actions: () => ReactNode } | null>(null);
   const [dragging, setDragging] = useState<Dragging | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
 
@@ -419,6 +423,16 @@ export function BudgetPage() {
     (offMonth(c) ? " off-month" : "") +
     ` drop-before${dropClass(`c${c.id}`)}`;
 
+  /** A row's name; on touch screens, a button that opens the row's actions. */
+  function rowName(name: string, actions: () => ReactNode) {
+    if (!touch) return <span className="truncate">{name}</span>;
+    return (
+      <button className="name-button truncate" onClick={() => setSheet({ title: name, actions })}>
+        {name}
+      </button>
+    );
+  }
+
   const shownBudgeted = (c: BudgetCategory) =>
     setAmount.isPending && setAmount.variables.id === c.id ? setAmount.variables.amount : c.budgeted;
 
@@ -516,7 +530,7 @@ export function BudgetPage() {
                   <span className="drag-handle" aria-hidden>
                     ⋮⋮
                   </span>
-                  <span className="truncate">{g.name}</span>
+                  {rowName(g.name, () => groupActions(g))}
                   {groupActions(g)}
                 </div>
                 <Money className="amount" cents={g.budgeted} />
@@ -534,7 +548,7 @@ export function BudgetPage() {
                     <span className="drag-handle" aria-hidden>
                       ⋮⋮
                     </span>
-                    <span className="truncate">{c.name}</span>
+                    {rowName(c.name, () => categoryActions(c))}
                     {c.excludeFromBudget && excludedBadge}
                     {monthsBadge(c, false)}
                     {categoryActions(c)}
@@ -583,7 +597,7 @@ export function BudgetPage() {
                   <span className="drag-handle" aria-hidden>
                     ⋮⋮
                   </span>
-                  <span className="truncate">{g.name}</span>
+                  {rowName(g.name, () => groupActions(g))}
                   {groupActions(g)}
                 </div>
                 <div />
@@ -601,7 +615,7 @@ export function BudgetPage() {
                     <span className="drag-handle" aria-hidden>
                       ⋮⋮
                     </span>
-                    <span className="truncate">{c.name}</span>
+                    {rowName(c.name, () => categoryActions(c, true))}
                     {c.excludeFromBudget && excludedBadge}
                     {c.forNextMonth && (
                       <span className="badge" title="Received last month, budgeted this month">
@@ -638,6 +652,20 @@ export function BudgetPage() {
             setActivityFor(null);
           }}
         />
+      )}
+      {sheet && (
+        <Dialog
+          title={sheet.title}
+          submitLabel="Close"
+          noCancel
+          onClose={() => setSheet(null)}
+          onSubmit={() => setSheet(null)}
+        >
+          {/* Any action closes the sheet; the action itself may open a dialog or prompt. */}
+          <div className="action-sheet" onClickCapture={() => setTimeout(() => setSheet(null))}>
+            {sheet.actions()}
+          </div>
+        </Dialog>
       )}
       {monthsFor && <CategoryMonthsDialog category={monthsFor} onClose={() => setMonthsFor(null)} />}
       {addFor && (

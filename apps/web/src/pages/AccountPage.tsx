@@ -15,7 +15,9 @@ import { api } from "../api";
 import { Dialog } from "../components/Dialog";
 import { HoldingsTable, InvestmentTxnTable, useSecurityColors } from "../components/HoldingsTables";
 import { InvestmentTxnDialog, SecurityDialog } from "../components/InvestmentDialogs";
+import { MobileRegister } from "../components/MobileRegister";
 import { Register } from "../components/Register";
+import { PHONE_QUERY, useMediaQuery } from "../components/useMediaQuery";
 import {
   useAccounts,
   useCategories,
@@ -293,6 +295,7 @@ export function AccountPage() {
   const [reconciling, setReconciling] = useState(false);
   const [adding, setAdding] = useState(false);
   useEffect(() => setAdding(false), [id]);
+  const phone = useMediaQuery(PHONE_QUERY);
   const [params, setParams] = useSearchParams();
 
   const account = accounts.data?.find((a) => a.id === id);
@@ -364,7 +367,7 @@ export function AccountPage() {
           />
         )}
         <span className="spacer" />
-        {account && !showHoldings && !adding && (
+        {account && !showHoldings && !adding && !phone && (
           <button className="btn btn-primary" onClick={() => setAdding(true)}>
             Add transaction
           </button>
@@ -382,6 +385,18 @@ export function AccountPage() {
       {error && <p className="error-text page-error">{error.message}</p>}
       {showHoldings ? (
         <AccountInvestments key={account!.id} account={account!} accounts={accounts.data!} />
+      ) : ready && phone ? (
+        <MobileRegister
+          account={account}
+          accounts={accounts.data!}
+          transactions={register.data!}
+          payees={payees.data!}
+          categories={categories.data!}
+          search={search}
+          adding={adding}
+          onAdd={() => setAdding(true)}
+          onCloseAdding={() => setAdding(false)}
+        />
       ) : ready ? (
         <Register
           account={account}

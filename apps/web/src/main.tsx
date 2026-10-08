@@ -24,6 +24,13 @@ const queryClient: QueryClient = new QueryClient({
   },
 });
 
+// Installable as an app (PWA). Service workers only run on HTTPS or localhost, so on plain HTTP this does nothing.
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch((err) => console.warn("Service worker not registered:", err));
+  });
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
