@@ -48,6 +48,8 @@ export function TransactionEditor(props: {
   /** The transaction being edited; omit to add one. */
   transaction?: Transaction;
   onClose: () => void;
+  /** Start a recurring bill from the transaction, as saved. */
+  onMakeRecurring?: (t: Transaction) => void;
 }) {
   const l = props.lookups;
   const t = props.transaction;
@@ -63,7 +65,7 @@ export function TransactionEditor(props: {
   };
 
   const create = useLedgerMutation((body: unknown) => api.post("/transactions", body));
-  const update = useLedgerMutation((body: unknown) => api.patch(`/transactions/${t!.id}`, body));
+  const update = useLedgerMutation((body: unknown) => api.patch<Transaction>(`/transactions/${t!.id}`, body));
   const remove = useLedgerMutation(() => api.delete(`/transactions/${t!.id}`));
   const pending = create.isPending || update.isPending || remove.isPending;
 
@@ -103,6 +105,14 @@ export function TransactionEditor(props: {
     if (!t) return create.mutate({ accountId: l.account.id, ...built.body }, done);
     if (Object.keys(built.body).length === 0) return props.onClose();
     update.mutate(built.body, done);
+  }
+
+  /** Save any changes, then hand the saved transaction over to make a recurring bill from it. */
+  function makeRecurring() {
+    const built = buildBody(d, original);
+    if (built.error !== null) return setError(built.error);
+    if (Object.keys(built.body).length === 0) return props.onMakeRecurring!(t!);
+    update.mutate(built.body, { onSuccess: (saved) => props.onMakeRecurring!(saved) });
   }
 
   function del() {
@@ -314,9 +324,16 @@ export function TransactionEditor(props: {
         )}
 
         {t && (
-          <button type="button" className="btn btn-danger-outline txn-delete" onClick={del} disabled={pending}>
-            Delete transaction
-          </button>
+          <div className="txn-editor-actions">
+            {props.onMakeRecurring && (
+              <button type="button" className="btn" onClick={makeRecurring} disabled={pending}>
+                Make recurring
+              </button>
+            )}
+            <button type="button" className="btn btn-danger-outline txn-delete" onClick={del} disabled={pending}>
+              Delete transaction
+            </button>
+          </div>
         )}
       </div>
     </Dialog>

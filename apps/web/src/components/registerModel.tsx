@@ -323,6 +323,18 @@ export const deleteMessage = (t: Transaction | undefined) =>
   t?.transferId ? "Delete this transfer? Both sides will be removed." : "Delete this transaction?";
 
 /** Why the row the user tried to edit has to be edited somewhere else. */
+/** Shown after a recurring bill is made from a register transaction. */
+export function BillAddedNotice(props: { onDismiss: () => void }) {
+  return (
+    <p className="notice register-notice" role="status">
+      Recurring bill added. It starts with its first due date; manage it on the <Link to="/bills">Bills page</Link>.{" "}
+      <button className="link-button" onClick={props.onDismiss}>
+        Dismiss
+      </button>
+    </p>
+  );
+}
+
 export function LinkedNotice(props: { kind: LinkedKind; onDismiss: () => void }) {
   return (
     <p className="notice register-notice" role="status">

@@ -2033,6 +2033,11 @@ select {
 .txn-delete {
   align-self: flex-start;
 }
+.txn-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 
 /* Touch screens: a row's actions open from its name instead of on hover */
 .name-button {

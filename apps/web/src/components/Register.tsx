@@ -4,7 +4,10 @@ import { type FocusEvent, type KeyboardEvent, type ReactNode, useEffect, useMemo
 import { api } from "../api";
 import { formatDate, today, useLedgerMutation, useMembers } from "../ledger";
 import { Autocomplete } from "./Autocomplete";
+import { BillDialog } from "./BillDialog";
+import { billPrefill } from "./billPrefill";
 import {
+  BillAddedNotice,
   BillMark,
   amountOf,
   blankDraft,
@@ -46,6 +49,8 @@ function EditRow(props: {
   onCancel: () => void;
   onBlurOut: () => void;
   onDelete?: () => void;
+  /** Start a recurring bill from this transaction. */
+  onMakeRecurring?: () => void;
   balance?: number;
 }) {
   const { draft: d, setDraft, lookups: l } = props;
@@ -302,6 +307,16 @@ function EditRow(props: {
           </span>
         )}
         <span className="muted hint">Enter to save · Esc to cancel</span>
+        {props.onMakeRecurring && (
+          <button
+            type="button"
+            className="btn btn-small"
+            onClick={props.onMakeRecurring}
+            title="Make a recurring bill from this transaction"
+          >
+            Make recurring
+          </button>
+        )}
         {props.onDelete && (
           <button type="button" className="btn btn-small btn-danger-outline" onClick={props.onDelete}>
             Delete
@@ -461,6 +476,9 @@ export function Register(props: {
   const [saveError, setSaveError] = useState<string | null>(null);
   /** Why the row the user tried to edit has to be edited somewhere else. */
   const [linkedNotice, setLinkedNotice] = useState<LinkedKind | null>(null);
+  /** The transaction a recurring bill is being made from. */
+  const [recurringFrom, setRecurringFrom] = useState<Transaction | null>(null);
+  const [billAdded, setBillAdded] = useState(false);
 
   // Reset the entry row when switching accounts.
   useEffect(() => {
@@ -566,6 +584,25 @@ export function Register(props: {
     update.mutate({ id: t.id, body: { cleared: !t.cleared } }, onSaveError);
   }
 
+  /** Save any pending edit, then make a recurring bill from the transaction as saved. */
+  function makeRecurringFromEditing() {
+    if (!editing) return;
+    const built = buildBody(editDraft, editing.original);
+    if (built.error !== null) return setEditError(built.error);
+    const t = transactions.find((x) => x.id === editing.id);
+    setEditing(null);
+    setBillAdded(false);
+    if (Object.keys(built.body).length) {
+      setSaveError(null);
+      update.mutate(
+        { id: editing.id, body: built.body },
+        { onSuccess: (saved) => setRecurringFrom(saved), ...onSaveError },
+      );
+    } else if (t) {
+      setRecurringFrom(t);
+    }
+  }
+
   function deleteEditing() {
     if (!editing) return;
     const t = transactions.find((x) => x.id === editing.id);
@@ -624,6 +661,15 @@ export function Register(props: {
         </p>
       )}
       {linkedNotice && <LinkedNotice kind={linkedNotice} onDismiss={() => setLinkedNotice(null)} />}
+      {billAdded && <BillAddedNotice onDismiss={() => setBillAdded(false)} />}
+      {recurringFrom && (
+        <BillDialog
+          bill={null}
+          prefill={billPrefill(recurringFrom, today())}
+          onClose={() => setRecurringFrom(null)}
+          onSaved={() => setBillAdded(true)}
+        />
+      )}
 
       <div className="register-scroll" ref={scrollRef}>
         {rows.length === 0 ? (
@@ -662,6 +708,7 @@ export function Register(props: {
                       }}
                       onBlurOut={() => commitEdit(0)}
                       onDelete={deleteEditing}
+                      onMakeRecurring={makeRecurringFromEditing}
                     />
                   ) : (
                     <DisplayRow
