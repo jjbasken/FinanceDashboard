@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { AppEnv } from "../app";
-import { actorOf, idParam, parseBody, requireAuth } from "../middleware";
+import { actorOf, idParam, parseBody, requireAuth, sessionOf } from "../middleware";
 import { commitPlan, listBatches, loadContext, undoBatch } from "../importers/gnucash/commit";
 import { MappingError, planImport, suggestMappings } from "../importers/gnucash/plan";
 import { BookError, checkFormat, readBook, type GncBook } from "../importers/gnucash/read";
@@ -224,6 +224,10 @@ export function createImportRoutes() {
         return { batchId, preview: p.preview };
       });
       previews.delete(`gnucash:${uploadId}`);
+      c.var.log.info("import", `Imported GnuCash file ${upload.fileName}`, {
+        householdId: actor.householdId,
+        details: { batchId: result.batchId, user: sessionOf(c).user.username },
+      });
       return c.json(result, 201);
     })
 
@@ -286,6 +290,11 @@ export function createImportRoutes() {
         });
       });
       previews.delete(`bank:${uploadId}`);
+      c.var.log.info(
+        "import",
+        `Imported ${upload.fileName}: ${result.created} new, ${result.matched} matched to existing transactions`,
+        { householdId: actor.householdId, details: { ...result, user: sessionOf(c).user.username } },
+      );
       return c.json(result, 201);
     })
 
@@ -335,13 +344,23 @@ export function createImportRoutes() {
         return commitFundImport(tx, actor, upload.accountId, upload.fileName, plan);
       });
       previews.delete(`fund:${uploadId}`);
+      c.var.log.info("import", `Imported ${upload.fileName}: ${result.created} investment transactions`, {
+        householdId: actor.householdId,
+        details: { ...result, user: sessionOf(c).user.username },
+      });
       return c.json(result, 201);
     })
 
     .get("/batches", (c) => c.json(listBatches(c.var.db, actorOf(c).householdId)))
 
     .post("/batches/:id/undo", (c) => {
-      undoBatch(c.var.db, actorOf(c), idParam(c));
+      const actor = actorOf(c);
+      const id = idParam(c);
+      undoBatch(c.var.db, actor, id);
+      c.var.log.info("import", `Undid import #${id}`, {
+        householdId: actor.householdId,
+        details: { batchId: id, user: sessionOf(c).user.username },
+      });
       return c.json({ ok: true });
     });
 }

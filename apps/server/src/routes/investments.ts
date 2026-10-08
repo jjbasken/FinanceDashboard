@@ -37,7 +37,7 @@ export const investmentRoutes = new Hono<AppEnv>()
   })
 
   .post("/prices/refresh", async (c) =>
-    c.json(await refreshPrices(c.var.db, c.var.priceProvider, localDate(), actorOf(c).householdId)),
+    c.json(await refreshPrices(c.var.db, c.var.priceProvider, localDate(), actorOf(c).householdId, c.var.log)),
   )
 
   // --- Securities ---

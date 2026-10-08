@@ -12,6 +12,12 @@ import { idParam, parseBody, requireAuth, requireOwner, sessionOf } from "../mid
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Another member of the owner's household (never the owner themselves). */
+/** Log an owner's action on a member's account. */
+function logMemberAction(c: Context<AppEnv>, member: { username: string }, message: string) {
+  const { household, user } = sessionOf(c);
+  c.var.log.info("auth", message, { householdId: household.id, details: { member: member.username, by: user.username } });
+}
+
 function memberOf(c: Context<AppEnv>) {
   const { household, user } = sessionOf(c);
   const id = idParam(c);
@@ -63,6 +69,7 @@ export const householdRoutes = new Hono<AppEnv>()
     const passwordHash = await c.var.passwordWork.run(() => Bun.password.hash(newPassword));
     c.var.db.update(users).set({ passwordHash }).where(eq(users.id, member.id)).run();
     deleteUserSessions(c.var.db, member.id);
+    logMemberAction(c, member, `Reset the password for ${member.username}`);
     return c.json({ ok: true });
   })
 
@@ -71,12 +78,14 @@ export const householdRoutes = new Hono<AppEnv>()
     const member = memberOf(c);
     c.var.db.update(users).set({ disabledAt: new Date().toISOString() }).where(eq(users.id, member.id)).run();
     deleteUserSessions(c.var.db, member.id);
+    logMemberAction(c, member, `Removed member ${member.username}`);
     return c.json({ ok: true });
   })
 
   .post("/users/:id/enable", requireOwner, (c) => {
     const member = memberOf(c);
     c.var.db.update(users).set({ disabledAt: null }).where(eq(users.id, member.id)).run();
+    logMemberAction(c, member, `Restored member ${member.username}`);
     return c.json({ ok: true });
   })
 
@@ -89,5 +98,6 @@ export const householdRoutes = new Hono<AppEnv>()
       .values({ id: hashToken(token), householdId: household.id, createdBy: user.id, expiresAt })
       .run();
     const info: InviteInfo = { token, expiresAt: new Date(expiresAt).toISOString() };
+    c.var.log.info("auth", "Created an invite link", { householdId: household.id, details: { by: user.username } });
     return c.json(info, 201);
   });

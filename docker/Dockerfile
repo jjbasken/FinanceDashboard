@@ -11,9 +11,12 @@ RUN bun run build
 
 FROM oven/bun:1.3-slim AS runtime
 WORKDIR /app
+# The git commit being built, shown in the owner's Logs at start-up.
+ARG GIT_COMMIT=unknown
 ENV NODE_ENV=production \
     PORT=8080 \
-    DATA_DIR=/data
+    DATA_DIR=/data \
+    GIT_COMMIT=$GIT_COMMIT
 COPY package.json bun.lock tsconfig.base.json ./
 COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/

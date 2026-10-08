@@ -2163,3 +2163,133 @@ select {
     row-gap: 8px;
   }
 }
+
+/* Activity & logs (owner only) */
+.report-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.report-filters select,
+.report-filters input {
+  width: auto;
+  min-width: 0;
+}
+.report-filters input[type="search"] {
+  flex: 1 1 160px;
+}
+.report-row {
+  cursor: pointer;
+}
+.report-row:hover td {
+  background: var(--bg);
+}
+.data-table td.report-what {
+  white-space: normal;
+}
+.report-when {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.report-who {
+  display: none;
+}
+.report-badge,
+.log-badge {
+  margin: 0 8px 0 0;
+}
+.report-badge {
+  margin-left: 8px;
+}
+.log-badge.warn {
+  color: #9a6700;
+  border-color: #e6b800;
+}
+.log-badge.error,
+.report-row.log-error td.report-what {
+  color: var(--danger);
+}
+.log-badge.error {
+  border-color: var(--danger);
+}
+.data-table .report-expanded td {
+  white-space: normal;
+  background: var(--bg);
+}
+.audit-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 32px;
+}
+.audit-fields h4 {
+  margin: 4px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.audit-fields dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 16px;
+  margin: 0;
+  font-size: 13px;
+}
+.audit-fields dt {
+  color: var(--text-muted);
+}
+.audit-fields dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.log-details {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  max-height: 320px;
+  overflow: auto;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+@media (prefers-color-scheme: dark) {
+  .log-badge.warn {
+    color: #f2c94c;
+  }
+}
+@media (max-width: 720px) {
+  /* Phones: when on its own line above who and what. */
+  /* Collapsed rather than display: none, so an opened row's colspan still spans the full width. */
+  .data-table.report-table .report-detail {
+    width: 0;
+    padding: 0;
+    overflow: hidden;
+    font-size: 0;
+  }
+  .report-who {
+    display: inline;
+    color: var(--text-muted);
+  }
+  /* Wrap instead of scrolling sideways like other tables on phones. */
+  .data-table.report-table {
+    display: table;
+    table-layout: fixed;
+    width: 100%;
+  }
+  .report-table td.report-what {
+    overflow-wrap: anywhere;
+  }
+  .report-table th:first-child {
+    width: 84px;
+  }
+  .report-table td.report-when {
+    white-space: normal;
+    font-size: 12px;
+  }
+  .audit-fields dl {
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  }
+}

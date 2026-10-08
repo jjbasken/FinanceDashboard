@@ -58,6 +58,9 @@ export const authRoutes = new Hono<AppEnv>()
 
     const { token, expiresAt } = createSession(db, userId);
     setSessionCookie(c, token, expiresAt);
+    c.var.log.info("auth", `Set up the household; ${input.username} is the owner`, {
+      details: { username: input.username, ip: clientAddress(c) },
+    });
     return c.json({ ok: true }, 201);
   })
 
@@ -66,7 +69,9 @@ export const authRoutes = new Hono<AppEnv>()
     const limiter = c.var.loginLimiter;
     const client = clientAddress(c);
     const finish = limiter.start(client, input.username);
+    const details = { username: input.username, ip: client };
     if (!finish) {
+      c.var.log.warn("auth", `Too many failed sign-ins for ${input.username}; blocked for now`, { details });
       throw new HTTPException(429, { message: "Too many failed attempts. Try again in a few minutes." });
     }
 
@@ -77,16 +82,25 @@ export const authRoutes = new Hono<AppEnv>()
       );
       if (!user || !ok) {
         finish(false);
+        c.var.log.warn("auth", `Failed sign-in for ${input.username}`, {
+          householdId: user?.householdId,
+          details: { ...details, reason: user ? "wrong password" : "unknown username" },
+        });
         throw new HTTPException(401, { message: "Incorrect username or password" });
       }
 
       if (user.disabledAt) {
+        c.var.log.warn("auth", `Removed member ${input.username} tried to sign in`, {
+          householdId: user.householdId,
+          details,
+        });
         // They knew the password, so saying why doesn't reveal anything new.
         throw new HTTPException(403, { message: "This account has been removed from the household" });
       }
       finish(true);
       const { token, expiresAt } = createSession(c.var.db, user.id);
       setSessionCookie(c, token, expiresAt);
+      c.var.log.info("auth", `${user.username} signed in`, { householdId: user.householdId, details });
       return c.json({ ok: true });
     } finally {
       // Release reservations after throttling or unexpected verification failures, too.
@@ -107,17 +121,32 @@ export const authRoutes = new Hono<AppEnv>()
     });
     c.var.db.update(users).set({ passwordHash }).where(eq(users.id, user.id)).run();
     const signedOut = deleteUserSessions(c.var.db, user.id, sessionId);
+    c.var.log.info("auth", `${user.username} changed their password`, {
+      householdId: sessionOf(c).household.id,
+      details: { username: user.username, ip: clientAddress(c), otherSessionsSignedOut: signedOut },
+    });
     return c.json({ ok: true, signedOut });
   })
 
   .post("/sign-out-others", requireAuth, (c) => {
-    const { user, sessionId } = sessionOf(c);
-    return c.json({ ok: true, signedOut: deleteUserSessions(c.var.db, user.id, sessionId) });
+    const { user, sessionId, household } = sessionOf(c);
+    const signedOut = deleteUserSessions(c.var.db, user.id, sessionId);
+    c.var.log.info("auth", `${user.username} signed out their other devices`, {
+      householdId: household.id,
+      details: { username: user.username, ip: clientAddress(c), signedOut },
+    });
+    return c.json({ ok: true, signedOut });
   })
 
   .post("/logout", (c) => {
     const s = c.var.session;
-    if (s) deleteSession(c.var.db, s.sessionId);
+    if (s) {
+      deleteSession(c.var.db, s.sessionId);
+      c.var.log.info("auth", `${s.user.username} signed out`, {
+        householdId: s.household.id,
+        details: { username: s.user.username, ip: clientAddress(c) },
+      });
+    }
     clearSessionCookie(c);
     return c.json({ ok: true });
   })
@@ -177,5 +206,9 @@ export const authRoutes = new Hono<AppEnv>()
 
     const { token, expiresAt } = createSession(db, userId);
     setSessionCookie(c, token, expiresAt);
+    c.var.log.info("auth", `${input.username} joined the household with an invite`, {
+      householdId: db.select({ h: users.householdId }).from(users).where(eq(users.id, userId)).get()?.h,
+      details: { username: input.username, displayName: input.displayName, ip: clientAddress(c) },
+    });
     return c.json({ ok: true }, 201);
   });

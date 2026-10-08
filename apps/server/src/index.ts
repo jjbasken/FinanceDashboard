@@ -9,6 +9,7 @@ import { seedOwnerFromEnv } from "./seed";
 import { MAX_UPLOAD_BYTES } from "./routes/import";
 import { runNightlyBackup } from "./services/backup";
 import { EventHub } from "./services/events";
+import { createLogger, errorDetails, pruneLogs } from "./services/log";
 import { postScheduledBills } from "./services/scheduled-bills";
 import { refreshPrices, yahooProvider } from "./services/prices";
 import { localDate } from "./util";
@@ -17,11 +18,18 @@ const port = Number(process.env.PORT ?? 3000);
 const webDist = resolve(process.env.WEB_DIST ?? join(import.meta.dir, "../../web/dist"));
 const secureCookies = process.env.COOKIE_SECURE === "true";
 
-const db = openDb(join(dataDir, "finance.db"));
+let migrations: string[] = [];
+const db = openDb(join(dataDir, "finance.db"), (applied) => (migrations = applied));
+const log = createLogger(db, { console: true });
+const version = process.env.GIT_COMMIT || "unknown";
+log.info("server", `Started version ${version}`, {
+  details: { version, migrationsApplied: migrations, dataDir, timeZone: process.env.TZ || "UTC" },
+});
+if (migrations.length) log.info("server", `Applied database migrations: ${migrations.join(", ")}`);
 
 const seed = await seedOwnerFromEnv(db, process.env);
 if (seed.status === "created") {
-  console.log(`Seeded household owner "${seed.username}" from SEED_* environment variables.`);
+  log.info("server", `Seeded household owner "${seed.username}" from SEED_* environment variables`);
   console.log("You can now remove SEED_OWNER_PASSWORD from your environment; it is only used on an empty database.");
 } else if (seed.status === "skipped") {
   console.log(`SEED_* variables ignored: ${seed.reason}.`);
@@ -35,21 +43,36 @@ const backupDir = join(dataDir, "backups");
 const trustProxy = process.env.TRUST_PROXY === "true";
 const keepBackups = Number(process.env.BACKUP_KEEP ?? 14);
 const events = new EventHub();
-const app = createApp({ db, secureCookies, priceProvider, backupDir, backupsEnabled: keepBackups > 0, trustProxy, events });
+const app = createApp({
+  db,
+  secureCookies,
+  priceProvider,
+  backupDir,
+  backupsEnabled: keepBackups > 0,
+  trustProxy,
+  events,
+  logger: log,
+});
 
 // Recurring bills: on the 1st (checked hourly, and at start-up in case the server was down), post
 // each bill's occurrences for the new month, then refresh the household's open sessions.
-const postBills = () => {
+// The same hourly job prunes log entries older than 90 days.
+const hourly = () => {
   try {
-    for (const householdId of postScheduledBills(db, localDate())) {
+    for (const householdId of postScheduledBills(db, localDate(), log)) {
       events.publish(householdId, { type: "change", origin: null });
     }
   } catch (err) {
-    console.error("Posting recurring bills failed:", err);
+    log.error("bills", "Posting recurring bills failed", { details: errorDetails(err) });
+  }
+  try {
+    pruneLogs(db);
+  } catch (err) {
+    log.error("server", "Pruning old log entries failed", { details: errorDetails(err) });
   }
 };
-postBills();
-setInterval(postBills, 60 * 60 * 1000);
+hourly();
+setInterval(hourly, 60 * 60 * 1000);
 
 // Nightly backups: check hourly and make today's copy if it's missing, keeping the newest
 // BACKUP_KEEP (default 14). Set BACKUP_KEEP=0 to turn them off.
@@ -57,10 +80,12 @@ if (keepBackups > 0) {
   const backup = () => {
     try {
       const { name, created, removed } = runNightlyBackup(db, backupDir, localDate(), keepBackups);
-      if (created) console.log(`Backed up the database to ${join(backupDir, name)}.`);
-      if (removed.length) console.log(`Removed old backups: ${removed.join(", ")}.`);
+      if (created) log.info("backup", `Backed up the database to ${join(backupDir, name)}`);
+      if (removed.length) log.info("backup", `Removed old backups: ${removed.join(", ")}`);
     } catch (err) {
-      console.error("Backup failed:", err);
+      log.error("backup", `Backup failed: ${err instanceof Error ? err.message : String(err)}`, {
+        details: errorDetails(err),
+      });
     }
   };
   backup();
@@ -72,13 +97,11 @@ if (keepBackups > 0) {
 if (process.env.PRICE_REFRESH !== "off") {
   const run = async () => {
     try {
-      const { updated, errors } = await refreshPrices(db, priceProvider, localDate());
-      if (updated || errors.length) {
-        console.log(`Price refresh: ${updated} new prices${errors.length ? `, ${errors.length} failed` : ""}.`);
-      }
-      for (const e of errors) console.warn(`  ${e.symbol}: ${e.message}`);
+      await refreshPrices(db, priceProvider, localDate(), undefined, log);
     } catch (err) {
-      console.error("Price refresh failed:", err);
+      log.error("prices", `Price refresh failed: ${err instanceof Error ? err.message : String(err)}`, {
+        details: errorDetails(err),
+      });
     }
   };
   setTimeout(run, 30_000);

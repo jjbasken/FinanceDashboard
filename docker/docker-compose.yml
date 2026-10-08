@@ -1,10 +1,14 @@
-# Family Finance behind a Cloudflare Tunnel. Run from docker/: docker compose up -d --build
+# Family Finance behind a Cloudflare Tunnel. Run from docker/:
+#   GIT_COMMIT=$(git rev-parse --short HEAD) docker compose up -d --build
+# (GIT_COMMIT is optional; it labels the version in the owner's Logs.)
 # Setup (tunnel token, Cloudflare route and Access policy) is described in the README.
 services:
   finance:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
     container_name: family-finance
     restart: unless-stopped
     # Only reachable from this machine; everyone else comes in through the tunnel.

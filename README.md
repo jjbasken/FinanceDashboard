@@ -155,6 +155,27 @@ Investments live in **Investment** accounts. An account's register holds its cas
 - **Live updates:** when one of you changes something, the other's open window refreshes on its own.
 - **Backups:** each night the server saves a copy of the database to `backups/` in the data folder and keeps the newest 14. The household owner can also download a fresh copy from **Settings → Backups**. To restore, stop the app, delete `finance.db-wal` and `finance.db-shm` if they exist, and replace `finance.db` with the backup file.
 
+## Activity and logs (owner only)
+
+The household owner can open **Settings → Activity & logs**. Members don't see the card, and the page and its API refuse them.
+
+- **Activity:** who added, changed or deleted what, and when.
+  - It covers transactions, accounts, folders, categories, budget amounts, payees, recurring bills, securities and prices, investment transactions, imports, members and household settings.
+  - Tap an entry to see the values: what changed (old → new) for an edit, the item as added, or what was deleted.
+  - Payments that recurring bills add show as **System**.
+  - Changes in another member's **private account** show only who and when ("Sam added a transaction in a private account"). Their payees, amounts and account names are never stored. Your own private accounts show in full.
+  - Passwords, invite tokens and other secrets are never recorded.
+- **Logs:** what the server has been doing:
+  - start-ups (version and database migrations applied)
+  - sign-ins, failed sign-ins (with username and IP address), sign-outs and password changes
+  - price refreshes, including symbols that couldn't be priced
+  - recurring bills posted, backups, imports
+  - unexpected errors, with their details
+  
+  Warnings and errors are highlighted. The same messages also go to `docker logs`.
+- **Retention:** activity is kept forever. Log entries older than 90 days are deleted.
+- History starts with the release that added this page. Changes made before it aren't in the Activity list.
+
 ## On your phone
 
 On a phone the app switches to a phone layout. Tabs along the bottom lead to **Budget**, **Accounts**, **Reports**, **Investments** and **More** (settings, imports, payees and sign out). An account's register lists one transaction per row: tap a row to edit it, or tap **+** to add one. On the Budget page, tap a category or group name for its actions, such as Add transaction, Months or Rename.
@@ -176,8 +197,10 @@ If you use Cloudflare Access and the install option doesn't appear, add an Acces
 
 ```sh
 cd docker
-docker compose up -d --build
+GIT_COMMIT=$(git rev-parse --short HEAD) docker compose up -d --build
 ```
+
+`GIT_COMMIT` is optional: it labels the version in the owner's Logs (otherwise "unknown").
 
 The app's SQLite database is stored in `docker/data/`, and nightly backups go to `docker/data/backups/`. The container makes sure the app's user (uid 1000) owns that folder on start-up, then runs the app as that user, not as root. Copy that folder somewhere else (another disk, or cloud storage) to keep your data safe if this machine fails.
 

@@ -1,4 +1,12 @@
-import { ACCOUNT_SECTIONS, ACCOUNT_TYPES, BILL_FREQUENCIES, INVESTMENT_ACTIONS, SECURITY_TYPES } from "@fd/shared";
+import {
+  ACCOUNT_SECTIONS,
+  ACCOUNT_TYPES,
+  BILL_FREQUENCIES,
+  INVESTMENT_ACTIONS,
+  LOG_LEVELS,
+  LOG_SOURCES,
+  SECURITY_TYPES,
+} from "@fd/shared";
 import { sql } from "drizzle-orm";
 import { type AnySQLiteColumn, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
@@ -12,6 +20,12 @@ const updatedAt = () =>
     .notNull()
     .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`)
     .$onUpdate(() => new Date().toISOString());
+
+/** When a log row was written, as an ISO timestamp. */
+const timestamp = (name: string) =>
+  text(name)
+    .notNull()
+    .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`);
 
 const flag = (name: string) => integer(name, { mode: "boolean" }).notNull().default(false);
 
@@ -449,4 +463,45 @@ export const importMatches = sqliteTable(
     previousCleared: integer("previous_cleared", { mode: "boolean" }).notNull(),
   },
   (t) => [index("import_matches_batch_idx").on(t.batchId)],
+);
+
+/**
+ * Who changed what, for the owner's Activity report. Kept forever. A change in another member's
+ * private account is recorded as private: who and when only, with no summary details or values.
+ */
+export const auditLog = sqliteTable(
+  "audit_log",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    householdId: integer("household_id")
+      .notNull()
+      .references(() => households.id),
+    at: timestamp("at"),
+    /** Null when the app did it on its own, e.g. a recurring bill posting a payment. */
+    userId: integer("user_id").references(() => users.id),
+    action: text("action").notNull(),
+    entity: text("entity").notNull(),
+    entityId: integer("entity_id"),
+    summary: text("summary").notNull(),
+    /** { before?, changes?, after? } */
+    details: text("details", { mode: "json" }),
+    private: flag("private"),
+  },
+  (t) => [index("audit_log_household_idx").on(t.householdId, t.id)],
+);
+
+/** System events and errors for the owner's Logs report. Pruned after 90 days. */
+export const appLog = sqliteTable(
+  "app_log",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    at: timestamp("at"),
+    /** Null for server-wide events (start-up, backups, price refreshes). */
+    householdId: integer("household_id").references(() => households.id),
+    level: text("level", { enum: LOG_LEVELS }).notNull(),
+    source: text("source", { enum: LOG_SOURCES }).notNull(),
+    message: text("message").notNull(),
+    details: text("details", { mode: "json" }),
+  },
+  (t) => [index("app_log_at_idx").on(t.at), index("app_log_level_idx").on(t.level, t.id)],
 );
