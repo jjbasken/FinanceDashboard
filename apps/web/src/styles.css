@@ -2097,3 +2097,28 @@ select {
     white-space: nowrap;
   }
 }
+
+/* Phones: a budget row's badges (usual months, "Not in budget"…) go on a second line, so the
+   narrow name column shows the whole name. */
+@media (max-width: 720px) {
+  .budget-row .name {
+    flex-wrap: wrap;
+    row-gap: 2px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+  .budget-row .name > .truncate,
+  .budget-row .name > .name-button {
+    flex: 1 1 calc(100% - 16px);
+  }
+  .budget-row .name .badge {
+    margin-left: 0;
+    font-size: 11px;
+    padding: 0 6px;
+  }
+}
+@media (hover: none) {
+  .drag-handle {
+    display: none;
+  }
+}

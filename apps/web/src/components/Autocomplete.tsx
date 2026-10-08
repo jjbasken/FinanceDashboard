@@ -53,14 +53,29 @@ export function Autocomplete<T>(props: {
     return created ? [...sorted, created] : sorted;
   }, [props.options, props.create, text, typed]);
 
-  // Close the floating list if anything scrolls underneath it.
+  // Keep the floating list attached to its field when anything scrolls or the viewport changes. On
+  // phones, the keyboard opening scrolls the page or dialog to keep the field in view.
+  const [, setLayout] = useState(0);
   useEffect(() => {
     if (!open) return;
-    const close = (e: Event) => {
-      if (!(e.target instanceof Node) || !document.getElementById(listId)?.contains(e.target)) setOpen(false);
+    let frame = 0;
+    const follow = (e: Event) => {
+      if (e.target instanceof Node && document.getElementById(listId)?.contains(e.target)) return;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => setLayout((n) => n + 1));
     };
-    window.addEventListener("scroll", close, true);
-    return () => window.removeEventListener("scroll", close, true);
+    const viewport = window.visualViewport;
+    window.addEventListener("scroll", follow, true);
+    window.addEventListener("resize", follow);
+    viewport?.addEventListener("resize", follow);
+    viewport?.addEventListener("scroll", follow);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", follow, true);
+      window.removeEventListener("resize", follow);
+      viewport?.removeEventListener("resize", follow);
+      viewport?.removeEventListener("scroll", follow);
+    };
   }, [open, listId]);
 
   function openList() {
@@ -135,7 +150,17 @@ export function Autocomplete<T>(props: {
   }
 
   const rect = open ? inputEl.current?.getBoundingClientRect() : undefined;
-  const below = rect ? window.innerHeight - rect.bottom > 260 : true;
+  // The part of the page actually visible, which shrinks when a phone's keyboard is open.
+  const viewport = window.visualViewport;
+  const visibleTop = viewport?.offsetTop ?? 0;
+  const visibleBottom = viewport ? viewport.offsetTop + viewport.height : window.innerHeight;
+  const onScreen = !!rect && rect.bottom > visibleTop && rect.top < visibleBottom;
+  const spaceBelow = rect ? visibleBottom - rect.bottom - 8 : 0;
+  const spaceAbove = rect ? rect.top - visibleTop - 8 : 0;
+  const below = spaceBelow >= 260 || spaceBelow >= spaceAbove;
+  const maxHeight = Math.max(120, Math.min(260, below ? spaceBelow : spaceAbove));
+  // In a modal dialog, everything outside it is inert and drawn underneath, so the list goes inside it.
+  const portalTarget = inputEl.current?.closest("dialog") ?? document.body;
 
   return (
     <>
@@ -171,10 +196,11 @@ export function Autocomplete<T>(props: {
         }}
         onKeyDown={onKeyDown}
       />
-      {/* Rendered into <body>: a transformed ancestor (the register's virtual rows) would
-          otherwise become the containing block for position: fixed and push the list away. */}
+      {/* Rendered into <body> (or the open dialog): a transformed ancestor (the register's virtual
+          rows) would otherwise become the containing block for position: fixed and push the list away. */}
       {open &&
         rect &&
+        onScreen &&
         shown.length > 0 &&
         createPortal(
           <ul
@@ -184,6 +210,7 @@ export function Autocomplete<T>(props: {
             style={{
               left: rect.left,
               width: Math.max(rect.width, 220),
+              maxHeight,
               ...(below ? { top: rect.bottom + 2 } : { bottom: window.innerHeight - rect.top + 2 }),
             }}
           >
@@ -209,7 +236,7 @@ export function Autocomplete<T>(props: {
               </li>
             ))}
           </ul>,
-          document.body,
+          portalTarget,
         )}
     </>
   );
