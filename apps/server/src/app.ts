@@ -5,7 +5,9 @@ import type { Db } from "./db";
 import type { SessionContext } from "./auth/sessions";
 import { LoginRateLimiter } from "./auth/rate-limit";
 import { PasswordWorkLimiter } from "./auth/password-work";
+import { adminRoutes } from "./routes/admin";
 import { authRoutes } from "./routes/auth";
+import { auditMiddleware } from "./services/audit";
 import { accountRoutes } from "./routes/accounts";
 import { budgetRoutes } from "./routes/budget";
 import { categoryRoutes } from "./routes/categories";
@@ -18,6 +20,7 @@ import { reportRoutes } from "./routes/reports";
 import { scheduledBillRoutes } from "./routes/scheduled-bills";
 import { investmentRoutes } from "./routes/investments";
 import { EventHub } from "./services/events";
+import { createLogger, errorDetails, type Logger } from "./services/log";
 import { type PriceProvider, yahooProvider } from "./services/prices";
 import { payeeRoutes } from "./routes/payees";
 import { transactionRoutes } from "./routes/transactions";
@@ -37,6 +40,8 @@ export interface AppOptions {
   trustProxy?: boolean;
   /** Live-update hub; pass one in to publish changes made outside requests (e.g. recurring bills). */
   events?: EventHub;
+  /** Where events and errors are logged; by default the log table only (no console output). */
+  logger?: Logger;
 }
 
 export type AppEnv = {
@@ -51,6 +56,7 @@ export type AppEnv = {
     backupDir: string | null;
     backupsEnabled: boolean;
     trustProxy: boolean;
+    log: Logger;
   };
 };
 
@@ -62,6 +68,7 @@ export function createApp({
   backupsEnabled = !!backupDir,
   trustProxy = false,
   events = new EventHub(),
+  logger = createLogger(db),
 }: AppOptions) {
   const loginLimiter = new LoginRateLimiter();
   const passwordWork = new PasswordWorkLimiter();
@@ -105,10 +112,13 @@ export function createApp({
     c.set("backupDir", backupDir);
     c.set("backupsEnabled", backupsEnabled);
     c.set("trustProxy", trustProxy);
+    c.set("log", logger);
     await next();
   });
   app.use("/api/*", requireJsonForMutations);
   app.use("/api/*", sessionMiddleware);
+  // Record who changed what, for the owner's Activity report.
+  app.use("/api/*", auditMiddleware);
   // Tell the household's other open sessions that something changed, so they refetch.
   app.use("/api/*", async (c, next) => {
     await next();
@@ -133,13 +143,18 @@ export function createApp({
   app.route("/api/events", eventRoutes);
   app.route("/api/backup", backupRoutes);
   app.route("/api/reports", reportRoutes);
+  app.route("/api/admin", adminRoutes);
 
   app.notFound((c) => c.json({ error: "Not found" }, 404));
   app.onError((err, c) => {
     if (err instanceof HTTPException) {
       return c.json({ error: err.message }, err.status);
     }
-    console.error(err);
+    const s = c.var.session;
+    logger.error("http", `${c.req.method} ${c.req.path} failed: ${err instanceof Error ? err.message : String(err)}`, {
+      householdId: s?.household.id,
+      details: { ...errorDetails(err), user: s?.user.username ?? null },
+    });
     return c.json({ error: "Internal server error" }, 500);
   });
 

@@ -11,6 +11,8 @@ import { and, asc, eq } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import type { Db, DbOrTx } from "../db";
 import { accounts, scheduledBills, transactions } from "../db/schema";
+import { recordSystemCreate } from "./audit";
+import { errorDetails, type Logger } from "./log";
 import {
   assertCategory,
   canSee,
@@ -204,6 +206,7 @@ function postBill(db: DbOrTx, bill: BillRow, today: string, notBefore?: string) 
         },
       );
       db.update(transactions).set({ scheduledBillId: bill.id }).where(eq(transactions.id, id)).run();
+      recordSystemCreate(db, bill.householdId, "transaction", id, "Recurring bill");
       created++;
     }
   }
@@ -216,17 +219,27 @@ function postBill(db: DbOrTx, bill: BillRow, today: string, notBefore?: string) 
  * month it hasn't posted yet. Each bill is its own transaction, so one bad bill can't block the
  * rest. Returns the households that got new transactions.
  */
-export function postScheduledBills(db: Db, today: string) {
-  const changed = new Set<number>();
+export function postScheduledBills(db: Db, today: string, log?: Logger) {
+  const posted = new Map<number, { payments: number; bills: number }>();
   const thisMonth = monthOf(today);
   for (const bill of db.select().from(scheduledBills).where(eq(scheduledBills.paused, false)).all()) {
     if (bill.postedThrough !== null && bill.postedThrough >= thisMonth) continue;
     try {
       const created = db.transaction((tx) => postBill(tx, bill, today));
-      if (created) changed.add(bill.householdId);
+      if (!created) continue;
+      const n = posted.get(bill.householdId) ?? { payments: 0, bills: 0 };
+      posted.set(bill.householdId, { payments: n.payments + created, bills: n.bills + 1 });
     } catch (err) {
-      console.error(`Couldn't post recurring bill ${bill.id}:`, err);
+      const message = `Couldn't post recurring bill #${bill.id}: ${err instanceof Error ? err.message : String(err)}`;
+      if (log) log.error("bills", message, { householdId: bill.householdId, details: errorDetails(err) });
+      else console.error(message);
     }
   }
-  return changed;
+  for (const [householdId, n] of posted) {
+    const plural = (k: number, word: string) => `${k} ${word}${k === 1 ? "" : "s"}`;
+    log?.info("bills", `Posted ${plural(n.payments, "payment")} for ${plural(n.bills, "recurring bill")}`, {
+      householdId,
+    });
+  }
+  return new Set(posted.keys());
 }

@@ -2,6 +2,7 @@ import type { PriceRefreshResult, SecurityLookup, SecurityType } from "@fd/share
 import { eq, sql } from "drizzle-orm";
 import type { DbOrTx } from "../db";
 import { prices, securities } from "../db/schema";
+import type { Logger } from "./log";
 
 export interface PriceQuote {
   date: string;
@@ -124,23 +125,27 @@ const addDays = (date: string, n: number) => {
  * A symbol the provider has never heard of, and has never given a price for (a private company's
  * stock, say), is switched to manual prices so it stops failing every refresh. One that has had
  * prices before stays automatic, so a passing provider glitch can't quietly stop its updates.
+ *
+ * With a logger, each failure is logged as a warning and the run as a summary.
  */
 export async function refreshPrices(
   db: DbOrTx,
   provider: PriceProvider,
   today: string,
   householdId?: number,
+  log?: Logger,
 ): Promise<PriceRefreshResult> {
   // Plain SQL: drizzle drops table qualifiers in single-table selects, which would make the
   // correlated subqueries compare against the wrong table's id.
   const list = db.all<{
     id: number;
+    householdId: number;
     symbol: string;
     lastPrice: string | null;
     firstTxn: string | null;
     everFetched: number;
   }>(sql`
-    select s.id as id, s.symbol as symbol,
+    select s.id as id, s.household_id as householdId, s.symbol as symbol,
            (select max(p.date) from prices p where p.security_id = s.id) as lastPrice,
            exists (select 1 from prices p where p.security_id = s.id and p.source = ${provider.name}) as everFetched,
            (select min(t.date) from investment_txns t where t.security_id = s.id) as firstTxn
@@ -178,7 +183,12 @@ export async function refreshPrices(
         message += ". Switched it to manual prices";
       }
       result.errors.push({ symbol: s.symbol, message });
+      log?.warn("prices", `${s.symbol}: ${message}`, { householdId: s.householdId });
     }
+  }
+  if (log && (result.updated || result.errors.length)) {
+    const failed = result.errors.length ? `, ${result.errors.length} failed` : "";
+    log.info("prices", `Price refresh: ${result.updated} new prices${failed}`, { householdId: householdId ?? null });
   }
   return result;
 }

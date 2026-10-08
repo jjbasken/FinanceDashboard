@@ -15,6 +15,7 @@ const InvestmentsPage = lazy(() => import("./pages/InvestmentsPage").then((m) =>
 const ReportsPage = lazy(() => import("./pages/ReportsPage").then((m) => ({ default: m.ReportsPage })));
 const ImportPage = lazy(() => import("./pages/ImportPage").then((m) => ({ default: m.ImportPage })));
 const PayeesPage = lazy(() => import("./pages/PayeesPage").then((m) => ({ default: m.PayeesPage })));
+const AdminPage = lazy(() => import("./pages/AdminPage").then((m) => ({ default: m.AdminPage })));
 const BillsPage = lazy(() => import("./pages/BillsPage").then((m) => ({ default: m.BillsPage })));
 const SettingsPage = lazy(() => import("./pages/SettingsPage").then((m) => ({ default: m.SettingsPage })));
 
@@ -61,6 +62,7 @@ export function App() {
         <Route path="/import" element={onDemand(<ImportPage />)} />
         <Route path="/payees" element={onDemand(<PayeesPage />)} />
         <Route path="/bills" element={onDemand(<BillsPage />)} />
+        <Route path="/admin" element={onDemand(<AdminPage />)} />
         <Route path="/settings" element={onDemand(<SettingsPage />)} />
         <Route path="*" element={<Navigate to="/budget" replace />} />
       </Route>

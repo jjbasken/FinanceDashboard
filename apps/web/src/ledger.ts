@@ -1,5 +1,10 @@
 import type {
   Account,
+  AuditEntry,
+  AuditFilters,
+  LogEntry,
+  LogFilters,
+  Page,
   AccountFolder,
   BudgetMonth,
   CategoryGroup,
@@ -12,7 +17,7 @@ import type {
   Transaction,
   ValuePoint,
 } from "@fd/shared";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 
 export const ledgerKeys = {
@@ -42,6 +47,27 @@ export const useMembers = () =>
 
 export const useScheduledBills = () =>
   useQuery({ queryKey: ledgerKeys.scheduledBills, queryFn: () => api.get<ScheduledBill[]>("/scheduled-bills") });
+
+/** Query-string form of report filters, leaving out blanks. */
+function queryString(filters: Record<string, string | number | undefined>) {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(filters)) if (v !== undefined && v !== "") params.set(k, String(v));
+  return params.toString();
+}
+
+/** One report (the owner's Activity or Logs), a page at a time, newest first. */
+function useReport<T>(path: string, filters: AuditFilters | LogFilters) {
+  return useInfiniteQuery({
+    queryKey: ["admin", path, filters],
+    queryFn: ({ pageParam }) =>
+      api.get<Page<T>>(`/admin/${path}?${queryString({ ...(filters as Record<string, string | number>), before: pageParam })}`),
+    initialPageParam: undefined as number | undefined,
+    getNextPageParam: (last) => last.next ?? undefined,
+  });
+}
+
+export const useAuditLog = (filters: AuditFilters) => useReport<AuditEntry>("audit", filters);
+export const useAppLogs = (filters: LogFilters) => useReport<LogEntry>("logs", filters);
 
 export const useRegister = (accountId: number) =>
   useQuery({

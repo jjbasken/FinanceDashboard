@@ -128,6 +128,20 @@ export function SettingsPage() {
             </Link>
           </div>
         </section>
+        {isOwner && (
+          <section className="card">
+            <h2>Activity & logs</h2>
+            <p className="muted">
+              Who added, changed or deleted what, and what the server has been doing: sign-ins, price updates,
+              recurring bills, backups and errors. Only you can see this.
+            </p>
+            <div>
+              <Link className="btn" to="/admin">
+                Open activity & logs
+              </Link>
+            </div>
+          </section>
+        )}
         <BackupCard isOwner={isOwner} />
         <CategoriesCard />
       </div>
