@@ -1,3 +1,4 @@
+import { MAX_IMPORT_RECORDS, MAX_IMPORT_CELLS } from "../limits";
 import { parseCents, type CsvDateFormat, type CsvMapping } from "@fd/shared";
 
 export interface BankTxn {
@@ -41,6 +42,7 @@ function ofxDate(raw: string) {
 
 export function parseOfx(text: string): BankTxn[] {
   const blocks = text.split(/<STMTTRN>/i).slice(1);
+  if (blocks.length > MAX_IMPORT_RECORDS) throw new BankFileError("That statement has too many transactions. Split it into smaller files.");
   if (blocks.length === 0 && !/<BANKTRANLIST>|<STMTRS>|<CCSTMTRS>/i.test(text)) {
     throw new BankFileError("This OFX file has no transactions in it.");
   }
@@ -66,6 +68,10 @@ export function parseOfx(text: string): BankTxn[] {
   return out;
 }
 
+export function csvWidth(rows: string[][]) {
+  return rows.reduce((max, row) => Math.max(max, row.length), 0);
+}
+
 /** RFC 4180-style CSV with quoted fields, auto-detecting comma, semicolon or tab. */
 export function parseCsv(text: string): string[][] {
   const body = text.replace(/^﻿/, "");
@@ -77,6 +83,19 @@ export function parseCsv(text: string): string[][] {
   let row: string[] = [];
   let field = "";
   let quoted = false;
+  let cells = 0;
+  const addField = () => {
+    if (++cells > MAX_IMPORT_CELLS) throw new BankFileError("That CSV has too many cells. Split it into smaller files.");
+    row.push(field.trim());
+    field = "";
+  };
+  const addRow = () => {
+    if (row.some((f) => f !== "")) {
+      if (rows.length >= MAX_IMPORT_RECORDS) throw new BankFileError("That CSV has too many rows. Split it into smaller files.");
+      rows.push(row);
+    }
+    row = [];
+  };
   for (let i = 0; i < body.length; i++) {
     const ch = body[i]!;
     if (quoted) {
@@ -87,18 +106,15 @@ export function parseCsv(text: string): string[][] {
       else field += ch;
     } else if (ch === '"' && field === "") quoted = true;
     else if (ch === delimiter) {
-      row.push(field.trim());
-      field = "";
+      addField();
     } else if (ch === "\n" || ch === "\r") {
       if (ch === "\r" && body[i + 1] === "\n") i++;
-      row.push(field.trim());
-      field = "";
-      if (row.some((f) => f !== "")) rows.push(row);
-      row = [];
+      addField();
+      addRow();
     } else field += ch;
   }
-  row.push(field.trim());
-  if (row.some((f) => f !== "")) rows.push(row);
+  addField();
+  addRow();
   return rows;
 }
 

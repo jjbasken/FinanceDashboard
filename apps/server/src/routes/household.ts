@@ -60,7 +60,7 @@ export const householdRoutes = new Hono<AppEnv>()
   .post("/users/:id/password", requireOwner, async (c) => {
     const member = memberOf(c);
     const { newPassword } = await parseBody(c, setPasswordInput);
-    const passwordHash = await Bun.password.hash(newPassword);
+    const passwordHash = await c.var.passwordWork.run(() => Bun.password.hash(newPassword));
     c.var.db.update(users).set({ passwordHash }).where(eq(users.id, member.id)).run();
     deleteUserSessions(c.var.db, member.id);
     return c.json({ ok: true });

@@ -1,3 +1,4 @@
+import { MAX_IMPORT_RECORDS, MAX_IMPORT_CELLS, MAX_IMPORT_XML_BYTES } from "../limits";
 import { gunzipSync } from "node:zlib";
 import { rationalToCents } from "@fd/shared";
 import {
@@ -22,7 +23,7 @@ import {
  */
 
 /** Uncompressed books bigger than this are refused, to protect the server's memory. */
-const MAX_XML_BYTES = 768 * 1024 * 1024;
+const MAX_XML_BYTES = MAX_IMPORT_XML_BYTES;
 
 interface Node {
   name: string;
@@ -64,6 +65,7 @@ function xmlText(bytes: Uint8Array) {
       );
     }
   }
+  if (raw.byteLength > MAX_XML_BYTES) throw new BookError("That book is too large to import. Split it into smaller files.");
   const xml = new TextDecoder().decode(raw);
   if (!xml.includes("<gnc-v2") && !xml.includes("<gnc:book")) {
     throw new BookError("That file isn't a GnuCash book.");
@@ -104,6 +106,8 @@ export function readGnucashXml(bytes: Uint8Array): GncBook {
     /<(\/?)([A-Za-z_][\w:.-]*)((?:\s[^>]*?)?)(\/?)>|<!\[CDATA\[([\s\S]*?)\]\]>|<!--[\s\S]*?-->|<\?[\s\S]*?\?>/g;
   const stack: Node[] = [];
   let templateDepth = 0;
+  let nodes = 0;
+  let records = 0;
   let last = 0;
   for (let m = tag.exec(xml); m; m = tag.exec(xml)) {
     if (stack.length && m.index > last) stack[stack.length - 1]!.text += decode(xml.slice(last, m.index));
@@ -122,6 +126,7 @@ export function readGnucashXml(bytes: Uint8Array): GncBook {
     if (closing) {
       const node = stack.pop();
       if (node && stack.length === 0) {
+        if (++records > MAX_IMPORT_RECORDS) throw new BookError("That book has too many records. Split it into smaller files.");
         if (node.name === "gnc:account") accountNodes.push(node);
         else if (node.name === "gnc:transaction") txNodes.push(node);
         else if (node.name === "price") priceNodes.push(node);
@@ -134,6 +139,7 @@ export function readGnucashXml(bytes: Uint8Array): GncBook {
     }
     if (templateDepth > 0) continue;
     if (stack.length === 0 && !RECORDS.has(name)) continue;
+    if (++nodes > MAX_IMPORT_CELLS || stack.length >= 128) throw new BookError("That book is too complex to import.");
     const node: Node = { name, text: "", children: [] };
     if (stack.length) stack[stack.length - 1]!.children.push(node);
     if (!selfClosing) stack.push(node);

@@ -114,6 +114,7 @@ export function InvestmentTxnDialog(props: {
   return (
     <Dialog
       title={t ? "Edit investment transaction" : "Add investment transaction"}
+      wide
       submitLabel={t ? "Save" : "Add"}
       onClose={props.onClose}
       onSubmit={submit}

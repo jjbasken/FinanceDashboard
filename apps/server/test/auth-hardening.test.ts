@@ -4,6 +4,42 @@ import { LoginRateLimiter } from "../src/auth/rate-limit";
 import { PasswordWorkLimiter } from "../src/auth/password-work";
 import { Client, owner, testApp } from "./helpers";
 
+test("password changes and owner resets obey the shared password work limit", async () => {
+  const { app } = testApp();
+  const c = new Client(app);
+  await c.post("/api/auth/setup", owner);
+  const token = (await c.post("/api/household/invites")).json.token;
+  await new Client(app).post("/api/auth/accept-invite", { ...owner, username: "partner", token });
+  const members = (await c.get("/api/household/users")).json;
+  const member = members.find((u: { username: string }) => u.username === "partner");
+  const run = spyOn(PasswordWorkLimiter.prototype, "run").mockImplementation(async () => {
+    throw new HTTPException(429, { message: "Too many password requests" });
+  });
+  const hash = spyOn(Bun.password, "hash");
+  const verify = spyOn(Bun.password, "verify");
+  try {
+    expect((await c.post("/api/auth/password", {
+      currentPassword: owner.password, newPassword: "another long password",
+    })).status).toBe(429);
+    expect((await c.post(`/api/household/users/${member.id}/password`, {
+      newPassword: "another long password",
+    })).status).toBe(429);
+    expect(hash).not.toHaveBeenCalled();
+    expect(verify).not.toHaveBeenCalled();
+  } finally {
+    run.mockRestore();
+    hash.mockRestore();
+    verify.mockRestore();
+  }
+});
+
+test("API responses disable caching, including authentication errors", async () => {
+  const { app } = testApp();
+  for (const path of ["/api/auth/status", "/api/accounts", "/api/missing"]) {
+    expect((await app.request(path)).headers.get("cache-control")).toBe("no-store");
+  }
+});
+
 test("closed setup and invalid, expired, or used invites do no password hashing", async () => {
   const { app, db } = testApp();
   const c = new Client(app);

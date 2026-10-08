@@ -1,6 +1,6 @@
 import { HTTPException } from "hono/http-exception";
 
-/** Bound password work across anonymous endpoints, even when clients rotate names or addresses. */
+/** Bound password work across all HTTP endpoints, even when clients rotate names or addresses. */
 export class PasswordWorkLimiter {
   private active = 0;
   private starts: number[] = [];
@@ -15,7 +15,7 @@ export class PasswordWorkLimiter {
     const now = Date.now();
     this.starts = this.starts.filter((time) => now - time < this.windowMs);
     if (this.active >= this.maxConcurrent || this.starts.length >= this.maxStarts) {
-      throw new HTTPException(429, { message: "Too many sign-in or registration requests. Try again in a minute." });
+      throw new HTTPException(429, { message: "Too many password requests. Try again in a minute." });
     }
     this.starts.push(now);
     this.active++;

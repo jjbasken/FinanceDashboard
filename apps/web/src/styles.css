@@ -460,8 +460,21 @@ select {
 }
 .field-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+.field-row > * {
+  min-width: 0;
+}
+.field-row input,
+.field-row select {
+  width: 100%;
+  min-width: 0;
+}
+@media (max-width: 540px) {
+  .dialog .field-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .field.inline {
   flex-direction: row;

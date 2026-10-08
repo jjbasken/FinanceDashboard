@@ -3,6 +3,9 @@
 data
 docker/data
 .git
+.env
+.env.*
+docker/secrets
 *.db
 *.db-*
 *.gnucash

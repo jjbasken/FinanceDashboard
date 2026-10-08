@@ -77,3 +77,15 @@ describe("downloading a backup", () => {
     expect((await new Client(app).get("/api/backup/download")).status).toBe(401);
   });
 });
+
+test("disabled nightly backups still list existing copies and allow manual downloads", async () => {
+  const dir = tempDir();
+  const { app, db } = testApp({ backupDir: dir, backupsEnabled: false });
+  const c = new Client(app);
+  await c.post("/api/auth/setup", owner);
+  runNightlyBackup(db, dir, "2026-10-05");
+  expect((await c.get("/api/backup/status")).json).toMatchObject({
+    enabled: false, count: 1, latest: { date: "2026-10-05" },
+  });
+  expect((await app.request("/api/backup/download", { headers: { cookie: c.cookie! } })).status).toBe(200);
+});
