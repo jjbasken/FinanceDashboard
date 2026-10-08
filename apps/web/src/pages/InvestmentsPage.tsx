@@ -80,7 +80,7 @@ export function InvestmentsPage() {
   }, [summary, colorOf]);
 
   const accountName = new Map((accounts.data ?? []).map((a) => [a.id, a.name]));
-  const secById = new Map((securities.data ?? []).map((s) => [s.id, s]));
+  const filtered = securities.data?.find((s) => s.id === filter);
   const investAccounts = (accounts.data ?? [])
     .filter((a) => !a.closed)
     .sort((a, b) => Number(b.type === "investment") - Number(a.type === "investment"));
@@ -190,11 +190,16 @@ export function InvestmentsPage() {
         {(txns.data?.length ?? 0) > 0 && (
           <section className="card wide">
             <div className="card-head">
-              <h2>Transactions{filter !== null && `: ${secById.get(filter)?.symbol ?? ""}`}</h2>
-              {filter !== null && (
-                <button className="link-button" onClick={() => setFilter(null)}>
-                  Show all
-                </button>
+              <h2>Transactions{filtered && `: ${filtered.symbol}`}</h2>
+              {filtered && (
+                <span className="row-actions-cell">
+                  <button className="link-button" onClick={() => setSecurityDialog(filtered)}>
+                    Edit {filtered.symbol}
+                  </button>
+                  <button className="link-button" onClick={() => setFilter(null)}>
+                    Show all
+                  </button>
+                </span>
               )}
             </div>
             <InvestmentTxnTable

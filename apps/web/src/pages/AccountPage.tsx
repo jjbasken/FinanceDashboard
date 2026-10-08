@@ -219,7 +219,8 @@ function AccountInvestments(props: { account: Account; accounts: Account[] }) {
   };
   const accountTxns = (txns.data ?? []).filter((t) => t.accountId === account.id);
   const shownTxns = accountTxns.filter((t) => filter === null || t.securityId === filter);
-  const filterSymbol = securities.data?.find((s) => s.id === filter)?.symbol;
+  const filtered = securities.data?.find((s) => s.id === filter);
+  const filterSymbol = filtered?.symbol;
   const investAccounts = props.accounts
     .filter((a) => !a.closed || a.id === account.id)
     .sort((a, b) => Number(b.type === "investment") - Number(a.type === "investment"));
@@ -256,10 +257,15 @@ function AccountInvestments(props: { account: Account; accounts: Account[] }) {
         <section className="card wide">
           <div className="card-head">
             <h2>Transactions{filterSymbol && `: ${filterSymbol}`}</h2>
-            {filter !== null && (
-              <button className="link-button" onClick={() => setFilter(null)}>
-                Show all
-              </button>
+            {filtered && (
+              <span className="row-actions-cell">
+                <button className="link-button" onClick={() => setSecurityDialog(filtered)}>
+                  Edit {filtered.symbol}
+                </button>
+                <button className="link-button" onClick={() => setFilter(null)}>
+                  Show all
+                </button>
+              </span>
             )}
           </div>
           <InvestmentTxnTable txns={shownTxns} securities={securities.data} onEdit={setEditing} />
