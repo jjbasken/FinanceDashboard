@@ -239,7 +239,7 @@ function useLookups(account: Account, accounts: Account[], payees: Payee[], grou
   }, [account, accounts, payees, groups]);
 }
 
-const createPayee = (text: string): Option<PayeeValue> => ({
+export const createPayee = (text: string): Option<PayeeValue> => ({
   key: "create",
   label: `Create payee “${text}”`,
   value: { id: null, name: text },

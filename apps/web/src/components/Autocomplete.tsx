@@ -120,6 +120,8 @@ export function Autocomplete<T>(props: {
         return;
       case "Escape":
         if (open) {
+          // preventDefault also stops a surrounding <dialog> from closing.
+          e.preventDefault();
           e.stopPropagation();
           setOpen(false);
           setTyped(false);
