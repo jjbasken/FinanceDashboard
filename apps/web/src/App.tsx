@@ -4,6 +4,7 @@ import { Navigate, Route, Routes } from "react-router";
 import { useAuthStatus } from "./auth";
 import { AppShell } from "./components/AppShell";
 import { AccountPage } from "./pages/AccountPage";
+import { AccountsPage } from "./pages/AccountsPage";
 import { BudgetPage } from "./pages/BudgetPage";
 import { AcceptInvitePage } from "./pages/AcceptInvitePage";
 import { LoginPage } from "./pages/LoginPage";
@@ -54,6 +55,7 @@ export function App() {
         <Route path="/budget" element={<BudgetPage />} />
         <Route path="/reports" element={onDemand(<ReportsPage />)} />
         <Route path="/investments" element={onDemand(<InvestmentsPage />)} />
+        <Route path="/accounts" element={<AccountsPage />} />
         <Route path="/accounts/:id" element={<AccountPage />} />
         <Route path="/import" element={onDemand(<ImportPage />)} />
         <Route path="/payees" element={onDemand(<PayeesPage />)} />

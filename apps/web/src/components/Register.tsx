@@ -1,249 +1,37 @@
-import {
-  centsToInput,
-  formatCents,
-  parseCents,
-  type Account,
-  type CategoryGroup,
-  type Payee,
-  type Transaction,
-} from "@fd/shared";
+import { formatCents, type Account, type CategoryGroup, type Payee, type Transaction } from "@fd/shared";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { type FocusEvent, type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router";
 import { api } from "../api";
-import { formatDate, today, useLedgerMutation, useMembers } from "../ledger";
-import { Autocomplete, type Option } from "./Autocomplete";
+import { formatDate, useLedgerMutation, useMembers } from "../ledger";
+import { Autocomplete } from "./Autocomplete";
+import {
+  amountOf,
+  blankDraft,
+  buildBody,
+  categoryText,
+  type CategoryValue,
+  choosesBudget,
+  createPayee,
+  deleteMessage,
+  type Draft,
+  draftFrom,
+  isBudgetTransfer,
+  isBudgetTransferTo,
+  type LinkedKind,
+  LinkedNotice,
+  linkedKind,
+  type Lookups,
+  matchesSearch,
+  newSplitLine,
+  payeeLabel,
+  remainingOf,
+  type SplitDraft,
+  startSplit,
+  transferLabel,
+  useLookups,
+} from "./registerModel";
 
 type Field = "date" | "payee" | "notes" | "category" | "payment" | "deposit";
-
-interface SplitDraft {
-  key: number;
-  categoryId: number | null;
-  /** Move this line to another account, e.g. a loan payment's principal. */
-  transferAccountId: number | null;
-  notes: string;
-  payment: string;
-  deposit: string;
-}
-
-interface Draft {
-  date: string;
-  payeeId: number | null;
-  payeeName: string;
-  notes: string;
-  categoryId: number | null;
-  split: boolean;
-  splits: SplitDraft[];
-  payment: string;
-  deposit: string;
-  cleared: boolean;
-  /** In a private account: count it in the family budget. */
-  inBudget: boolean;
-}
-
-type PayeeValue = { id: number | null; name: string };
-type CategoryValue = number | "split";
-
-let splitKey = 0;
-
-/** Unsigned cents for the payment/deposit columns, e.g. -1234 -> "12.34". */
-const plain = (cents: number) => centsToInput(Math.abs(cents));
-
-function amountFields(amount: number) {
-  if (amount < 0) return { payment: plain(amount), deposit: "" };
-  if (amount > 0) return { payment: "", deposit: plain(amount) };
-  return { payment: "", deposit: "" };
-}
-
-/** Deposit minus payment, or null if either field isn't a valid amount. */
-function amountOf(f: { payment: string; deposit: string }) {
-  const pay = f.payment.trim() ? parseCents(f.payment) : 0;
-  const dep = f.deposit.trim() ? parseCents(f.deposit) : 0;
-  if (pay === null || dep === null) return null;
-  return dep - pay;
-}
-
-function blankDraft(date = today()): Draft {
-  return {
-    date,
-    payeeId: null,
-    payeeName: "",
-    notes: "",
-    categoryId: null,
-    split: false,
-    splits: [],
-    payment: "",
-    deposit: "",
-    cleared: false,
-    inBudget: false,
-  };
-}
-
-function draftFrom(t: Transaction, payeeName: string): Draft {
-  return {
-    date: t.date,
-    payeeId: t.payeeId,
-    payeeName,
-    notes: t.notes,
-    categoryId: t.categoryId,
-    split: t.splits.length > 0,
-    splits: t.splits.map((s) => ({
-      key: ++splitKey,
-      categoryId: s.categoryId,
-      transferAccountId: s.transferAccountId,
-      notes: s.notes,
-      ...amountFields(s.amount),
-    })),
-    ...amountFields(t.amount),
-    cleared: t.cleared,
-    inBudget: t.inBudget,
-  };
-}
-
-type Built = { error: string } | { error: null; body: Record<string, unknown> };
-
-/** Validate a draft and turn it into an API body; with `original`, only the changed fields. */
-function buildBody(d: Draft, original?: Draft): Built {
-  if (!d.date) return { error: "Enter a date" };
-  const amount = amountOf(d);
-  if (amount === null) return { error: "Enter amounts as numbers, like 12.34" };
-
-  const splits = d.split
-    ? d.splits.map((s) => ({
-        amount: amountOf(s),
-        categoryId: s.categoryId,
-        transferAccountId: s.transferAccountId,
-        notes: s.notes.trim(),
-      }))
-    : [];
-  if (splits.some((s) => s.amount === null)) return { error: "Enter split amounts as numbers, like 12.34" };
-  if (d.split && splits.reduce((sum, s) => sum + s.amount!, 0) !== amount) {
-    return { error: "The splits must add up to the transaction amount" };
-  }
-
-  const payee =
-    d.payeeId != null
-      ? { payeeId: d.payeeId }
-      : d.payeeName.trim()
-        ? { payeeName: d.payeeName.trim() }
-        : { payeeId: null };
-  const full: Record<string, unknown> = {
-    date: d.date,
-    amount,
-    ...payee,
-    notes: d.notes.trim(),
-    categoryId: d.split ? null : d.categoryId,
-    cleared: d.cleared,
-    inBudget: d.inBudget,
-    splits,
-  };
-  if (!original) return { error: null, body: full };
-
-  const before = buildBody(original);
-  if (before.error !== null) return { error: null, body: full };
-  const body: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(full)) {
-    if (k === "payeeId" || k === "payeeName") continue;
-    if (JSON.stringify(v) !== JSON.stringify(before.body[k])) body[k] = v;
-  }
-  if (d.payeeId !== original.payeeId || (d.payeeId == null && d.payeeName.trim() !== original.payeeName.trim())) {
-    Object.assign(body, payee);
-  }
-  // Splits have to travel with the amount they add up to.
-  if (body.amount !== undefined && (d.split || original.split)) body.splits = splits;
-  if (body.splits !== undefined) body.amount = amount;
-  return { error: null, body };
-}
-
-interface Lookups {
-  account: Account;
-  accounts: Account[];
-  payeeById: Map<number, Payee>;
-  payeeOptions: Option<PayeeValue>[];
-  categoryName: Map<number, string>;
-  categoryOptions: Option<CategoryValue>[];
-  splitCategoryOptions: Option<CategoryValue>[];
-  /** Accounts a split line can transfer to. */
-  transferOptions: Option<number>[];
-}
-
-function payeeLabel(p: Payee | undefined) {
-  if (!p) return "";
-  return p.transferAccountId ? `Transfer: ${p.name}` : p.name;
-}
-
-/** A private account whose transactions can be counted in the family budget one by one. */
-const choosesBudget = (account: Account) => account.private && account.onBudget;
-
-/** Transfers between two on-budget accounts don't take a category. */
-function isBudgetTransfer(l: Lookups, payeeId: number | null) {
-  return isBudgetTransferTo(l, payeeId != null ? l.payeeById.get(payeeId)?.transferAccountId : null);
-}
-
-function isBudgetTransferTo(l: Lookups, accountId: number | null | undefined) {
-  if (!accountId) return false;
-  return l.account.onBudget && !!l.accounts.find((a) => a.id === accountId)?.onBudget;
-}
-
-function transferLabel(l: Lookups, accountId: number | null) {
-  if (accountId == null) return "";
-  return `Transfer: ${l.accounts.find((a) => a.id === accountId)?.name ?? ""}`;
-}
-
-function useLookups(account: Account, accounts: Account[], payees: Payee[], groups: CategoryGroup[]): Lookups {
-  return useMemo(() => {
-    const payeeById = new Map(payees.map((p) => [p.id, p]));
-    const open = new Set(accounts.filter((a) => !a.closed).map((a) => a.id));
-    const regular = payees.filter((p) => !p.transferAccountId);
-    const transfers = payees.filter(
-      (p) => p.transferAccountId && p.transferAccountId !== account.id && open.has(p.transferAccountId),
-    );
-    const payeeOptions: Option<PayeeValue>[] = [
-      ...regular.map((p) => ({ key: `p${p.id}`, label: p.name, value: { id: p.id, name: p.name }, group: "Payees" })),
-      ...transfers.map((p) => ({
-        key: `p${p.id}`,
-        label: payeeLabel(p),
-        value: { id: p.id, name: p.name },
-        group: "Transfer to/from",
-      })),
-    ];
-
-    const categoryName = new Map<number, string>();
-    const splitCategoryOptions: Option<CategoryValue>[] = [];
-    for (const g of groups) {
-      for (const c of g.categories) {
-        categoryName.set(c.id, c.name);
-        if (!g.hidden && !c.hidden)
-          splitCategoryOptions.push({ key: `c${c.id}`, label: c.name, value: c.id, group: g.name });
-      }
-    }
-    const categoryOptions: Option<CategoryValue>[] = [
-      { key: "split", label: "Split transaction", value: "split" },
-      ...splitCategoryOptions,
-    ];
-    const transferOptions: Option<number>[] = transfers.map((p) => ({
-      key: `a${p.transferAccountId}`,
-      label: payeeLabel(p),
-      value: p.transferAccountId!,
-    }));
-    return {
-      account,
-      accounts,
-      payeeById,
-      payeeOptions,
-      categoryName,
-      categoryOptions,
-      splitCategoryOptions,
-      transferOptions,
-    };
-  }, [account, accounts, payees, groups]);
-}
-
-export const createPayee = (text: string): Option<PayeeValue> => ({
-  key: "create",
-  label: `Create payee “${text}”`,
-  value: { id: null, name: text },
-});
 
 function EditRow(props: {
   draft: Draft;
@@ -288,28 +76,11 @@ function EditRow(props: {
   }
 
   const transfer = isBudgetTransfer(l, d.payeeId);
-  const amount = amountOf(d);
-  const remaining = d.split && amount !== null ? amount - d.splits.reduce((sum, s) => sum + (amountOf(s) ?? 0), 0) : 0;
+  const remaining = remainingOf(d);
 
   function chooseCategory(value: CategoryValue) {
     if (value !== "split") return set({ categoryId: value, split: false, splits: [] });
-    if (d.split) return;
-    const first: SplitDraft = {
-      key: ++splitKey,
-      categoryId: d.categoryId,
-      transferAccountId: null,
-      notes: "",
-      payment: d.payment,
-      deposit: d.deposit,
-    };
-    set({
-      split: true,
-      categoryId: null,
-      splits: [
-        first,
-        { key: ++splitKey, categoryId: null, transferAccountId: null, notes: "", payment: "", deposit: "" },
-      ],
-    });
+    if (!d.split) set(startSplit(d));
   }
 
   function setSplit(key: number, patch: Partial<SplitDraft>) {
@@ -317,8 +88,7 @@ function EditRow(props: {
   }
 
   function addSplit() {
-    const rest = amountFields(remaining);
-    set({ splits: [...d.splits, { key: ++splitKey, categoryId: null, transferAccountId: null, notes: "", ...rest }] });
+    set({ splits: [...d.splits, newSplitLine(d)] });
   }
 
   const register = (f: Field) => (el: HTMLInputElement | null) => {
@@ -559,13 +329,15 @@ function DisplayRow(props: {
 }) {
   const { t, lookups: l } = props;
   const payee = t.payeeId != null ? l.payeeById.get(t.payeeId) : undefined;
-  let category: ReactNode;
-  if (t.splits.length) category = <span className="muted">Split ({t.splits.length})</span>;
-  else if (isBudgetTransfer(l, t.payeeId) || (t.otherSidePrivate && t.categoryId == null)) {
-    category = <span className="muted">Transfer</span>;
-  }
-  else if (t.categoryId != null) category = l.categoryName.get(t.categoryId);
-  else category = <span className="uncategorized">Uncategorized</span>;
+  const text = categoryText(l, t);
+  const category: ReactNode =
+    text === null ? (
+      <span className="uncategorized">Uncategorized</span>
+    ) : t.splits.length || text === "Transfer" ? (
+      <span className="muted">{text}</span>
+    ) : (
+      text
+    );
 
   const cell = (field: Field, content: ReactNode, className = "cell") => (
     <div className={className} onClick={() => props.onEdit(field)}>
@@ -681,7 +453,7 @@ export function Register(props: {
   const [editError, setEditError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   /** Why the row the user tried to edit has to be edited somewhere else. */
-  const [linkedNotice, setLinkedNotice] = useState<"investment" | "split" | "private" | null>(null);
+  const [linkedNotice, setLinkedNotice] = useState<LinkedKind | null>(null);
 
   // Reset the entry row when switching accounts.
   useEffect(() => {
@@ -701,23 +473,7 @@ export function Register(props: {
   const rows = useMemo(() => {
     const q = props.search.trim().toLowerCase();
     if (!q) return transactions;
-    return transactions.filter((t) => {
-      const payee = payeeLabel(t.payeeId != null ? lookups.payeeById.get(t.payeeId) : undefined);
-      const ids = t.splits.length ? t.splits.map((s) => s.categoryId) : [t.categoryId];
-      const needsCategory = showCategory && !isBudgetTransfer(lookups, t.payeeId) && !t.otherSidePrivate;
-      const cats = ids
-        .map((id) => (id != null ? (lookups.categoryName.get(id) ?? "") : needsCategory ? "uncategorized" : ""))
-        .join(" ");
-      const text = [
-        payee,
-        t.notes,
-        ...t.splits.map((s) => `${transferLabel(lookups, s.transferAccountId)} ${s.notes}`),
-        cats,
-        plain(t.amount),
-        formatDate(t.date),
-      ];
-      return text.join(" ").toLowerCase().includes(q);
-    });
+    return transactions.filter((t) => matchesSearch(lookups, t, q, showCategory));
   }, [transactions, props.search, lookups, showCategory]);
 
   const whoById = useMemo(() => new Map((members.data ?? []).map((m) => [m.id, m.displayName])), [members.data]);
@@ -788,9 +544,10 @@ export function Register(props: {
   function startEdit(t: Transaction, field: Field) {
     if (editing?.id === t.id) return;
     if (editing && !saveEdit()) return;
-    if (t.investmentTxnId || t.fromSplit || t.otherSidePrivate) {
+    const linked = linkedKind(t);
+    if (linked) {
       setEditing(null);
-      setLinkedNotice(t.investmentTxnId ? "investment" : t.fromSplit ? "split" : "private");
+      setLinkedNotice(linked);
       return;
     }
     if (t.reconciled && !confirm("This transaction is reconciled. Edit it anyway?")) return;
@@ -805,8 +562,7 @@ export function Register(props: {
   function deleteEditing() {
     if (!editing) return;
     const t = transactions.find((x) => x.id === editing.id);
-    const msg = t?.transferId ? "Delete this transfer? Both sides will be removed." : "Delete this transaction?";
-    if (!confirm(msg)) return;
+    if (!confirm(deleteMessage(t))) return;
     remove.mutate(editing.id, onSaveError);
     setEditing(null);
   }
@@ -860,23 +616,7 @@ export function Register(props: {
           Couldn't save: {saveError}
         </p>
       )}
-      {linkedNotice && (
-        <p className="notice register-notice" role="status">
-          {linkedNotice === "investment" ? (
-            <>
-              That row is the cash side of an investment transaction. Edit it on the{" "}
-              <Link to="/investments">Investments page</Link>.
-            </>
-          ) : linkedNotice === "split" ? (
-            "That row is one line of a split transaction in the account it came from. Edit it there."
-          ) : (
-            "That row is a transfer with another member's private account, so only they can change it. You can still mark it cleared."
-          )}{" "}
-          <button className="link-button" onClick={() => setLinkedNotice(null)}>
-            Dismiss
-          </button>
-        </p>
-      )}
+      {linkedNotice && <LinkedNotice kind={linkedNotice} onDismiss={() => setLinkedNotice(null)} />}
 
       <div className="register-scroll" ref={scrollRef}>
         {rows.length === 0 ? (

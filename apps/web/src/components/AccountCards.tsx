@@ -2,7 +2,7 @@ import { CURRENCIES, type HouseholdMember } from "@fd/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { api } from "../api";
-import { authKey, useAuthStatus } from "../auth";
+import { authKey, useAuthMutation, useAuthStatus } from "../auth";
 import { ledgerKeys } from "../ledger";
 import { Dialog } from "./Dialog";
 
@@ -22,6 +22,7 @@ export function YourAccountCard() {
     },
   });
   const others = useMutation({ mutationFn: () => api.post<{ signedOut: number }>("/auth/sign-out-others") });
+  const logout = useAuthMutation<void>("/auth/logout");
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -86,6 +87,10 @@ export function YourAccountCard() {
           </span>
         )}
         {others.error && <span className="error-text">{others.error.message}</span>}
+        <span className="spacer" />
+        <button className="btn" onClick={() => logout.mutate()} disabled={logout.isPending}>
+          Sign out
+        </button>
       </div>
     </section>
   );

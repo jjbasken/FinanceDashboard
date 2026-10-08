@@ -10,6 +10,15 @@ const nav = [
   { to: "/investments", label: "Investments" },
 ];
 
+/** Phone tabs. Icons are 24×24 outline paths drawn with currentColor. */
+const tabs = [
+  { to: "/budget", label: "Budget", icon: "M4 6h16M4 12h16M4 18h10" },
+  { to: "/accounts", label: "Accounts", icon: "M3 7h18v12H3zM3 11h18M7 15h4" },
+  { to: "/reports", label: "Reports", icon: "M5 20V10M12 20V4M19 20v-7" },
+  { to: "/investments", label: "Investments", icon: "M4 17l5-6 4 3 7-8M14 6h6v6" },
+  { to: "/settings", label: "More", icon: "M5 12h.01M12 12h.01M19 12h.01" },
+];
+
 const WIDTH_KEY = "fd.sidebarWidth";
 const MIN_WIDTH = 180;
 const MAX_WIDTH = 520;
@@ -76,12 +85,18 @@ export function AppShell() {
   const logout = useAuthMutation<void>("/auth/logout");
   const sidebar = useSidebarWidth();
 
+  const householdName = status?.household?.name ?? "Family Finance";
+
   return (
     <div className="shell">
+      <header className="topbar">
+        <img src="/favicon.svg" alt="" width={22} height={22} />
+        <span className="truncate">{householdName}</span>
+      </header>
       <aside className="sidebar" style={{ "--sidebar-width": `${sidebar.width}px` } as CSSProperties}>
         <div className="sidebar-brand">
           <img src="/favicon.svg" alt="" width={22} height={22} />
-          <span>{status?.household?.name ?? "Family Finance"}</span>
+          <span>{householdName}</span>
         </div>
 
         <nav className="sidebar-nav">
@@ -121,6 +136,23 @@ export function AppShell() {
       <main className="main">
         <Outlet />
       </main>
+      <nav className="tabbar" aria-label="Sections">
+        {tabs.map((t) => (
+          <NavLink key={t.to} to={t.to}>
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden>
+              <path
+                d={t.icon}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={t.label === "More" ? 3.2 : 1.8}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span>{t.label}</span>
+          </NavLink>
+        ))}
+      </nav>
     </div>
   );
 }

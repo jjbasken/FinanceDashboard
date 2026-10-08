@@ -4,7 +4,7 @@ import { api } from "../api";
 import { thisMonth, today, useAccounts, useCategories, useLedgerMutation, usePayees } from "../ledger";
 import { Autocomplete, type Option } from "./Autocomplete";
 import { Dialog } from "./Dialog";
-import { createPayee } from "./Register";
+import { createPayee } from "./registerModel";
 
 const LAST_ACCOUNT_KEY = "fd.budget.lastAccount";
 

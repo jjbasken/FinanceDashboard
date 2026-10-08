@@ -145,6 +145,21 @@ Investments live in **Investment** accounts. An account's register holds its cas
 - **Live updates:** when one of you changes something, the other's open window refreshes on its own.
 - **Backups:** each night the server saves a copy of the database to `backups/` in the data folder and keeps the newest 14. The household owner can also download a fresh copy from **Settings → Backups**. To restore, stop the app, delete `finance.db-wal` and `finance.db-shm` if they exist, and replace `finance.db` with the backup file.
 
+## On your phone
+
+On a phone the app switches to a phone layout. Tabs along the bottom lead to **Budget**, **Accounts**, **Reports**, **Investments** and **More** (settings, imports, payees and sign out). An account's register lists one transaction per row: tap a row to edit it, or tap **+** to add one. On the Budget page, tap a category or group name for its actions, such as Add transaction, Months or Rename.
+
+### Install it as an app
+
+The app can be installed to your home screen and opens full screen like a native app. Installing needs HTTPS, so open it at your Cloudflare Tunnel hostname (see [Remote access with Cloudflare Tunnel](#remote-access-with-cloudflare-tunnel)), not the plain `http://` LAN address.
+
+- **Android (Chrome):** open the site, sign in, then use the menu → **Install app** (or **Add to Home screen**).
+- **iPhone (Safari):** open the site, tap **Share** → **Add to Home Screen**. An installed iPhone app keeps its own sign-in, so you sign in once more inside it.
+
+The installed app always loads your data from the server; nothing financial is stored on the phone. Without a connection it shows "Can't reach the server" until you're back online. After an update, the app picks up the new version the next time it's opened.
+
+If you use Cloudflare Access and the install option doesn't appear, add an Access **Bypass** policy for the paths `/manifest.webmanifest` and `/icons/*`. They contain only the app's name and icons, and some browsers fetch them without your Access sign-in.
+
 ## Production (Docker)
 
 `docker/docker-compose.yml` runs the app behind a [Cloudflare Tunnel](https://developers.cloudflare.com/tunnel/get-started/), so you can reach it from anywhere without opening ports on your router. Setup is described under [Remote access with Cloudflare Tunnel](#remote-access-with-cloudflare-tunnel).
