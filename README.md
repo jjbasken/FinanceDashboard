@@ -142,16 +142,18 @@ Investments live in **Investment** accounts. An account's register holds its cas
 
 ## Production (Docker)
 
+`docker/docker-compose.yml` runs the app behind a [Cloudflare Tunnel](https://developers.cloudflare.com/tunnel/get-started/), so you can reach it from anywhere without opening ports on your router. Setup is described under [Remote access with Cloudflare Tunnel](#remote-access-with-cloudflare-tunnel).
+
 ```sh
 cd docker
 docker compose up -d --build
 ```
 
-The app runs at http://localhost:8080. Its SQLite database is stored in `docker/data/`, and nightly backups go to `docker/data/backups/`. The container makes sure the app's user (uid 1000) owns that folder on start-up, then runs the app as that user, not as root. Copy that folder somewhere else (another disk, or cloud storage) to keep your data safe if this machine fails.
+The app's SQLite database is stored in `docker/data/`, and nightly backups go to `docker/data/backups/`. The container makes sure the app's user (uid 1000) owns that folder on start-up, then runs the app as that user, not as root. Copy that folder somewhere else (another disk, or cloud storage) to keep your data safe if this machine fails.
 
 ### Configuration
 
-All settings are optional. To change any of them, copy `.env.example` to `.env` at the repo root; it lists every option and explains each one. Both the dev scripts and `docker compose` read that file.
+All settings are optional. To change any of them, copy `.env.example` to `.env` at the repo root; it lists every option and explains each one. Both the dev scripts and `docker compose` read that file. The Docker setup always uses `PORT=8080`, `DATA_DIR=/data`, `COOKIE_SECURE=true` and `TRUST_PROXY=false`, whatever `.env` says.
 
 | Variable                  | Default (dev / Docker)       | Purpose                                              |
 | ------------------------- | ---------------------------- | ---------------------------------------------------- |
@@ -184,34 +186,32 @@ There are no signing secrets to configure, `JWT_SECRET` included. Sessions use r
 - Changing a password, an owner reset and removing a member all end the affected sessions straight away.
 - Everyone in the household sees and can change everything except other members' private accounts. Only the owner can create invite links and download backups.
 
-**To reach the app from outside your home network,** put it behind a reverse proxy that handles HTTPS, such as Caddy or Traefik, and set `COOKIE_SECURE=true`. Finish first-run setup (or use the `SEED_*` variables) before exposing it: until an owner exists, anyone who can reach the app can create one.
+**To reach the app from outside your home network,** use the Docker setup's Cloudflare Tunnel (below), or put it behind a reverse proxy that handles HTTPS, such as Caddy or Traefik, and set `COOKIE_SECURE=true`. Finish first-run setup (or use the `SEED_*` variables) before exposing it: until an owner exists, anyone who can reach the app can create one.
 
 ### Remote access with Cloudflare Tunnel
 
-Use the standalone `docker/docker-compose.tunnel.yml` configuration for a remotely managed Cloudflare Tunnel. It uses the same `docker/data/` database as the normal deployment, enables secure cookies, and binds the host port to localhost. Use the HTTPS hostname even when at home; signing in through a plain HTTP LAN address will not work with secure cookies enabled.
+The compose file starts two containers: the app, and Cloudflare's connector (`cloudflared`), which starts once the app is healthy. The app's port is published only on the server itself (http://localhost:8080), secure cookies are on, and forwarded headers are ignored. Use the HTTPS hostname from every other device, even at home.
 
-1. Finish setup locally using the normal Docker deployment, or configure all required `SEED_*` settings in the root `.env` before starting. Use a long, unique owner password.
+1. **Create the owner first.** Either set all the required `SEED_*` settings in the root `.env`, or start just the app with `docker compose up -d --build finance` and finish setup at http://localhost:8080 in a browser on the server (or through an SSH port forward). Use a long, unique owner password.
 2. In Cloudflare, create a remotely managed tunnel and a published application route for your hostname (for example `finance.example.com`). Set the service type to **HTTP** and its URL to **`finance:8080`** (`http://finance:8080` as a full URL). Here `finance` is the Docker service name; `localhost` would refer to the connector container.
 3. Create a Cloudflare Access self-hosted application for that exact hostname, with an Allow policy restricted to your household's email addresses or identity provider. Complete this before starting the tunnel. Keep the app's own household login as well.
 4. From the `docker/` directory, create `secrets/` and save **only the tunnel token** into `secrets/cloudflare-tunnel-token`. This file is ignored by Git and excluded from Docker builds. Docker Compose mounts it as a secret into the connector only. Ensure the container can read the file; keep the containing directory accessible only to your server administrator. Never paste the token into a committed file.
-5. Switch deployments from the `docker/` directory:
+5. Start everything from the `docker/` directory and check the connector:
 
    ```sh
-   docker compose down
-   docker compose -f docker-compose.tunnel.yml up -d --build
-   docker compose -f docker-compose.tunnel.yml logs --tail=50 cloudflared
+   docker compose up -d --build
+   docker compose logs --tail=50 cloudflared
    ```
 
-   Stopping the normal deployment preserves the database. Use the tunnel filename for subsequent `up`, `down`, `logs`, and `pull` commands.
 6. Open the HTTPS hostname from your phone with Wi-Fi disabled. Check the Access challenge, household login, a report, a small import, and live updates from a second browser. Do not forward router ports. Configure Cloudflare cache rules to bypass caching for this hostname; API responses also send `Cache-Control: no-store`.
 
-The connector token uses Cloudflare's [`--token-file` option](https://developers.cloudflare.com/tunnel/reference/run-parameters/). See the official [tunnel setup guide](https://developers.cloudflare.com/tunnel/get-started/) for account and hostname setup. The connector image follows `latest`; update it deliberately with `docker compose -f docker-compose.tunnel.yml pull cloudflared` followed by `up -d` (or pin a tested tag for controlled updates).
+The connector token uses Cloudflare's [`--token-file` option](https://developers.cloudflare.com/tunnel/reference/run-parameters/). The connector image follows `latest`; update it deliberately with `docker compose pull cloudflared` followed by `docker compose up -d` (or pin a tested tag for controlled updates).
 
-`TRUST_PROXY` is forced off in this configuration, so forwarded addresses cannot bypass rate limits through the localhost port. All visitors through the tunnel share the visitor rate limit. For a small household this is conservative, but repeated failed logins from one visitor can temporarily throttle others.
+All visitors through the tunnel share the visitor rate limit, since forwarded addresses are not trusted. For a small household this is conservative, but repeated failed logins from one visitor can temporarily throttle others.
 
-Cloudflare's upload limit depends on your plan and can be smaller than this app's 200 MiB limit. Large GnuCash imports may need to be done locally before switching to the tunnel. If Cloudflare Access expires while a page is open, refresh and authenticate again.
+Cloudflare's upload limit depends on your plan and can be smaller than this app's 200 MiB limit. For a large GnuCash import, use http://localhost:8080 on the server (or an SSH port forward) instead of the tunnel. If Cloudflare Access expires while a page is open, refresh and authenticate again.
 
-To return to LAN access, run `docker compose -f docker-compose.tunnel.yml down`, then `docker compose up -d`. Ensure the root `.env` does not enable `COOKIE_SECURE` when using plain HTTP. Both deployments retain the same database. Stopping the connector removes remote access; remove the published route in Cloudflare if it is no longer needed.
+To turn off remote access, run `docker compose stop cloudflared`; the app keeps running at http://localhost:8080 on the server. Remove the published route in Cloudflare if it is no longer needed.
 
 ### Import resource limits
 

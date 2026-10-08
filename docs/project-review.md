@@ -23,7 +23,7 @@ The investment transaction editor also uses the wider dialog, permits form colum
 
 ## Remote access added
 
-`docker/docker-compose.tunnel.yml` is a standalone alternative deployment using the existing database directory. It starts the official Cloudflare connector after the finance service is healthy, mounts its token as a secret, enables secure session cookies, and publishes the local port only on loopback. Forwarded headers stay untrusted, so tunnel visitors share the existing visitor rate limit. The README explains hostname routing to `http://finance:8080`, Cloudflare Access allow policies, setup order, token handling, remote verification, updates and returning to LAN access.
+`docker/docker-compose.yml` deploys the app behind a Cloudflare Tunnel. It starts the official Cloudflare connector after the finance service is healthy, mounts its token as a secret, enables secure session cookies, and publishes the local port only on loopback. Forwarded headers stay untrusted, so tunnel visitors share the existing visitor rate limit. The README explains hostname routing to `http://finance:8080`, Cloudflare Access allow policies, setup order, token handling, remote verification, updates and turning remote access off.
 
 The configuration is prepared, but no Cloudflare account, domain, policy or token was configured. Docker is unavailable in the review environment, so Compose runtime validation and an actual remote connection still need to be checked on the home server. Cloudflare's plan-dependent upload limits can also be below the app's own upload limit.
 
