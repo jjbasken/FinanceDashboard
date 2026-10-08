@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { formatDate, today, useLedgerMutation } from "../ledger";
 import {
+  BillAddedNotice,
   BillMark,
   categoryText,
   choosesBudget,
@@ -14,6 +15,8 @@ import {
   payeeLabel,
   useLookups,
 } from "./registerModel";
+import { BillDialog } from "./BillDialog";
+import { billPrefill } from "./billPrefill";
 import { TransactionEditor } from "./TransactionEditor";
 
 /** The register for phones: two-line rows, tap one to edit it in a dialog. */
@@ -33,6 +36,9 @@ export function MobileRegister(props: {
   const lookups = useLookups(account, props.accounts, props.payees, props.categories);
   const showCategory = account.onBudget;
   const [editing, setEditing] = useState<Transaction | null>(null);
+  /** The transaction a recurring bill is being made from. */
+  const [recurringFrom, setRecurringFrom] = useState<Transaction | null>(null);
+  const [billAdded, setBillAdded] = useState(false);
   const [linkedNotice, setLinkedNotice] = useState<LinkedKind | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const update = useLedgerMutation(({ id, body }: { id: number; body: unknown }) =>
@@ -80,6 +86,7 @@ export function MobileRegister(props: {
         </p>
       )}
       {linkedNotice && <LinkedNotice kind={linkedNotice} onDismiss={() => setLinkedNotice(null)} />}
+      {billAdded && <BillAddedNotice onDismiss={() => setBillAdded(false)} />}
       <div className="mobile-register-scroll" ref={scrollRef}>
         {rows.length === 0 ? (
           <div className="register-empty muted">
@@ -159,6 +166,19 @@ export function MobileRegister(props: {
           lookups={lookups}
           transaction={editing}
           onClose={() => setEditing(null)}
+          onMakeRecurring={(saved) => {
+            setEditing(null);
+            setBillAdded(false);
+            setRecurringFrom(saved);
+          }}
+        />
+      )}
+      {recurringFrom && (
+        <BillDialog
+          bill={null}
+          prefill={billPrefill(recurringFrom, today())}
+          onClose={() => setRecurringFrom(null)}
+          onSaved={() => setBillAdded(true)}
         />
       )}
     </div>
