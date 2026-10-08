@@ -2122,3 +2122,44 @@ select {
     display: none;
   }
 }
+
+/* Recurring bills: rows dated after today (added on the 1st) are dimmed, and bill rows get a ↻. */
+.register-row.future,
+.m-row.future {
+  opacity: 0.6;
+}
+.bill-mark {
+  margin-left: 6px;
+  color: var(--text-muted);
+}
+.bill-paused {
+  margin-left: 8px;
+}
+.bill-summary {
+  display: none;
+}
+.bill-dialog-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+@media (max-width: 720px) {
+  /* Phones: payee, amount and Edit, with the schedule on a second line; pause and delete are in the dialog. */
+  .bill-detail {
+    display: none;
+  }
+  .data-table td.bill-payee {
+    white-space: normal;
+  }
+  .bill-summary {
+    display: block;
+    margin-top: 2px;
+  }
+  .account-stats {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    row-gap: 8px;
+  }
+}

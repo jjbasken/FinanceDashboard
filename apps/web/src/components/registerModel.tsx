@@ -171,6 +171,15 @@ export function payeeLabel(p: Payee | undefined) {
   return p.transferAccountId ? `Transfer: ${p.name}` : p.name;
 }
 
+/** Marks a row that a recurring bill added. */
+export function BillMark() {
+  return (
+    <span className="bill-mark" title="From a recurring bill" aria-label="From a recurring bill">
+      ↻
+    </span>
+  );
+}
+
 /** A private account whose transactions can be counted in the family budget one by one. */
 export const choosesBudget = (account: Account) => account.private && account.onBudget;
 

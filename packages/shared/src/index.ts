@@ -7,3 +7,4 @@ export * from "./investments";
 export * from "./reports";
 export * from "./bank";
 export * from "./fund";
+export * from "./schedules";

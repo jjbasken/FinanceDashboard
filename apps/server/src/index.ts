@@ -8,6 +8,8 @@ import { purgeExpiredSessions } from "./auth/sessions";
 import { seedOwnerFromEnv } from "./seed";
 import { MAX_UPLOAD_BYTES } from "./routes/import";
 import { runNightlyBackup } from "./services/backup";
+import { EventHub } from "./services/events";
+import { postScheduledBills } from "./services/scheduled-bills";
 import { refreshPrices, yahooProvider } from "./services/prices";
 import { localDate } from "./util";
 
@@ -32,7 +34,22 @@ const priceProvider = yahooProvider();
 const backupDir = join(dataDir, "backups");
 const trustProxy = process.env.TRUST_PROXY === "true";
 const keepBackups = Number(process.env.BACKUP_KEEP ?? 14);
-const app = createApp({ db, secureCookies, priceProvider, backupDir, backupsEnabled: keepBackups > 0, trustProxy });
+const events = new EventHub();
+const app = createApp({ db, secureCookies, priceProvider, backupDir, backupsEnabled: keepBackups > 0, trustProxy, events });
+
+// Recurring bills: on the 1st (checked hourly, and at start-up in case the server was down), post
+// each bill's occurrences for the new month, then refresh the household's open sessions.
+const postBills = () => {
+  try {
+    for (const householdId of postScheduledBills(db, localDate())) {
+      events.publish(householdId, { type: "change", origin: null });
+    }
+  } catch (err) {
+    console.error("Posting recurring bills failed:", err);
+  }
+};
+postBills();
+setInterval(postBills, 60 * 60 * 1000);
 
 // Nightly backups: check hourly and make today's copy if it's missing, keeping the newest
 // BACKUP_KEEP (default 14). Set BACKUP_KEEP=0 to turn them off.

@@ -7,6 +7,7 @@ import { SidebarAccounts } from "./SidebarAccounts";
 const nav = [
   { to: "/budget", label: "Budget" },
   { to: "/reports", label: "Reports" },
+  { to: "/bills", label: "Bills" },
   { to: "/investments", label: "Investments" },
 ];
 

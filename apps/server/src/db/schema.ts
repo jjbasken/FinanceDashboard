@@ -1,4 +1,4 @@
-import { ACCOUNT_SECTIONS, ACCOUNT_TYPES, INVESTMENT_ACTIONS, SECURITY_TYPES } from "@fd/shared";
+import { ACCOUNT_SECTIONS, ACCOUNT_TYPES, BILL_FREQUENCIES, INVESTMENT_ACTIONS, SECURITY_TYPES } from "@fd/shared";
 import { sql } from "drizzle-orm";
 import { type AnySQLiteColumn, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
@@ -221,6 +221,10 @@ export const transactions = sqliteTable(
     transferId: integer("transfer_id").references((): AnySQLiteColumn => transactions.id, { onDelete: "set null" }),
     /** Stable id from an import source (e.g. a GnuCash GUID) so re-imports are idempotent. */
     importedId: text("imported_id"),
+    /** Set when a recurring bill posted this row. */
+    scheduledBillId: integer("scheduled_bill_id").references((): AnySQLiteColumn => scheduledBills.id, {
+      onDelete: "set null",
+    }),
     /** Set when an import created this row; undoing the import deletes it. */
     importBatchId: integer("import_batch_id").references((): AnySQLiteColumn => importBatches.id, {
       onDelete: "cascade",
@@ -238,6 +242,40 @@ export const transactions = sqliteTable(
     uniqueIndex("transactions_imported_id_unique").on(t.householdId, t.importedId),
     index("transactions_import_batch_idx").on(t.importBatchId),
   ],
+);
+
+/**
+ * A bill that repeats. On the 1st of each month (or as soon as it's added), every occurrence that
+ * falls in the month is posted to the account's register as an uncleared transaction.
+ */
+export const scheduledBills = sqliteTable(
+  "scheduled_bills",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    householdId: integer("household_id")
+      .notNull()
+      .references(() => households.id),
+    accountId: integer("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    /** Integer cents; negative is money leaving the account. */
+    amount: integer("amount").notNull(),
+    payeeId: integer("payee_id").references(() => payees.id, { onDelete: "set null" }),
+    categoryId: integer("category_id").references(() => categories.id, { onDelete: "set null" }),
+    notes: text("notes").notNull().default(""),
+    frequency: text("frequency", { enum: BILL_FREQUENCIES }).notNull(),
+    /** YYYY-MM-DD: the first due date, which also anchors the schedule. */
+    startDate: text("start_date").notNull(),
+    endDate: text("end_date"),
+    paused: flag("paused"),
+    /** The last month ("YYYY-MM") already posted, so posting never repeats a month. */
+    postedThrough: text("posted_through"),
+    createdBy: integer("created_by").references(() => users.id),
+    updatedBy: integer("updated_by").references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("scheduled_bills_household_idx").on(t.householdId)],
 );
 
 /** The amount assigned to an expense category in a month ("YYYY-MM"). Missing rows mean 0. */

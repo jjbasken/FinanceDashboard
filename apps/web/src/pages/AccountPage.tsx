@@ -28,6 +28,7 @@ import {
   usePayees,
   useRegister,
   useSecurities,
+  today,
 } from "../ledger";
 
 function Amount(props: { label: string; cents: number }) {
@@ -291,6 +292,10 @@ export function AccountPage() {
   const payees = usePayees();
   const categories = useCategories();
   const register = useRegister(id);
+  // Bills added on the 1st are dated later in the month; this is what the account holds today.
+  const now = today();
+  const upcoming = (register.data ?? []).filter((t) => t.date > now);
+  const upcomingTotal = upcoming.reduce((sum, t) => sum + t.amount, 0);
   const [search, setSearch] = useState("");
   const [reconciling, setReconciling] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -336,7 +341,8 @@ export function AccountPage() {
               <>
                 <Amount label="Cleared" cents={account.clearedBalance} />
                 <Amount label="Uncleared" cents={account.balance - account.clearedBalance} />
-                <Amount label="Balance" cents={account.balance} />
+                {upcoming.length > 0 && <Amount label="Today" cents={account.balance - upcomingTotal} />}
+                <Amount label={upcoming.length > 0 ? "After upcoming" : "Balance"} cents={account.balance} />
               </>
             )}
           </div>

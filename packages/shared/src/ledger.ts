@@ -300,6 +300,8 @@ export interface Transaction {
   investmentTxnId: number | null;
   /** Set when this row is the other side of one line of a split transaction; edit it there. */
   fromSplit: boolean;
+  /** Set when a recurring bill posted this row. */
+  scheduledBillId: number | null;
   /** Empty unless this is a split transaction. */
   splits: TransactionSplit[];
   /** Account balance after this transaction, in register order (date, then id). */

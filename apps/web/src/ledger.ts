@@ -7,6 +7,7 @@ import type {
   HouseholdMember,
   InvestmentTxn,
   Payee,
+  ScheduledBill,
   Security,
   Transaction,
   ValuePoint,
@@ -22,6 +23,7 @@ export const ledgerKeys = {
   members: ["household", "users"] as const,
   register: (accountId: number) => ["register", accountId] as const,
   budget: (month: string) => ["budget", month] as const,
+  scheduledBills: ["scheduled-bills"] as const,
 };
 
 export const useAccounts = () =>
@@ -37,6 +39,9 @@ export const usePayees = () => useQuery({ queryKey: ledgerKeys.payees, queryFn: 
 
 export const useMembers = () =>
   useQuery({ queryKey: ledgerKeys.members, queryFn: () => api.get<HouseholdMember[]>("/household/users") });
+
+export const useScheduledBills = () =>
+  useQuery({ queryKey: ledgerKeys.scheduledBills, queryFn: () => api.get<ScheduledBill[]>("/scheduled-bills") });
 
 export const useRegister = (accountId: number) =>
   useQuery({
@@ -59,6 +64,7 @@ export function useLedgerMutation<TInput, TResult = unknown>(fn: (input: TInput)
         qc.invalidateQueries({ queryKey: ["register"] }),
         qc.invalidateQueries({ queryKey: ledgerKeys.payees }),
         qc.invalidateQueries({ queryKey: ledgerKeys.categories }),
+        qc.invalidateQueries({ queryKey: ledgerKeys.scheduledBills }),
         qc.invalidateQueries({ queryKey: ["budget"] }),
         qc.invalidateQueries({ queryKey: ["investments"] }),
         qc.invalidateQueries({ queryKey: ["reports"] }),
