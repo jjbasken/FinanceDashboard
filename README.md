@@ -67,6 +67,16 @@ Each account's register is built for the keyboard:
 
 To tidy payee names, for example the ones bank statements bring in, use **Settings → Manage payees**. You can rename, merge several into one, delete, or delete all unused payees at once.
 
+## Recurring bills
+
+For bills that repeat (rent, utilities, daycare, insurance), go to **Bills** (on a phone: **More → Manage recurring bills**) and click **Add bill**. Pick the payee, amount, account and category, how often it repeats (every month, every week, every 2 weeks, or every year) and the first due date. The first due date sets the schedule: a monthly bill first due on the 15th comes back on the 15th, and one on the 31st falls on the last day of shorter months.
+
+- **On the 1st of each month**, every bill due that month is added to its account's register with its due date, not cleared yet, so the month's bills are in the register from the start. An every-2-weeks bill can come up two or three times in a month. A new bill adds the rest of the current month right away. If the server was off on the 1st, it catches up when it starts.
+- In the register, bill rows have a ↻, and rows dated after today are dimmed. The account header shows the balance **Today** next to the balance **After upcoming** bills.
+- **Changing a bill** only affects payments that haven't been added yet. Edit a payment that's already in the register there, for example when a utility bill's amount differs. **Deleting** a bill leaves its payments in the register. **Pause** stops it; when you resume it, the months it was paused for are skipped.
+- **Bank imports** link a statement row to a bill payment with the same amount within 3 days instead of adding it twice, and mark it cleared. If a bill's amount varies, fix the amount in the register first so the import can match it.
+- Choosing a "Transfer: …" payee (a credit card payment, say) makes each payment a transfer between the two accounts.
+
 ## Budgeting
 
 The budget is a plan for one month at a time. Each month stands on its own:

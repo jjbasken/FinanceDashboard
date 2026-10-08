@@ -111,6 +111,15 @@ export function SettingsPage() {
           </div>
         </section>
         <section className="card">
+          <h2>Recurring bills</h2>
+          <p className="muted">Bills that repeat are added to the register on the 1st of the month they're due.</p>
+          <div>
+            <Link className="btn" to="/bills">
+              Manage recurring bills
+            </Link>
+          </div>
+        </section>
+        <section className="card">
           <h2>Payees</h2>
           <p className="muted">Rename, merge or delete the payees on your transactions.</p>
           <div>

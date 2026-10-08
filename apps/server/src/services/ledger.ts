@@ -77,7 +77,7 @@ function getPayee(db: DbOrTx, householdId: number, id: number) {
   );
 }
 
-function assertCategory(db: DbOrTx, householdId: number, id: number | null | undefined) {
+export function assertCategory(db: DbOrTx, householdId: number, id: number | null | undefined) {
   if (id == null) return;
   found(
     db
@@ -358,6 +358,7 @@ export function listTransactions(db: DbOrTx, viewer: Actor, accountId: number): 
       inBudget: transactions.inBudget,
       isParent: transactions.isParent,
       transferId: transactions.transferId,
+      scheduledBillId: transactions.scheduledBillId,
       investmentTxnId: investmentTxns.id,
       fromSplit: sql<boolean>`${partner.parentId} is not null`.mapWith(Boolean),
       otherSidePrivate: sql<boolean>`coalesce(${partnerAccount.ownerId} is not null and ${partnerAccount.ownerId} != ${viewer.userId}, 0)`.mapWith(
@@ -410,7 +411,7 @@ export function getTransaction(db: DbOrTx, viewer: Actor, id: number): Transacti
   );
 }
 
-function resolvePayee(db: DbOrTx, householdId: number, input: { payeeId?: number | null; payeeName?: string }) {
+export function resolvePayee(db: DbOrTx, householdId: number, input: { payeeId?: number | null; payeeName?: string }) {
   if (input.payeeId != null) return getPayee(db, householdId, input.payeeId);
   if (input.payeeName) return findOrCreatePayee(db, householdId, input.payeeName);
   return null;

@@ -2,8 +2,9 @@ import { formatCents, type Account, type CategoryGroup, type Payee, type Transac
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
-import { formatDate, useLedgerMutation } from "../ledger";
+import { formatDate, today, useLedgerMutation } from "../ledger";
 import {
+  BillMark,
   categoryText,
   choosesBudget,
   type LinkedKind,
@@ -98,7 +99,7 @@ export function MobileRegister(props: {
                   className="register-virtual-row"
                   style={{ transform: `translateY(${v.start}px)` }}
                 >
-                  <div className="m-row">
+                  <div className={t.date > today() ? "m-row future" : "m-row"}>
                     <button
                       type="button"
                       className="m-row-main"
@@ -114,6 +115,7 @@ export function MobileRegister(props: {
                       <span className="m-row-bottom muted">
                         <span className="truncate">
                           {formatDate(t.date)}
+                          {t.scheduledBillId != null && <BillMark />}
                           {category === null ? (
                             <>
                               {" · "}

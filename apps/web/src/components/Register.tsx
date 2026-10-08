@@ -2,9 +2,10 @@ import { formatCents, type Account, type CategoryGroup, type Payee, type Transac
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { type FocusEvent, type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
-import { formatDate, useLedgerMutation, useMembers } from "../ledger";
+import { formatDate, today, useLedgerMutation, useMembers } from "../ledger";
 import { Autocomplete } from "./Autocomplete";
 import {
+  BillMark,
   amountOf,
   blankDraft,
   buildBody,
@@ -366,8 +367,14 @@ function DisplayRow(props: {
         }
       }}
     >
-      <div className="register-row">
-        {cell("date", formatDate(t.date))}
+      <div className={t.date > today() ? "register-row future" : "register-row"}>
+        {cell(
+          "date",
+          <>
+            {formatDate(t.date)}
+            {t.scheduledBillId != null && <BillMark />}
+          </>,
+        )}
         {cell("payee", payeeLabel(payee), "cell truncate")}
         {cell("notes", t.notes, "cell truncate muted")}
         {props.showCategory &&

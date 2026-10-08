@@ -15,6 +15,7 @@ import { backupRoutes } from "./routes/backup";
 import { eventRoutes } from "./routes/events";
 import { folderRoutes } from "./routes/folders";
 import { reportRoutes } from "./routes/reports";
+import { scheduledBillRoutes } from "./routes/scheduled-bills";
 import { investmentRoutes } from "./routes/investments";
 import { EventHub } from "./services/events";
 import { type PriceProvider, yahooProvider } from "./services/prices";
@@ -34,6 +35,8 @@ export interface AppOptions {
   backupsEnabled?: boolean;
   /** Trust X-Forwarded-For for the client's address (only behind a reverse proxy you run). */
   trustProxy?: boolean;
+  /** Live-update hub; pass one in to publish changes made outside requests (e.g. recurring bills). */
+  events?: EventHub;
 }
 
 export type AppEnv = {
@@ -58,10 +61,10 @@ export function createApp({
   backupDir = null,
   backupsEnabled = !!backupDir,
   trustProxy = false,
+  events = new EventHub(),
 }: AppOptions) {
   const loginLimiter = new LoginRateLimiter();
   const passwordWork = new PasswordWorkLimiter();
-  const events = new EventHub();
   const app = new Hono<AppEnv>();
 
   // Defence in depth for the API and the web app it serves: no framing, no inline scripts, no
@@ -121,6 +124,7 @@ export function createApp({
   app.route("/api/accounts", accountRoutes);
   app.route("/api/account-folders", folderRoutes);
   app.route("/api/transactions", transactionRoutes);
+  app.route("/api/scheduled-bills", scheduledBillRoutes);
   app.route("/api/categories", categoryRoutes);
   app.route("/api/payees", payeeRoutes);
   app.route("/api/budget", budgetRoutes);
