@@ -1,12 +1,19 @@
 import type { PriceRefreshResult, SecurityLookup, SecurityType } from "@fd/shared";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { DbOrTx } from "../db";
-import { prices } from "../db/schema";
+import { prices, securities } from "../db/schema";
 
 export interface PriceQuote {
   date: string;
   /** Micro-dollars. */
   close: number;
+}
+
+/** The provider has no such symbol, e.g. a private company's stock. */
+export class UnknownSymbolError extends Error {
+  constructor(symbol: string) {
+    super(`Unknown symbol ${symbol}`);
+  }
 }
 
 /** Where daily prices come from. Swappable so tests (and future providers) don't hit the network. */
@@ -61,7 +68,8 @@ export function yahooProvider(fetchImpl: typeof fetch = fetch): PriceProvider {
     const result = body?.chart?.result?.[0];
     if (!res.ok || !result) {
       const reason = body?.chart?.error?.description ?? `HTTP ${res.status}`;
-      throw new Error(reason.includes("No data found") ? `Unknown symbol ${symbol}` : reason);
+      if (reason.includes("No data found")) throw new UnknownSymbolError(symbol);
+      throw new Error(reason);
     }
     return result;
   }
@@ -112,6 +120,10 @@ const addDays = (date: string, n: number) => {
  * Fetch any missing daily prices for securities with automatic pricing, from the day after the
  * last price we have (or the first transaction, up to ten years back) until today. Existing
  * prices, including manual ones, are never overwritten.
+ *
+ * A symbol the provider has never heard of, and has never given a price for (a private company's
+ * stock, say), is switched to manual prices so it stops failing every refresh. One that has had
+ * prices before stays automatic, so a passing provider glitch can't quietly stop its updates.
  */
 export async function refreshPrices(
   db: DbOrTx,
@@ -121,9 +133,16 @@ export async function refreshPrices(
 ): Promise<PriceRefreshResult> {
   // Plain SQL: drizzle drops table qualifiers in single-table selects, which would make the
   // correlated subqueries compare against the wrong table's id.
-  const list = db.all<{ id: number; symbol: string; lastPrice: string | null; firstTxn: string | null }>(sql`
+  const list = db.all<{
+    id: number;
+    symbol: string;
+    lastPrice: string | null;
+    firstTxn: string | null;
+    everFetched: number;
+  }>(sql`
     select s.id as id, s.symbol as symbol,
            (select max(p.date) from prices p where p.security_id = s.id) as lastPrice,
+           exists (select 1 from prices p where p.security_id = s.id and p.source = ${provider.name}) as everFetched,
            (select min(t.date) from investment_txns t where t.security_id = s.id) as firstTxn
     from securities s
     where s.auto_price = 1
@@ -153,7 +172,12 @@ export async function refreshPrices(
         result.updated += inserted.length;
       }
     } catch (err) {
-      result.errors.push({ symbol: s.symbol, message: err instanceof Error ? err.message : String(err) });
+      let message = err instanceof Error ? err.message : String(err);
+      if (err instanceof UnknownSymbolError && !s.everFetched) {
+        db.update(securities).set({ autoPrice: false }).where(eq(securities.id, s.id)).run();
+        message += ". Switched it to manual prices";
+      }
+      result.errors.push({ symbol: s.symbol, message });
     }
   }
   return result;

@@ -4,6 +4,7 @@ import { createSession } from "../src/auth/sessions";
 import { users } from "../src/db/schema";
 import { SESSION_COOKIE } from "../src/middleware";
 import { createHousehold } from "../src/services/household";
+import { UnknownSymbolError, yahooProvider } from "../src/services/prices";
 import { Client, fakePrices, owner, testApp } from "./helpers";
 
 const SH = 1_000_000; // micro-shares per share
@@ -241,9 +242,66 @@ describe("prices", () => {
     await c.post("/api/investments/securities", { symbol: "ZZZZ", name: "Unknown", type: "stock" });
 
     const res = (await c.post("/api/investments/prices/refresh")).json;
-    expect(res.errors).toEqual([{ symbol: "ZZZZ", message: "Unknown symbol ZZZZ" }]);
+    expect(res.errors).toEqual([{ symbol: "ZZZZ", message: "Unknown symbol ZZZZ. Switched it to manual prices" }]);
     // VTI already had a price on its latest date, so nothing new was needed.
     expect((await position())!.price).toBe($(999));
+  });
+
+  test("a symbol the provider has never priced is switched to manual prices", async () => {
+    const { c, prices } = await setUp(quotes);
+    const epic = (await c.post("/api/investments/securities", { symbol: "EPIC", name: "Epic Systems", type: "stock" }))
+      .json as Security;
+    await c.post(`/api/investments/securities/${epic.id}/prices`, { date: "2026-01-02", price: $(100) });
+
+    await c.post("/api/investments/prices/refresh");
+    const after = (await c.get("/api/investments/securities")).json as Security[];
+    expect(after.find((s) => s.symbol === "EPIC")).toMatchObject({ autoPrice: false, latestPrice: $(100) });
+    expect(after.find((s) => s.symbol === "VTI")!.autoPrice).toBe(true);
+
+    prices.calls.length = 0;
+    await c.post("/api/investments/prices/refresh");
+    expect(prices.calls.map((x) => x.symbol)).not.toContain("EPIC");
+  });
+
+  test("a symbol that has had prices stays automatic when the provider stops knowing it", async () => {
+    const live: Record<string, { date: string; close: number }[]> = { ...quotes };
+    const { c, txn } = await setUp(live);
+    await txn({ date: "2026-01-05", action: "buy", shares: 1 * SH, price: $(200) });
+    await c.post("/api/investments/prices/refresh");
+
+    delete live.VTI;
+    const res = (await c.post("/api/investments/prices/refresh")).json;
+    expect(res.errors).toEqual([{ symbol: "VTI", message: "Unknown symbol VTI" }]);
+    expect(((await c.get("/api/investments/securities")).json as Security[])[0]!.autoPrice).toBe(true);
+  });
+
+  test("other failures leave automatic prices on", async () => {
+    const { app } = testApp({
+      priceProvider: {
+        name: "yahoo",
+        history: async () => {
+          throw new Error("HTTP 500");
+        },
+        lookup: async () => null,
+      },
+    });
+    const c = new Client(app);
+    await c.post("/api/auth/setup", owner);
+    await c.post("/api/investments/securities", { symbol: "VTI", name: "Total Market", type: "etf" });
+    const res = (await c.post("/api/investments/prices/refresh")).json;
+    expect(res.errors).toEqual([{ symbol: "VTI", message: "HTTP 500" }]);
+    expect(((await c.get("/api/investments/securities")).json as Security[])[0]!.autoPrice).toBe(true);
+  });
+
+  test("Yahoo's 'No data found' reply is an unknown symbol", async () => {
+    const reply = (status: number, body: unknown) => async () => new Response(JSON.stringify(body), { status });
+    const notFound = { chart: { result: null, error: { description: "No data found, symbol may be delisted" } } };
+    const unknown = yahooProvider(reply(404, notFound) as unknown as typeof fetch);
+    await expect(unknown.history("EPIC", "2026-01-01", "2026-01-31")).rejects.toBeInstanceOf(UnknownSymbolError);
+    const down = yahooProvider(reply(502, {}) as unknown as typeof fetch);
+    const err = await down.history("VTI", "2026-01-01", "2026-01-31").catch((e) => e);
+    expect(err).not.toBeInstanceOf(UnknownSymbolError);
+    expect(err.message).toBe("HTTP 502");
   });
 
   test("value history combines cash and holdings at each date's price", async () => {

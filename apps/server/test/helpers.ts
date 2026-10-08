@@ -1,6 +1,6 @@
 import { createApp } from "../src/app";
 import { openDb } from "../src/db";
-import type { PriceProvider, PriceQuote } from "../src/services/prices";
+import { type PriceProvider, type PriceQuote, UnknownSymbolError } from "../src/services/prices";
 import type { SecurityLookup } from "@fd/shared";
 
 /** A price provider with canned quotes, so tests never touch the network. */
@@ -10,7 +10,7 @@ export function fakePrices(quotes: Record<string, PriceQuote[]> = {}, names: Rec
     name: "yahoo",
     async history(symbol, from, to) {
       calls.push({ symbol, from, to });
-      if (!(symbol in quotes)) throw new Error(`Unknown symbol ${symbol}`);
+      if (!(symbol in quotes)) throw new UnknownSymbolError(symbol);
       return quotes[symbol]!.filter((q) => q.date >= from && q.date <= to);
     },
     async lookup(symbol) {
