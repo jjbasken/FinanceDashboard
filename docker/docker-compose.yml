@@ -9,7 +9,7 @@ services:
     restart: unless-stopped
     # Only reachable from this machine; everyone else comes in through the tunnel.
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8082:8080"
     # Optional settings (TZ, SEED_*, ...) — see .env.example at the repo root.
     env_file:
       - path: ../.env

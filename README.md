@@ -190,9 +190,9 @@ There are no signing secrets to configure, `JWT_SECRET` included. Sessions use r
 
 ### Remote access with Cloudflare Tunnel
 
-The compose file starts two containers: the app, and Cloudflare's connector (`cloudflared`), which starts once the app is healthy. The app's port is published only on the server itself (http://localhost:8080), secure cookies are on, and forwarded headers are ignored. Use the HTTPS hostname from every other device, even at home.
+The compose file starts two containers: the app, and Cloudflare's connector (`cloudflared`), which starts once the app is healthy. The app's port is published only on the server itself (http://localhost:8082), secure cookies are on, and forwarded headers are ignored. Use the HTTPS hostname from every other device, even at home.
 
-1. **Create the owner first.** Either set all the required `SEED_*` settings in the root `.env`, or start just the app with `docker compose up -d --build finance` and finish setup at http://localhost:8080 in a browser on the server (or through an SSH port forward). Use a long, unique owner password.
+1. **Create the owner first.** Either set all the required `SEED_*` settings in the root `.env`, or start just the app with `docker compose up -d --build finance` and finish setup at http://localhost:8082 in a browser on the server (or through an SSH port forward). Use a long, unique owner password.
 2. In Cloudflare, create a remotely managed tunnel and a published application route for your hostname (for example `finance.example.com`). Set the service type to **HTTP** and its URL to **`finance:8080`** (`http://finance:8080` as a full URL). Here `finance` is the Docker service name; `localhost` would refer to the connector container.
 3. Create a Cloudflare Access self-hosted application for that exact hostname, with an Allow policy restricted to your household's email addresses or identity provider. Complete this before starting the tunnel. Keep the app's own household login as well.
 4. From the `docker/` directory, create `secrets/` and save **only the tunnel token** into `secrets/cloudflare-tunnel-token`. This file is ignored by Git and excluded from Docker builds. Docker Compose mounts it as a secret into the connector only. Ensure the container can read the file; keep the containing directory accessible only to your server administrator. Never paste the token into a committed file.
@@ -209,9 +209,9 @@ The connector token uses Cloudflare's [`--token-file` option](https://developers
 
 All visitors through the tunnel share the visitor rate limit, since forwarded addresses are not trusted. For a small household this is conservative, but repeated failed logins from one visitor can temporarily throttle others.
 
-Cloudflare's upload limit depends on your plan and can be smaller than this app's 200 MiB limit. For a large GnuCash import, use http://localhost:8080 on the server (or an SSH port forward) instead of the tunnel. If Cloudflare Access expires while a page is open, refresh and authenticate again.
+Cloudflare's upload limit depends on your plan and can be smaller than this app's 200 MiB limit. For a large GnuCash import, use http://localhost:8082 on the server (or an SSH port forward) instead of the tunnel. If Cloudflare Access expires while a page is open, refresh and authenticate again.
 
-To turn off remote access, run `docker compose stop cloudflared`; the app keeps running at http://localhost:8080 on the server. Remove the published route in Cloudflare if it is no longer needed.
+To turn off remote access, run `docker compose stop cloudflared`; the app keeps running at http://localhost:8082 on the server. Remove the published route in Cloudflare if it is no longer needed.
 
 ### Import resource limits
 
