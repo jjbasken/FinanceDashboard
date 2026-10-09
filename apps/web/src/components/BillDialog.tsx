@@ -1,3 +1,4 @@
+import { askConfirm } from "./Feedback";
 import {
   centsToInput,
   describeSchedule,
@@ -154,10 +155,10 @@ export function BillDialog(props: {
             <span>Amount</span>
             <div className="txn-amount">
               <div className="segmented" role="group" aria-label="Direction">
-                <button type="button" className={deposit ? undefined : "active"} onClick={() => setDeposit(false)}>
+                <button type="button" className={deposit ? undefined : "active"} onClick={async () => setDeposit(false)}>
                   Payment
                 </button>
-                <button type="button" className={deposit ? "active" : undefined} onClick={() => setDeposit(true)}>
+                <button type="button" className={deposit ? "active" : undefined} onClick={async () => setDeposit(true)}>
                   Deposit
                 </button>
               </div>
@@ -242,8 +243,8 @@ export function BillDialog(props: {
             <button
               type="button"
               className="link-button danger"
-              onClick={() =>
-                confirm("Delete this recurring bill? Payments already in the register stay.") &&
+              onClick={async () =>
+                (await askConfirm("Delete this recurring bill? Payments already in the register stay.")) &&
                 remove.mutate(bill.id, { onSuccess: props.onClose })
               }
             >

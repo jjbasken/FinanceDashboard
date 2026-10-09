@@ -1,6 +1,8 @@
+import { askConfirm } from "./Feedback";
 import { formatCents, type Account, type CategoryGroup, type Payee, type Transaction } from "@fd/shared";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { type FocusEvent, type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { useDraftProtection } from "./DraftProtection";
 import { api } from "../api";
 import { formatDate, today, useLedgerMutation, useMembers } from "../ledger";
 import { Autocomplete } from "./Autocomplete";
@@ -274,7 +276,7 @@ function EditRow(props: {
                   className="icon-button"
                   aria-label="Remove split"
                   title="Remove split"
-                  onClick={() => set({ splits: d.splits.filter((x) => x.key !== s.key) })}
+                  onClick={async () => set({ splits: d.splits.filter((x) => x.key !== s.key) })}
                 >
                   ×
                 </button>
@@ -325,7 +327,7 @@ function EditRow(props: {
         <button type="button" className="btn btn-small" onClick={props.onCancel}>
           Cancel
         </button>
-        <button type="button" className="btn btn-small btn-primary" onClick={() => props.onCommit(0)}>
+        <button type="button" className="btn btn-small btn-primary" onClick={async () => props.onCommit(0)}>
           {props.isNew ? "Add" : "Save"}
         </button>
       </div>
@@ -356,7 +358,7 @@ function DisplayRow(props: {
     );
 
   const cell = (field: Field, content: ReactNode, className = "cell") => (
-    <div className={className} onClick={() => props.onEdit(field)}>
+    <div className={className} onClick={async () => props.onEdit(field)}>
       {content}
     </div>
   );
@@ -423,7 +425,7 @@ function DisplayRow(props: {
         </div>
       </div>
       {t.splits.map((s) => (
-        <div className="register-row split-line display" key={s.id} onClick={() => props.onEdit("category")}>
+        <div className="register-row split-line display" key={s.id} onClick={async () => props.onEdit("category")}>
           <div className="cell" />
           <div className="cell truncate">{transferLabel(l, s.transferAccountId)}</div>
           <div className="cell truncate muted">{s.notes}</div>
@@ -473,6 +475,9 @@ export function Register(props: {
   );
   const [editDraft, setEditDraft] = useState<Draft>(() => blankDraft());
   const [editError, setEditError] = useState<string | null>(null);
+  const newDirty = !!(newDraft.payment || newDraft.deposit || newDraft.payeeName || newDraft.payeeId || newDraft.notes || newDraft.categoryId || newDraft.split);
+  useDraftProtection(newDirty || !!(editing && JSON.stringify(editDraft) !== JSON.stringify(editing.original)), () => { setNewDraft(blankDraft()); setEditing(null); props.onCloseAdding(); });
+  const saving = useRef<Promise<boolean> | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   /** Why the row the user tried to edit has to be edited somewhere else. */
   const [linkedNotice, setLinkedNotice] = useState<LinkedKind | null>(null);
@@ -509,7 +514,10 @@ export function Register(props: {
     return edited ? `Added by ${by}, last edited by ${edited}` : `Added by ${by}`;
   }
 
-  function commitNew() {
+  async function commitNew() {
+    if (create.isPending) return;
+    const invalid = document.querySelector<HTMLInputElement>(".register-edit.new input:invalid");
+    if (invalid) { invalid.reportValidity(); return; }
     const built = buildBody(newDraft);
     if (built.error !== null) return setNewError(built.error);
     if (amountOf(newDraft) === 0 && !newDraft.payeeName && !newDraft.payeeId) {
@@ -517,9 +525,11 @@ export function Register(props: {
     }
     setNewError(null);
     setSaveError(null);
-    create.mutate({ accountId: account.id, ...built.body }, onSaveError);
-    setNewDraft(blankDraft(newDraft.date));
-    setNewFocus((f) => ({ field: "date", n: f.n + 1 }));
+    try {
+      await create.mutateAsync({ accountId: account.id, ...built.body });
+      setNewDraft(blankDraft(newDraft.date));
+      setNewFocus(f => ({ field: "date", n: f.n + 1 }));
+    } catch (err) { setNewError((err as Error).message); }
   }
 
   function payeeNameOf(t: Transaction) {
@@ -544,71 +554,69 @@ export function Register(props: {
   }
 
   /** Save the row being edited. Returns false (and shows why) if it isn't valid. */
-  function saveEdit() {
+  async function saveEdit(): Promise<boolean> {
+    if (saving.current) return saving.current;
+    const invalid = document.querySelector<HTMLInputElement>(".register-edit:not(.new) input:invalid");
+    if (invalid) { invalid.reportValidity(); return false; }
     if (!editing) return true;
     const built = buildBody(editDraft, editing.original);
-    if (built.error !== null) {
-      setEditError(built.error);
-      return false;
-    }
-    if (Object.keys(built.body).length) {
-      setSaveError(null);
-      update.mutate({ id: editing.id, body: built.body }, onSaveError);
-    }
-    return true;
+    if (built.error !== null) { setEditError(built.error); return false; }
+    if (!Object.keys(built.body).length) return true;
+    const current = editing;
+    const draft = editDraft;
+    const task = (async () => {
+      try {
+        await update.mutateAsync({ id: current.id, body: built.body });
+        setEditing(e => e?.id === current.id ? { ...e, original: draft } : e);
+        setSaveError(null); return true;
+      } catch (err) { setEditError((err as Error).message); return false; }
+      finally { saving.current = null; }
+    })();
+    saving.current = task;
+    return task;
   }
 
-  function commitEdit(move: 0 | 1 | -1) {
-    if (!editing || !saveEdit()) return;
-    const index = rows.findIndex((t) => t.id === editing.id);
+  async function commitEdit(move: 0 | 1 | -1) {
+    if (saving.current) return;
+    if (!editing || !await saveEdit()) return;
+    const index = rows.findIndex(t => t.id === editing.id);
     const next = move ? rows[index + move] : undefined;
     if (next) beginEdit(next, editing.focus.field);
     else setEditing(null);
   }
 
-  function startEdit(t: Transaction, field: Field) {
+  async function startEdit(t: Transaction, field: Field) {
     if (editing?.id === t.id) return;
-    if (editing && !saveEdit()) return;
+    if (editing && !await saveEdit()) return;
     const linked = linkedKind(t);
     if (linked) {
       setEditing(null);
       setLinkedNotice(linked);
       return;
     }
-    if (t.reconciled && !confirm("This transaction is reconciled. Edit it anyway?")) return;
+    if (t.reconciled && !(await askConfirm("This transaction is reconciled. Edit it anyway?"))) return;
     beginEdit(t, field);
   }
 
-  function toggleCleared(t: Transaction) {
-    if (t.reconciled && !confirm("This transaction is reconciled. Unlock it?")) return;
+  async function toggleCleared(t: Transaction) {
+    if (t.reconciled && !(await askConfirm("This transaction is reconciled. Unlock it?"))) return;
     update.mutate({ id: t.id, body: { cleared: !t.cleared } }, onSaveError);
   }
 
   /** Save any pending edit, then make a recurring bill from the transaction as saved. */
-  function makeRecurringFromEditing() {
-    if (!editing) return;
-    const built = buildBody(editDraft, editing.original);
-    if (built.error !== null) return setEditError(built.error);
-    const t = transactions.find((x) => x.id === editing.id);
-    setEditing(null);
-    setBillAdded(false);
-    if (Object.keys(built.body).length) {
-      setSaveError(null);
-      update.mutate(
-        { id: editing.id, body: built.body },
-        { onSuccess: (saved) => setRecurringFrom(saved), ...onSaveError },
-      );
-    } else if (t) {
-      setRecurringFrom(t);
-    }
+  async function makeRecurringFromEditing() {
+    if (!editing || !await saveEdit()) return;
+    try {
+      const saved = await api.get<Transaction>(`/transactions/${editing.id}`);
+      setEditing(null); setBillAdded(false); setRecurringFrom(saved);
+    } catch (err) { setEditError((err as Error).message); }
   }
 
-  function deleteEditing() {
+  async function deleteEditing() {
     if (!editing) return;
     const t = transactions.find((x) => x.id === editing.id);
-    if (!confirm(deleteMessage(t))) return;
-    remove.mutate(editing.id, onSaveError);
-    setEditing(null);
+    if (!(await askConfirm(deleteMessage(t)))) return;
+    try { await remove.mutateAsync(editing.id); setEditing(null); } catch (err) { setEditError((err as Error).message); }
   }
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -623,7 +631,7 @@ export function Register(props: {
   const gridClass = showCategory ? "register" : "register no-category";
 
   return (
-    <div className={gridClass}>
+    <div className={gridClass} inert={create.isPending || update.isPending || remove.isPending}>
       <div className="register-row register-header" role="row">
         <div className="cell">Date</div>
         <div className="cell">Payee</div>
@@ -647,7 +655,8 @@ export function Register(props: {
           error={newError}
           showCategory={showCategory}
           onCommit={commitNew}
-          onCancel={() => {
+          onCancel={async () => {
+            if (newDirty && !await askConfirm("Discard this unfinished transaction?")) return;
             setNewDraft(blankDraft(newDraft.date));
             setNewError(null);
             props.onCloseAdding();
@@ -674,7 +683,7 @@ export function Register(props: {
       <div className="register-scroll" ref={scrollRef}>
         {rows.length === 0 ? (
           <div className="register-empty muted">
-            {props.search ? "No transactions match your search." : "No transactions yet. Use Add transaction to enter one."}
+            {props.search ? "No transactions match your search." : "No transactions yet. Use Add purchase to enter one."}
           </div>
         ) : (
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
@@ -702,11 +711,12 @@ export function Register(props: {
                         commitEdit(move);
                         if (move === 0) focusRow(v.index);
                       }}
-                      onCancel={() => {
+                      onCancel={async () => {
+                        if (editing && JSON.stringify(editDraft) !== JSON.stringify(editing.original) && !await askConfirm("Discard changes to this transaction?")) return;
                         setEditing(null);
                         focusRow(v.index);
                       }}
-                      onBlurOut={() => commitEdit(0)}
+                      onBlurOut={() => {}}
                       onDelete={deleteEditing}
                       onMakeRecurring={makeRecurringFromEditing}
                     />

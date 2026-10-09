@@ -7,6 +7,7 @@ import {
   deleteScheduledBill,
   getScheduledBill,
   listScheduledBills,
+  listBillPayments,
   updateScheduledBill,
 } from "../services/scheduled-bills";
 import { localDate } from "../util";
@@ -15,6 +16,8 @@ export const scheduledBillRoutes = new Hono<AppEnv>()
   .use(requireAuth)
 
   .get("/", (c) => c.json(listScheduledBills(c.var.db, actorOf(c), localDate())))
+
+  .get("/payments", c => c.json(listBillPayments(c.var.db, actorOf(c), localDate())))
 
   .post("/", async (c) => {
     const input = await parseBody(c, createScheduledBillInput);

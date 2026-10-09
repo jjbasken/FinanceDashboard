@@ -1,6 +1,8 @@
+import { askConfirm } from "../components/Feedback";
 import { describeSchedule, formatCents, type ScheduledBill } from "@fd/shared";
 import { useState } from "react";
 import { api } from "../api";
+import { UpcomingBills } from "../components/UpcomingBills";
 import { BillDialog } from "../components/BillDialog";
 import { formatDate, useAccounts, useCategories, useLedgerMutation, usePayees, useScheduledBills } from "../ledger";
 
@@ -26,18 +28,19 @@ export function BillsPage() {
   return (
     <>
       <header className="page-header budget-header">
-        <h1>Recurring bills</h1>
+        <h1>Bills</h1>
         <div className="row-actions">
-          <button className="btn btn-primary" onClick={() => setEditing("new")}>
+          <button className="btn btn-primary" onClick={async () => setEditing("new")}>
             Add bill
           </button>
         </div>
       </header>
       <div className="page-body investments">
+        <UpcomingBills />
         <section className="card wide">
+          <h2>Recurring schedules</h2>
           <p className="muted">
-            On the 1st of each month, every bill due that month is added to its account's register with its due date,
-            not yet cleared. A bank import then matches it instead of adding it twice.
+            Each month’s scheduled payments are recorded automatically. Review or adjust the existing entry when the payment appears at your bank. Importing a statement can match it automatically. Editing a schedule only affects payments not yet recorded.
           </p>
           {error && <p className="error-text">{error.message}</p>}
           <div className="table-scroll">
@@ -73,19 +76,19 @@ export function BillsPage() {
                     <td className={b.amount < 0 ? "amount negative" : "amount positive"}>{formatCents(b.amount)}</td>
                     <td className="amount">
                       <span className="row-actions-cell">
-                        <button className="link-button" onClick={() => setEditing(b)}>
+                        <button className="link-button" onClick={async () => setEditing(b)}>
                           Edit
                         </button>
                         <button
                           className="link-button bill-detail"
-                          onClick={() => setPaused.mutate({ id: b.id, paused: !b.paused })}
+                          onClick={async () => setPaused.mutate({ id: b.id, paused: !b.paused })}
                         >
                           {b.paused ? "Resume" : "Pause"}
                         </button>
                         <button
                           className="link-button danger bill-detail"
-                          onClick={() =>
-                            confirm("Delete this recurring bill? Payments already in the register stay.") &&
+                          onClick={async () =>
+                            (await askConfirm("Delete this recurring bill? Payments already in the register stay.")) &&
                             remove.mutate(b.id)
                           }
                         >

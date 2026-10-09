@@ -1,3 +1,4 @@
+import { askConfirm, askText } from "../components/Feedback";
 import { useMemo, useState } from "react";
 import { api } from "../api";
 import { useLedgerMutation, usePayees } from "../ledger";
@@ -31,11 +32,11 @@ export function PayeesPage() {
     setSelected(next);
   }
 
-  function doMerge() {
+  async function doMerge() {
     if (target === "") return;
     const sources = [...selected].filter((id) => id !== target);
     const into = regular.find((p) => p.id === target)!.name;
-    if (!sources.length || !confirm(`Merge ${sources.length} payee${sources.length === 1 ? "" : "s"} into "${into}"?`))
+    if (!sources.length || !(await askConfirm(`Merge ${sources.length} payee${sources.length === 1 ? "" : "s"} into "${into}"?`)))
       return;
     merge.mutate(
       { sourceIds: sources, targetId: target },
@@ -68,8 +69,8 @@ export function PayeesPage() {
             <button
               className="btn"
               disabled={unused === 0 || prune.isPending}
-              onClick={() =>
-                confirm(`Delete ${unused} payee${unused === 1 ? "" : "s"} no transaction uses?`) &&
+              onClick={async () =>
+                (await askConfirm(`Delete ${unused} payee${unused === 1 ? "" : "s"} no transaction uses?`)) &&
                 prune.mutate(undefined, { onSuccess: (r) => setMessage(`Deleted ${r.deleted} unused payees.`) })
               }
             >
@@ -100,7 +101,7 @@ export function PayeesPage() {
               >
                 Merge
               </button>
-              <button className="link-button" onClick={() => setSelected(new Set())}>
+              <button className="link-button" onClick={async () => setSelected(new Set())}>
                 Clear selection
               </button>
             </div>
@@ -134,8 +135,8 @@ export function PayeesPage() {
                       <span className="row-actions-cell">
                         <button
                           className="link-button"
-                          onClick={() => {
-                            const name = prompt("Rename payee", p.name)?.trim();
+                          onClick={async () => {
+                            const name = (await askText("Rename payee", p.name))?.trim();
                             if (name && name !== p.name) rename.mutate({ id: p.id, name });
                           }}
                         >
@@ -143,11 +144,11 @@ export function PayeesPage() {
                         </button>
                         <button
                           className="link-button danger"
-                          onClick={() => {
+                          onClick={async () => {
                             const msg = p.transactionCount
                               ? `Delete "${p.name}"? Its ${p.transactionCount} transactions stay, without a payee.`
                               : `Delete "${p.name}"?`;
-                            if (confirm(msg)) remove.mutate(p.id);
+                            if ((await askConfirm(msg))) remove.mutate(p.id);
                           }}
                         >
                           Delete

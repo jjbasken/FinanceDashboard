@@ -138,3 +138,9 @@ export function describeSchedule(bill: Pick<Schedule, "frequency" | "startDate">
       return `Yearly on ${date.toLocaleDateString(locale, { month: "long", day: "numeric", timeZone: "UTC" })}`;
   }
 }
+
+/** A posted bill entry; confirmation updates this entry rather than creating another. */
+export interface BillPayment {
+  id: number; scheduledBillId: number; accountId: number; accountName: string;
+  payeeName: string; date: string; amount: number; cleared: boolean;
+}

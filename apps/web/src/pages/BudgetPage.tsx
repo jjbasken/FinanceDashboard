@@ -1,3 +1,4 @@
+import { askConfirm, askText } from "../components/Feedback";
 import {
   addMonths,
   centsToInput,
@@ -15,13 +16,14 @@ import {
   type CategoryGroup,
 } from "@fd/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type DragEvent, type KeyboardEvent, type ReactNode, useRef, useState } from "react";
+import { type DragEvent, type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { api } from "../api";
 import { CategoryMonthsDialog } from "../components/CategoryMonthsDialog";
 import { Dialog } from "../components/Dialog";
+import { QuickEntry } from "../components/QuickEntry";
+import { usePreferences } from "../preferences";
 import { TransactionDialog } from "../components/TransactionDialog";
-import { useMediaQuery } from "../components/useMediaQuery";
 import { formatDate, ledgerKeys, thisMonth, useBudget, useLedgerMutation } from "../ledger";
 
 type Move = -1 | 0 | 1;
@@ -32,7 +34,7 @@ function Money(props: { cents: number; className?: string }) {
 
 function BalancePill(props: { cents: number }) {
   const kind = props.cents > 0 ? "positive" : props.cents < 0 ? "negative" : "zero";
-  return <span className={`balance-pill ${kind}`}>{formatCents(props.cents)}</span>;
+  return <span className={`balance-pill ${kind}`}>{props.cents < 0 ? `Over by ${formatCents(-props.cents)}` : formatCents(props.cents)}</span>;
 }
 
 /** The inline editor for a budgeted amount. Enter/Tab/arrows save and move; Esc cancels. */
@@ -70,7 +72,8 @@ function BudgetInput(props: { initial: number; onDone: (amount: number | null, m
   return (
     <input
       className={invalid ? "budget-input invalid" : "budget-input"}
-      aria-label="Budgeted"
+      aria-label="Planned amount"
+      aria-invalid={invalid}
       inputMode="decimal"
       autoFocus
       onFocus={(e) => e.currentTarget.select()}
@@ -91,8 +94,8 @@ function ToBudget(props: { budget: BudgetMonth }) {
   return (
     <div className={over ? "to-budget over" : b.toBudget === 0 ? "to-budget zero" : "to-budget"}>
       <div className="to-budget-amount">
-        <span>{over ? "Overbudgeted" : "To Budget"}</span>
-        <strong>{formatCents(b.toBudget)}</strong>
+        <span>{over ? "Assigned over income" : "Left to assign"}</span>
+        <strong>{formatCents(Math.abs(b.toBudget))}</strong>
       </div>
       <dl className="to-budget-breakdown">
         {b.incomeFromLastMonth !== 0 && (
@@ -103,7 +106,7 @@ function ToBudget(props: { budget: BudgetMonth }) {
         )}
         <dt>{b.incomeFromLastMonth !== 0 ? "Other income this month" : "Income this month"}</dt>
         <dd>{formatCents(b.income - b.incomeFromLastMonth)}</dd>
-        <dt>Budgeted this month</dt>
+        <dt>Planned this month</dt>
         <dd>{formatCents(-b.budgeted)}</dd>
       </dl>
     </div>
@@ -185,6 +188,8 @@ export function BudgetPage() {
 
   const qc = useQueryClient();
   const budget = useBudget(month);
+  const { preferences, update: updatePreferences } = usePreferences();
+  const [adding, setAdding] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
   const [editing, setEditing] = useState<number | null>(null);
   // isIncome decides whether a new transaction defaults to a payment or a deposit.
@@ -192,7 +197,6 @@ export function BudgetPage() {
   const [addFor, setAddFor] = useState<CategoryPick | null>(null);
   const [monthsFor, setMonthsFor] = useState<BudgetCategory | null>(null);
   // Touch screens have no hover to reveal a row's actions, so tapping its name opens them in a sheet.
-  const touch = useMediaQuery("(hover: none)");
   const [sheet, setSheet] = useState<{ title: string; actions: () => ReactNode } | null>(null);
   const [dragging, setDragging] = useState<Dragging | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
@@ -221,6 +225,10 @@ export function BudgetPage() {
   });
 
   const data = budget.data;
+  useEffect(() => {
+    const category = params.get("category");
+    if (category && data && !budget.isPlaceholderData) document.getElementById(`category-${category}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [params, data?.month, budget.isPlaceholderData]);
   const visible = (x: { hidden: boolean }) => showHidden || !x.hidden;
   const expenseGroups = (data?.groups ?? [])
     .filter((g) => !g.isIncome && visible(g))
@@ -234,9 +242,6 @@ export function BudgetPage() {
     setEditing(next ?? null);
   }
 
-  function ask(label: string, initial = "") {
-    return prompt(label, initial)?.trim() || null;
-  }
 
   // --- Drag and drop: categories drop before a category or at the end of a group; groups drop before a group.
   const dragProps = (d: Dragging) => ({
@@ -298,8 +303,8 @@ export function BudgetPage() {
       <span className="row-actions-inline">
         <button
           className="link-button"
-          onClick={() => {
-            const name = ask(`New category in ${g.name}`);
+          onClick={async () => {
+            const name = (await askText(`New category in ${g.name}`));
             if (name) edit.mutate({ method: "post", path: "/categories", body: { groupId: g.id, name } });
           }}
         >
@@ -307,8 +312,8 @@ export function BudgetPage() {
         </button>
         <button
           className="link-button"
-          onClick={() => {
-            const name = ask("Rename group", g.name);
+          onClick={async () => {
+            const name = (await askText("Rename group", g.name));
             if (name) edit.mutate({ method: "patch", path: `/categories/groups/${g.id}`, body: { name } });
           }}
         >
@@ -316,7 +321,7 @@ export function BudgetPage() {
         </button>
         <button
           className="link-button"
-          onClick={() =>
+          onClick={async () =>
             edit.mutate({ method: "patch", path: `/categories/groups/${g.id}`, body: { hidden: !g.hidden } })
           }
         >
@@ -329,9 +334,10 @@ export function BudgetPage() {
   function categoryActions(c: BudgetCategory, isIncome = false) {
     return (
       <span className="row-actions-inline">
-        <button className="link-button" onClick={() => setAddFor({ category: c, isIncome })}>
+        <button className="link-button" onClick={async () => setAddFor({ category: c, isIncome })}>
           Add transaction
         </button>
+        {!isIncome && !c.excludeFromBudget && <button className="link-button" onClick={async () => updatePreferences({ favorites: preferences.favorites.includes(c.id) ? preferences.favorites.filter(id => id !== c.id) : [...preferences.favorites, c.id] })}>{preferences.favorites.includes(c.id) ? "Remove from favorites" : "Add to favorites"}</button>}
         {isIncome && !c.excludeFromBudget && (
           <button
             className="link-button"
@@ -340,7 +346,7 @@ export function BudgetPage() {
                 ? "Budget this income in the month it arrives"
                 : "Budget this income in the month after it arrives, e.g. pay that lands at the end of the month"
             }
-            onClick={() =>
+            onClick={async () =>
               edit.mutate({ method: "patch", path: `/categories/${c.id}`, body: { forNextMonth: !c.forNextMonth } })
             }
           >
@@ -349,8 +355,8 @@ export function BudgetPage() {
         )}
         <button
           className="link-button"
-          onClick={() => {
-            const name = ask("Rename category", c.name);
+          onClick={async () => {
+            const name = (await askText("Rename category", c.name));
             if (name) edit.mutate({ method: "patch", path: `/categories/${c.id}`, body: { name } });
           }}
         >
@@ -358,7 +364,7 @@ export function BudgetPage() {
         </button>
         <button
           className="link-button"
-          onClick={() => edit.mutate({ method: "patch", path: `/categories/${c.id}`, body: { hidden: !c.hidden } })}
+          onClick={async () => edit.mutate({ method: "patch", path: `/categories/${c.id}`, body: { hidden: !c.hidden } })}
         >
           {c.hidden ? "Show" : "Hide"}
         </button>
@@ -366,7 +372,7 @@ export function BudgetPage() {
           <button
             className="link-button"
             title="Set the months this usually comes up"
-            onClick={() => setMonthsFor(c)}
+            onClick={async () => setMonthsFor(c)}
           >
             Months
           </button>
@@ -378,7 +384,7 @@ export function BudgetPage() {
               ? "Count this category in the budget and reports again"
               : "Keep this category out of the budget and reports, e.g. reimbursable work expenses"
           }
-          onClick={() =>
+          onClick={async () =>
             edit.mutate({
               method: "patch",
               path: `/categories/${c.id}`,
@@ -417,24 +423,23 @@ export function BudgetPage() {
   const offMonth = (c: BudgetCategory) => c.months !== 0 && !c.due && c.budgeted === 0 && c.activity === 0;
 
   const categoryClass = (c: BudgetCategory) =>
-    "budget-row category-line" +
+    "budget-row category-line" + (params.get("category") === String(c.id) ? " highlighted" : "") +
     (c.hidden ? " hidden" : "") +
     (c.excludeFromBudget ? " excluded" : "") +
     (offMonth(c) ? " off-month" : "") +
     ` drop-before${dropClass(`c${c.id}`)}`;
 
-  /** A row's name; on touch screens, a button that opens the row's actions. */
+  /** Keep category actions accessible to both touch and pointer users. */
   function rowName(name: string, actions: () => ReactNode) {
-    if (!touch) return <span className="truncate">{name}</span>;
     return (
-      <button className="name-button truncate" onClick={() => setSheet({ title: name, actions })}>
-        {name}
+      <button className="name-button" aria-label={`Actions for ${name}`} onClick={async () => setSheet({ title: name, actions })}>
+        <span>{name}</span><span aria-hidden> ⋯</span>
       </button>
     );
   }
 
   const shownBudgeted = (c: BudgetCategory) =>
-    setAmount.isPending && setAmount.variables.id === c.id ? setAmount.variables.amount : c.budgeted;
+    (setAmount.isPending || setAmount.isError) && setAmount.variables.id === c.id ? setAmount.variables.amount : c.budgeted;
 
   const mutationError = setAmount.error ?? copyLast.error ?? edit.error ?? move.error;
 
@@ -442,59 +447,59 @@ export function BudgetPage() {
     <>
       <header className="page-header budget-header">
         <div className="month-nav">
-          <button className="btn" aria-label="Previous month" onClick={() => go(addMonths(month, -1))}>
+          <button className="btn" aria-label="Previous month" onClick={async () => go(addMonths(month, -1))}>
             ‹
           </button>
           <h1>{formatMonth(month)}</h1>
-          <button className="btn" aria-label="Next month" onClick={() => go(addMonths(month, 1))}>
+          <button className="btn" aria-label="Next month" onClick={async () => go(addMonths(month, 1))}>
             ›
           </button>
           {month !== thisMonth() && (
-            <button className="btn btn-small" onClick={() => go(thisMonth())}>
+            <button className="btn btn-small" onClick={async () => go(thisMonth())}>
               This month
             </button>
           )}
         </div>
         {data && <ToBudget budget={data} />}
+        <button className="btn btn-primary" onClick={async () => setAdding(true)}>+ Add purchase</button>
       </header>
 
+      <details className="budget-explainer notice"><summary>About this monthly plan</summary><p>Left to assign is income available for this month minus amounts planned. Remaining this month is a category’s planned amount minus net spending, including scheduled transactions.</p><p>Each month starts fresh. Unspent amounts, overspending, and unassigned income do not carry into the next month. Savings categories plan contributions; they do not accumulate savings balances.</p><p>Transfers within the budget are not spending. Transfers to accounts outside the budget can need a category and count toward the plan. Reports exclude transfers, so report totals can differ. Transactions needing a category are not included in category totals yet.</p></details>
       <div className="account-toolbar">
-        <label className="checkbox inline">
-          <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} />
-          <span>Show hidden</span>
-        </label>
         <span className="spacer" />
         <button
           className="btn"
           disabled={copyLast.isPending}
-          onClick={() => {
-            if (data?.budgeted && !confirm(`Replace this month's budget with ${formatMonth(addMonths(month, -1))}'s?`))
+          onClick={async () => {
+            if (data?.budgeted && !(await askConfirm(`Replace this month's budget with ${formatMonth(addMonths(month, -1))}'s?`)))
               return;
             copyLast.mutate();
           }}
         >
           Copy last month
         </button>
+        <details className="menu budget-organize"><summary className="btn">Organize categories</summary><div className="menu-items">        <label className="checkbox inline">
+          <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} />
+          <span>Show hidden</span>
+        </label>
         <button
           className="btn"
-          onClick={() => {
-            const name = ask("New category group name");
+          onClick={async () => {
+            const name = (await askText("New category group name"));
             if (name) edit.mutate({ method: "post", path: "/categories/groups", body: { name } });
           }}
         >
           Add group
-        </button>
+        </button>        </div></details>
       </div>
 
+      <p className="save-status" role="status">{setAmount.isPending || copyLast.isPending ? "Saving budget…" : setAmount.isSuccess || copyLast.isSuccess ? "Budget saved" : ""}</p>
+      {setAmount.isError && <p className="notice">The planned amount {formatCents(setAmount.variables.amount)} has not been saved. <button className="btn" onClick={() => setAmount.mutate(setAmount.variables)}>Retry save</button></p>}
       {(budget.error ?? mutationError) && (
         <p className="error-text page-error">{(budget.error ?? mutationError)!.message}</p>
       )}
       {data && data.uncategorized > 0 && (
-        <p className="notice">
-          {data.uncategorized} transaction{data.uncategorized === 1 ? "" : "s"} this month{" "}
-          {data.uncategorized === 1 ? "needs" : "need"} a category. Search an account's register for “uncategorized” to
-          find {data.uncategorized === 1 ? "it" : "them"}.
-        </p>
+        <p className="notice"><Link to={`/review?month=${month}`}>{data.uncategorized} transaction{data.uncategorized === 1 ? " needs" : "s need"} a category → Review now</Link></p>
       )}
 
       {!data && !budget.error && <p className="muted page-error">Loading…</p>}
@@ -505,14 +510,14 @@ export function BudgetPage() {
         >
           <div className="budget-row budget-head">
             <div>Category</div>
-            <div className="amount">Budgeted</div>
+            <div className="amount">Planned</div>
             <div className="amount">Spent</div>
-            <div className="amount">Balance</div>
+            <div className="amount">Remaining</div>
           </div>
           <div className="budget-row budget-total">
             <div>Total</div>
             <Money className="amount" cents={data.budgeted} />
-            <Money className="amount" cents={data.spent} />
+            <Money className="amount" cents={-data.spent} />
             <Money
               className="amount"
               cents={data.groups.filter((g) => !g.isIncome).reduce((s, g) => s + g.balance, 0)}
@@ -534,12 +539,13 @@ export function BudgetPage() {
                   {groupActions(g)}
                 </div>
                 <Money className="amount" cents={g.budgeted} />
-                <Money className="amount" cents={g.activity} />
+                <Money className="amount" cents={-g.activity} />
                 <Money className="amount" cents={g.balance} />
               </div>
               {g.categories.map((c) => (
                 <div
                   key={c.id}
+                  id={`category-${c.id}`}
                   className={categoryClass(c)}
                   {...dragProps({ kind: "category", id: c.id })}
                   {...dropOnCategory(g, c)}
@@ -555,12 +561,12 @@ export function BudgetPage() {
                   </div>
                   <div className="amount">
                     {c.excludeFromBudget ? null : editing === c.id ? (
-                      <BudgetInput initial={c.budgeted} onDone={(amount, step) => finishEdit(c, amount, step)} />
+                      <BudgetInput initial={shownBudgeted(c)} onDone={(amount, step) => finishEdit(c, amount, step)} />
                     ) : (
                       <button
                         className="budget-cell"
-                        onClick={() => setEditing(c.id)}
-                        aria-label={`Budget for ${c.name}`}
+                        onClick={async () => setEditing(c.id)}
+                        aria-label={`Planned amount for ${c.name}`}
                       >
                         {formatCents(shownBudgeted(c))}
                       </button>
@@ -569,9 +575,10 @@ export function BudgetPage() {
                   <div className="amount">
                     <button
                       className="activity-cell"
-                      onClick={() => setActivityFor({ category: c, isIncome: g.isIncome })}
+                      aria-label={`View transactions for ${c.name}`}
+                      onClick={async () => setActivityFor({ category: c, isIncome: g.isIncome })}
                     >
-                      {formatCents(c.activity)}
+                      {formatCents(-c.activity)}
                     </button>
                   </div>
                   <div className="amount">{!c.excludeFromBudget && <BalancePill cents={c.balance} />}</div>
@@ -607,6 +614,7 @@ export function BudgetPage() {
               {g.categories.filter(visible).map((c) => (
                 <div
                   key={c.id}
+                  id={`category-${c.id}`}
                   className={categoryClass(c)}
                   {...dragProps({ kind: "category", id: c.id })}
                   {...dropOnCategory(g, c)}
@@ -629,7 +637,8 @@ export function BudgetPage() {
                   <div className="amount">
                     <button
                       className="activity-cell"
-                      onClick={() => setActivityFor({ category: c, isIncome: g.isIncome })}
+                      aria-label={`View transactions for ${c.name}`}
+                      onClick={async () => setActivityFor({ category: c, isIncome: g.isIncome })}
                     >
                       {formatCents(c.activity)}
                     </button>
@@ -642,6 +651,7 @@ export function BudgetPage() {
         </div>
       )}
 
+      {adding && <QuickEntry onClose={() => setAdding(false)} />}
       {activityFor && (
         <ActivityDialog
           month={month}

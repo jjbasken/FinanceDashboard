@@ -2,6 +2,10 @@ import { lazy, type ReactNode, Suspense } from "react";
 import { setDisplayCurrency } from "@fd/shared";
 import { Navigate, Route, Routes } from "react-router";
 import { useAuthStatus } from "./auth";
+import { PreferencesProvider, usePreferences } from "./preferences";
+import { HomePage } from "./pages/HomePage";
+import { ReviewPage } from "./pages/ReviewPage";
+import { MorePage } from "./pages/MorePage";
 import { AppShell } from "./components/AppShell";
 import { AccountPage } from "./pages/AccountPage";
 import { AccountsPage } from "./pages/AccountsPage";
@@ -27,7 +31,7 @@ export function App() {
   const { data: status, isPending, error } = useAuthStatus();
 
   if (isPending) return <div className="fullscreen-center muted">Loading…</div>;
-  if (error) return <div className="fullscreen-center error-text">Can't reach the server: {error.message}</div>;
+  if (error) return <div className="fullscreen-center"><section className="card"><h1>Can’t connect right now</h1><p>Check your connection and make sure the family finance server is running.</p><button className="btn btn-primary" onClick={() => window.location.reload()}>Try again</button></section></div>;
 
   // Show amounts in the household's currency everywhere below.
   if (status.household) setDisplayCurrency(status.household.currency);
@@ -52,8 +56,11 @@ export function App() {
   }
 
   return (
-    <Routes>
+    <PreferencesProvider><Routes>
       <Route element={<AppShell />}>
+        <Route path="/home" element={<HomePage />} />
+        <Route path="/review" element={<ReviewPage />} />
+        <Route path="/more" element={<MorePage />} />
         <Route path="/budget" element={<BudgetPage />} />
         <Route path="/reports" element={onDemand(<ReportsPage />)} />
         <Route path="/investments" element={onDemand(<InvestmentsPage />)} />
@@ -64,8 +71,10 @@ export function App() {
         <Route path="/bills" element={onDemand(<BillsPage />)} />
         <Route path="/admin" element={onDemand(<AdminPage />)} />
         <Route path="/settings" element={onDemand(<SettingsPage />)} />
-        <Route path="*" element={<Navigate to="/budget" replace />} />
+        <Route path="*" element={<StartPage />} />
       </Route>
-    </Routes>
+    </Routes></PreferencesProvider>
   );
 }
+
+function StartPage() { const { preferences } = usePreferences(); return <Navigate to={preferences.startPage} replace />; }

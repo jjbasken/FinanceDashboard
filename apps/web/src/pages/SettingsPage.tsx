@@ -5,6 +5,7 @@ import { Link } from "react-router";
 import { api } from "../api";
 import { copyInviteLink } from "../clipboard";
 import { useAuthStatus } from "../auth";
+import { PreferencesCard } from "../components/PreferencesCard";
 import { CategoriesCard } from "../components/CategoriesCard";
 import { BackupCard } from "../components/BackupCard";
 import { HouseholdCard, MemberActions, YourAccountCard } from "../components/AccountCards";
@@ -39,6 +40,7 @@ export function SettingsPage() {
         <h1>Settings</h1>
       </header>
       <div className="page-body">
+        <PreferencesCard />
         <YourAccountCard />
         {isOwner && <HouseholdCard />}
         <section className="card">

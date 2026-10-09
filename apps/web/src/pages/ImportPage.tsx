@@ -1,3 +1,4 @@
+import { askConfirm } from "../components/Feedback";
 import {
   ACCOUNT_TYPES,
   ACCOUNT_TYPE_LABELS,
@@ -388,9 +389,9 @@ function Batches() {
                   <button
                     className="link-button danger"
                     disabled={undo.isPending}
-                    onClick={() => {
+                    onClick={async () => {
                       const msg = `Undo this import? Its ${b.transactionCount} transactions are deleted, along with any accounts, categories and payees it created that nothing else uses.`;
-                      if (confirm(msg)) {
+                      if ((await askConfirm(msg))) {
                         undo.mutate(b.id, { onSuccess: () => qc.invalidateQueries({ queryKey: ["import"] }) });
                       }
                     }}
@@ -540,7 +541,7 @@ export function ImportPage() {
                 key={key}
                 className={source === key ? "active" : undefined}
                 aria-pressed={source === key}
-                onClick={() => chooseSource(key)}
+                onClick={async () => chooseSource(key)}
               >
                 {label}
               </button>
@@ -644,7 +645,7 @@ export function ImportPage() {
                   commit.isPending ||
                   preview.data.transactions === 0
                 }
-                onClick={() =>
+                onClick={async () =>
                   commit.mutate(undefined, {
                     onSuccess: () => qc.invalidateQueries({ queryKey: ["import", "batches"] }),
                   })

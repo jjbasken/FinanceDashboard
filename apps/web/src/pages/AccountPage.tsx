@@ -1,3 +1,4 @@
+import { askConfirm, askText, notify } from "../components/Feedback";
 import {
   ACCOUNT_TYPE_LABELS,
   accountSection,
@@ -12,12 +13,13 @@ import {
 import { useEffect, useState } from "react";
 import { Navigate, useNavigate, useParams, useSearchParams } from "react-router";
 import { api } from "../api";
+import { QuickEntry } from "../components/QuickEntry";
 import { Dialog } from "../components/Dialog";
 import { HoldingsTable, InvestmentTxnTable, useSecurityColors } from "../components/HoldingsTables";
 import { InvestmentTxnDialog, SecurityDialog } from "../components/InvestmentDialogs";
 import { MobileRegister } from "../components/MobileRegister";
 import { Register } from "../components/Register";
-import { PHONE_QUERY, useMediaQuery } from "../components/useMediaQuery";
+import { PHONE_QUERY, useMediaQuery, useContentWidth } from "../components/useMediaQuery";
 import {
   useAccounts,
   useCategories,
@@ -71,7 +73,7 @@ function ReconcileBar(props: { account: Account; onDone: () => void }) {
       <button
         className="btn btn-primary"
         disabled={difference !== 0 || reconcile.isPending}
-        onClick={() => reconcile.mutate(cents!, { onSuccess: props.onDone })}
+        onClick={async () => reconcile.mutate(cents!, { onSuccess: props.onDone })}
       >
         Finish reconciling
       </button>
@@ -134,35 +136,35 @@ function AccountMenu(props: { account: Account }) {
   const update = useLedgerMutation((body: unknown) => api.patch(`/accounts/${account.id}`, body));
   const remove = useLedgerMutation(() => api.delete(`/accounts/${account.id}`));
 
-  function rename() {
-    const name = prompt("Account name", account.name)?.trim();
+  async function rename() {
+    const name = (await askText("Account name", account.name))?.trim();
     if (name && name !== account.name) update.mutate({ name });
   }
 
-  function toggleBudget() {
+  async function toggleBudget() {
     const msg = account.onBudget
       ? `Move "${account.name}" off budget? Its transactions will stop counting in the budget for every month, including past months, so those months' income, spending and To Budget will change.`
       : `Move "${account.name}" on budget? Its categorized transactions will start counting in the budget for every month, including past months, and any without a category will need one.`;
-    if (confirm(msg)) update.mutate({ onBudget: !account.onBudget });
+    if ((await askConfirm(msg))) update.mutate({ onBudget: !account.onBudget });
   }
 
-  function togglePrivate() {
+  async function togglePrivate() {
     const msg = account.private
       ? `Share "${account.name}" with the family? Everyone in the household will see it and all of its transactions.`
       : `Make "${account.name}" private? Only you will see it, and only the transactions you include will count in the family budget.`;
-    if (confirm(msg)) update.mutate({ private: !account.private });
+    if ((await askConfirm(msg))) update.mutate({ private: !account.private });
   }
 
-  function toggleClosed() {
+  async function toggleClosed() {
     if (!account.closed && account.balance !== 0) {
-      return alert("Move the remaining balance out of this account (for example, with a transfer) before closing it.");
+      return notify("Move the remaining balance out of this account (for example, with a transfer) before closing it.");
     }
     update.mutate({ closed: !account.closed });
   }
 
-  function del() {
+  async function del() {
     const msg = `Delete "${account.name}" and all of its transactions? Transfers to other accounts stay in those accounts as plain transactions. This can't be undone.`;
-    if (!confirm(msg)) return;
+    if (!(await askConfirm(msg))) return;
     remove.mutate(undefined, { onSuccess: () => navigate("/budget") });
   }
 
@@ -177,14 +179,14 @@ function AccountMenu(props: { account: Account }) {
         onClick={(e) => (e.currentTarget.parentElement as HTMLDetailsElement).removeAttribute("open")}
       >
         <button onClick={rename}>Rename</button>
-        {!account.closed && <button onClick={() => setMoving(true)}>Move to folder</button>}
+        {!account.closed && <button onClick={async () => setMoving(true)}>Move to folder</button>}
         <button onClick={toggleBudget}>{account.onBudget ? "Move off budget" : "Move on budget"}</button>
         <button onClick={togglePrivate}>{account.private ? "Share with family" : "Make private"}</button>
-        <button onClick={() => update.mutate({ excludeFromNetWorth: !account.excludeFromNetWorth })}>
+        <button onClick={async () => update.mutate({ excludeFromNetWorth: !account.excludeFromNetWorth })}>
           {account.excludeFromNetWorth ? "Include in net worth" : "Leave out of net worth"}
         </button>
         {!account.closed && (
-          <button onClick={() => navigate(`/import?account=${account.id}`)}>Import transactions</button>
+          <button onClick={async () => navigate(`/import?account=${account.id}`)}>Import transactions</button>
         )}
         <button onClick={toggleClosed}>{account.closed ? "Reopen account" : "Close account"}</button>
         <button className="danger" onClick={del}>
@@ -233,10 +235,10 @@ function AccountInvestments(props: { account: Account; accounts: Account[] }) {
         <div className="card-head">
           <h2>Holdings</h2>
           <div className="row-actions">
-            <button className="btn" onClick={() => setSecurityDialog("new")}>
+            <button className="btn" onClick={async () => setSecurityDialog("new")}>
               Add security
             </button>
-            <button className="btn btn-primary" onClick={() => setEditing("new")} disabled={!securities.data}>
+            <button className="btn btn-primary" onClick={async () => setEditing("new")} disabled={!securities.data}>
               Add transaction
             </button>
           </div>
@@ -259,10 +261,10 @@ function AccountInvestments(props: { account: Account; accounts: Account[] }) {
             <h2>Transactions{filterSymbol && `: ${filterSymbol}`}</h2>
             {filtered && (
               <span className="row-actions-cell">
-                <button className="link-button" onClick={() => setSecurityDialog(filtered)}>
+                <button className="link-button" onClick={async () => setSecurityDialog(filtered)}>
                   Edit {filtered.symbol}
                 </button>
-                <button className="link-button" onClick={() => setFilter(null)}>
+                <button className="link-button" onClick={async () => setFilter(null)}>
                   Show all
                 </button>
               </span>
@@ -306,7 +308,11 @@ export function AccountPage() {
   const [reconciling, setReconciling] = useState(false);
   const [adding, setAdding] = useState(false);
   useEffect(() => setAdding(false), [id]);
-  const phone = useMediaQuery(PHONE_QUERY);
+  const fallbackPhone = useMediaQuery(PHONE_QUERY);
+  const content = useContentWidth();
+  const phone = content.width ? content.width < 940 : fallbackPhone;
+  const [quickEntry, setQuickEntry] = useState(false);
+  useEffect(() => setQuickEntry(false), [id]);
   const [params, setParams] = useSearchParams();
 
   const account = accounts.data?.find((a) => a.id === id);
@@ -323,7 +329,7 @@ export function AccountPage() {
 
   return (
     <>
-      <header className="page-header account-header">
+      <header ref={content.ref} className="page-header account-header">
         <div className="account-title">
           <h1>{account?.name ?? "…"}</h1>
           {account && (
@@ -345,10 +351,9 @@ export function AccountPage() {
               </>
             ) : (
               <>
-                <Amount label="Cleared" cents={account.clearedBalance} />
-                <Amount label="Uncleared" cents={account.balance - account.clearedBalance} />
-                {upcoming.length > 0 && <Amount label="Today" cents={account.balance - upcomingTotal} />}
-                <Amount label={upcoming.length > 0 ? "After upcoming" : "Balance"} cents={account.balance} />
+                <Amount label="Balance today" cents={account.balance - upcomingTotal} />
+                {upcoming.length > 0 && <Amount label="After scheduled transactions" cents={account.balance} />}
+                <details className="balance-details"><summary>Bank status details</summary><Amount label="Confirmed (cleared)" cents={account.clearedBalance} /><Amount label="Not confirmed (uncleared)" cents={account.balance - account.clearedBalance} /><p className="muted">These are recorded balances, not a live connection to your bank.</p></details>
               </>
             )}
           </div>
@@ -357,12 +362,12 @@ export function AccountPage() {
       <div className="account-toolbar">
         {invests && (
           <div className="segmented" role="group" aria-label="View">
-            <button className={showHoldings ? "active" : undefined} onClick={() => setView("holdings")}>
+            <button className={showHoldings ? "active" : undefined} onClick={async () => setView("holdings")}>
               Holdings
             </button>
             <button
               className={showHoldings ? undefined : "active"}
-              onClick={() => setView("register")}
+              onClick={async () => setView("register")}
               title="The account's cash: deposits, withdrawals, and the cash side of buys, sells and dividends"
             >
               Cash register
@@ -380,20 +385,22 @@ export function AccountPage() {
         )}
         <span className="spacer" />
         {account && !showHoldings && !adding && !phone && (
-          <button className="btn btn-primary" onClick={() => setAdding(true)}>
-            Add transaction
+          <button className="btn btn-primary" onClick={async () => setAdding(true)}>
+            Keyboard entry
           </button>
         )}
         {account && !showHoldings && !reconciling && (
-          <button className="btn" onClick={() => setReconciling(true)}>
+          <button className="btn" onClick={async () => setReconciling(true)}>
             Reconcile
           </button>
         )}
+        {account && !showHoldings && <button className="btn btn-primary" onClick={async () => setQuickEntry(true)}>+ Add purchase</button>}
         {account && <AccountMenu account={account} />}
       </div>
       {account && reconciling && !showHoldings && (
         <ReconcileBar account={account} onDone={() => setReconciling(false)} />
       )}
+      {quickEntry && account && <QuickEntry accountId={account.id} onClose={() => setQuickEntry(false)} />}
       {error && <p className="error-text page-error">{error.message}</p>}
       {showHoldings ? (
         <AccountInvestments key={account!.id} account={account!} accounts={accounts.data!} />
@@ -405,8 +412,8 @@ export function AccountPage() {
           payees={payees.data!}
           categories={categories.data!}
           search={search}
-          adding={adding}
-          onAdd={() => setAdding(true)}
+          adding={false}
+          onAdd={() => setQuickEntry(true)}
           onCloseAdding={() => setAdding(false)}
         />
       ) : ready ? (

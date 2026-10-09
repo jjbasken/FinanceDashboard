@@ -1,3 +1,4 @@
+import { askConfirm, askText } from "./Feedback";
 import {
   accountSection,
   compareSidebarItems,
@@ -85,7 +86,6 @@ type Drag = { item: SidebarItem; section: AccountSection };
 /** Where a drop would put the dragged item, and which row shows it. */
 type Drop = { key: string; mode: "before" | "into"; parentId: number | null; before: SidebarItem | null };
 
-const ask = (label: string, initial = "") => prompt(label, initial)?.trim() || null;
 
 /** An account's name, with a lock when it's private to you. */
 function AccountName(props: { account: Account }) {
@@ -218,7 +218,7 @@ export function SidebarAccounts() {
             {...dragProps(item, section)}
             {...dropProps(section, target)}
           >
-            <button className="sidebar-folder-toggle" onClick={() => toggle(n.id)} aria-expanded={isOpen}>
+            <button className="sidebar-folder-toggle" onClick={async () => toggle(n.id)} aria-expanded={isOpen}>
               <span className="caret">{isOpen ? "▾" : "▸"}</span>
               <span className="truncate">{folder.name}</span>
             </button>
@@ -226,8 +226,8 @@ export function SidebarAccounts() {
               <button
                 title="New folder inside"
                 aria-label={`New folder inside ${folder.name}`}
-                onClick={() => {
-                  const name = ask(`New folder inside ${folder.name}`);
+                onClick={async () => {
+                  const name = (await askText(`New folder inside ${folder.name}`));
                   if (name) change.mutate({ method: "post", path: "/account-folders", body: { name, section, parentId: n.id } });
                 }}
               >
@@ -236,8 +236,8 @@ export function SidebarAccounts() {
               <button
                 title="Rename folder"
                 aria-label={`Rename ${folder.name}`}
-                onClick={() => {
-                  const name = ask("Rename folder", folder.name);
+                onClick={async () => {
+                  const name = (await askText("Rename folder", folder.name));
                   if (name && name !== folder.name) {
                     change.mutate({ method: "patch", path: `/account-folders/${n.id}`, body: { name } });
                   }
@@ -248,8 +248,8 @@ export function SidebarAccounts() {
               <button
                 title="Delete folder"
                 aria-label={`Delete ${folder.name}`}
-                onClick={() => {
-                  if (confirm(`Delete the "${folder.name}" folder? Its accounts and folders move out of it.`)) {
+                onClick={async () => {
+                  if ((await askConfirm(`Delete the "${folder.name}" folder? Its accounts and folders move out of it.`))) {
                     change.mutate({ method: "delete", path: `/account-folders/${n.id}` });
                   }
                 }}
@@ -292,8 +292,8 @@ export function SidebarAccounts() {
                 <button
                   title="New folder"
                   aria-label={`New folder in ${title}`}
-                  onClick={() => {
-                    const name = ask(`New folder in ${title}`);
+                  onClick={async () => {
+                    const name = (await askText(`New folder in ${title}`));
                     if (name) change.mutate({ method: "post", path: "/account-folders", body: { name, section } });
                   }}
                 >
@@ -307,7 +307,7 @@ export function SidebarAccounts() {
         );
       })}
       <ClosedAccounts accounts={closed} />
-      <button className="sidebar-add" onClick={() => setAdding(true)}>
+      <button className="sidebar-add" onClick={async () => setAdding(true)}>
         + Add account
       </button>
       {adding && <AddAccountDialog onClose={() => setAdding(false)} />}
@@ -320,7 +320,7 @@ function ClosedAccounts(props: { accounts: Account[] }) {
   if (props.accounts.length === 0) return null;
   return (
     <div className="sidebar-group">
-      <button className="sidebar-group-title" onClick={() => setOpen(!open)} aria-expanded={open}>
+      <button className="sidebar-group-title" onClick={async () => setOpen(!open)} aria-expanded={open}>
         <span>
           <span className="caret">{open ? "▾" : "▸"}</span>
           Closed
