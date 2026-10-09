@@ -202,6 +202,8 @@ GIT_COMMIT=$(git rev-parse --short HEAD) docker compose up -d --build
 
 `GIT_COMMIT` is optional: it labels the version in the owner's Logs (otherwise "unknown").
 
+The Compose project is named `financedashboard`, which is how it appears in `docker compose ls` and in tools such as Dockhand or Portainer. If you started the app before the project had a name, it is running as `docker`: stop it with `docker compose -p docker down` (your data in `docker/data/` is kept), then start it again with the command above.
+
 The app's SQLite database is stored in `docker/data/`, and nightly backups go to `docker/data/backups/`. The container makes sure the app's user (uid 1000) owns that folder on start-up, then runs the app as that user, not as root. Copy that folder somewhere else (another disk, or cloud storage) to keep your data safe if this machine fails.
 
 ### Configuration

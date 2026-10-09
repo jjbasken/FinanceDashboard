@@ -2,6 +2,9 @@
 #   GIT_COMMIT=$(git rev-parse --short HEAD) docker compose up -d --build
 # (GIT_COMMIT is optional; it labels the version in the owner's Logs.)
 # Setup (tunnel token, Cloudflare route and Access policy) is described in the README.
+# Without a name, Compose would call the project "docker" after this folder.
+name: financedashboard
+
 services:
   finance:
     build:
