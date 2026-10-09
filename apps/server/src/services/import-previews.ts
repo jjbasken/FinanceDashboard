@@ -47,8 +47,11 @@ export class ImportPreviews {
     if (this.active.has(userId) || this.active.size >= 2) {
       throw new HTTPException(429, { message: "Another file is being uploaded. Wait for it to finish and try again." });
     }
-    if (this.entries.size + this.active.size >= MAX_PREVIEWS ||
-      [...this.entries.values()].filter((entry) => entry.userId === userId).length >= MAX_PER_USER) {
+    // Previews are only freed by a commit, so ones abandoned by picking another file or leaving the
+    // page pile up. Make room by dropping this user's oldest rather than refusing their next file.
+    const mine = [...this.entries].filter(([, entry]) => entry.userId === userId).map(([key]) => key);
+    for (const key of mine.slice(0, Math.max(0, mine.length - MAX_PER_USER + 1))) this.delete(key);
+    if (this.entries.size + this.active.size >= MAX_PREVIEWS) {
       throw new HTTPException(429, { message: "Too many import previews are open. Finish an import or wait for old previews to expire." });
     }
     this.active.add(userId);

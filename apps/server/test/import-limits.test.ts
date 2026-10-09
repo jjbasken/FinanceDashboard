@@ -38,9 +38,11 @@ test("preview counts, estimated bytes, ownership, deletion and expiry are bounde
   previews.set("bank:d", 1, 1, "a");
   previews.set("book:e", 1, 1, "a");
   previews.set("fund:f", 1, 1, "a");
-  expect(status(() => previews.begin(1))).toBe(429);
-  previews.delete("bank:d"); previews.delete("book:e"); previews.delete("fund:f");
+  // A fourth upload replaces the user's oldest preview instead of being refused.
   previews.begin(1)();
+  expect(status(() => previews.get("bank:d", 1))).toBe(404);
+  expect(previews.get<string>("fund:f", 1)).toBe("a");
+  previews.delete("book:e"); previews.delete("fund:f");
 });
 
 test("global preview count also reserves slots for in-flight uploads", () => {
@@ -87,8 +89,16 @@ test("route quotas span upload types, isolate app instances, and release failed 
   const accountId = (await c.post("/api/accounts", { name: "Checking", type: "checking" })).json.id;
   for (let i = 0; i < 4; i++) expect((await c.upload(`/api/import/bank?accountId=${accountId}`, new Uint8Array())).status).toBe(400);
   const file = new TextEncoder().encode("Date,Amount\n2026-10-01,1.00\n");
-  for (let i = 0; i < 3; i++) expect((await c.upload(`/api/import/bank?accountId=${accountId}`, file)).status).toBe(201);
-  expect((await c.upload("/api/import/gnucash", file)).status).toBe(429);
+  const uploads: { uploadId: string; csv: { suggested: unknown } }[] = [];
+  for (let i = 0; i < 4; i++) {
+    const res = await c.upload(`/api/import/bank?accountId=${accountId}`, file);
+    expect(res.status).toBe(201);
+    uploads.push(res.json);
+  }
+  // Importing files one after another without finishing each drops the oldest preview.
+  const preview = (u: (typeof uploads)[number]) => c.post(`/api/import/bank/${u.uploadId}/preview`, { csv: u.csv.suggested });
+  expect((await preview(uploads[0]!)).status).toBe(404);
+  expect((await preview(uploads[3]!)).status).toBe(200);
   const other = testApp();
   const otherClient = new Client(other.app);
   await otherClient.post("/api/auth/setup", owner);
