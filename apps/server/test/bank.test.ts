@@ -223,7 +223,7 @@ describe("importing a bank file", () => {
     expect(((await c.get("/api/payees")).json as { name: string }[]).map((p) => p.name)).not.toContain("Coffee");
   });
 
-  test("rows imported from GnuCash can match; rows already linked to a statement can't", async () => {
+  test("rows imported from GnuCash can match, ahead of rows already linked to a statement", async () => {
     const { db, c, checking, upload } = await setUp();
     const add = async (date: string, importedId: string) => {
       const t = (
@@ -237,6 +237,46 @@ describe("importing a bank file", () => {
     const up = (await upload(OFX_SGML)).json as BankUpload;
     const preview = (await c.post(`/api/import/bank/${up.uploadId}/preview`, {})).json as BankPreview;
     expect(preview.items[0]).toMatchObject({ status: "match", matchId: fromGnucash });
+  });
+
+  test("rows whose id changed since an earlier file match what that file brought in", async () => {
+    const { c, upload, register } = await setUp();
+    const importCsv = async (csv: string, include?: number[]) => {
+      const up = (await upload(csv, "card.csv")).json as BankUpload;
+      const mapping = up.csv!.suggested;
+      const preview = (await c.post(`/api/import/bank/${up.uploadId}/preview`, { csv: mapping })).json as BankPreview;
+      if (include) await c.post(`/api/import/bank/${up.uploadId}/commit`, { csv: mapping, include });
+      return preview;
+    };
+    await importCsv("Date,Payee,Amount\n2026-10-01,SQ *COFFEE,-4.50\n", [0]);
+    const [coffee] = await register();
+
+    // The bank reworded the payee once the purchase posted: a match, not a second coffee.
+    const reworded = "Date,Payee,Amount\n2026-10-01,SQ *COFFEE SHOP #12,-4.50\n2026-10-03,Lunch,-12.00\n";
+    const preview = await importCsv(reworded, [0, 1]);
+    expect(preview.items.map((i) => i.status)).toEqual(["match", "new"]);
+    expect(preview.items[0]).toMatchObject({ matchId: coffee!.id });
+    expect((await register()).map((t) => t.amount)).toEqual([-1200, -450]);
+    expect((await importCsv(reworded)).counts).toEqual({ new: 0, duplicate: 2, match: 0 });
+
+    // A row this file already carries can't also stand in for a second purchase like it.
+    const twice = "Date,Payee,Amount\n2026-10-01,SQ *COFFEE SHOP #12,-4.50\n2026-10-02,SQ *COFFEE SHOP #12,-4.50\n";
+    expect((await importCsv(twice)).items.map((i) => i.status)).toEqual(["duplicate", "new"]);
+
+    // Outside the file's dates, the same amount is a separate purchase.
+    const later = "Date,Payee,Amount\n2026-10-04,SQ *COFFEE SHOP #12,-4.50\n2026-10-06,Lunch,-12.00\n";
+    expect((await importCsv(later)).items.map((i) => i.status)).toEqual(["new", "new"]);
+  });
+
+  test("switching from OFX to CSV matches the rows the OFX file brought in", async () => {
+    const { c, upload } = await setUp();
+    const ofx = (await upload(OFX_SGML)).json as BankUpload;
+    await c.post(`/api/import/bank/${ofx.uploadId}/commit`, { include: [0, 1, 2] });
+    const csv = "Date,Payee,Amount\n2026-10-01,Corner Grocer,-42.50\n2026-10-03,City Water,-150.00\n2026-10-05,Acme,2500.00\n";
+    const up = (await upload(csv, "checking.csv")).json as BankUpload;
+    const preview = (await c.post(`/api/import/bank/${up.uploadId}/preview`, { csv: up.csv!.suggested }))
+      .json as BankPreview;
+    expect(preview.counts).toEqual({ new: 0, duplicate: 0, match: 3 });
   });
 
   test("undo puts matched transactions back the way they were", async () => {
