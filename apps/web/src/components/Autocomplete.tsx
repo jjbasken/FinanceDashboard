@@ -10,7 +10,7 @@ export interface Option<T> {
 
 /**
  * A keyboard-first combobox. Arrow keys browse, Enter or Tab picks the highlighted option,
- * and leaving the field after typing picks the best match, so fast entry never needs the mouse.
+ * and leaving the field after typing accepts only an exact match or a new payee, so fast entry never needs the mouse.
  * Keys it doesn't use (and Enter/Escape when the list is closed) bubble up to the register.
  */
 export function Autocomplete<T>(props: {
@@ -86,6 +86,12 @@ export function Autocomplete<T>(props: {
     setOpen(true);
   }
 
+  useEffect(() => {
+    const q = text.trim().toLowerCase();
+    const unresolved = typed && q !== "" && !props.options.some(o => o.label.toLowerCase() === q) && !props.create;
+    inputEl.current?.setCustomValidity(unresolved ? "Choose an option from the list, or clear this field." : "");
+  }, [text, typed, props.options, props.create]);
+
   function choose(option: Option<T> | undefined) {
     setOpen(false);
     setTyped(false);
@@ -95,6 +101,7 @@ export function Autocomplete<T>(props: {
       return;
     }
     setText(option.label);
+    inputEl.current?.setCustomValidity("");
     props.onSelect(option.value, option.label);
   }
 
@@ -109,7 +116,9 @@ export function Autocomplete<T>(props: {
       return;
     }
     const exact = shown.find((o) => o.label.toLowerCase() === q);
-    choose(navigated ? shown[highlight] : (exact ?? shown[highlight]));
+    const created = !exact && !navigated && props.create ? props.create(text.trim()) : null;
+    if (!exact && !navigated && !created) { setOpen(false); return; }
+    choose(navigated ? shown[highlight] : (exact ?? created ?? undefined));
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
@@ -208,8 +217,8 @@ export function Autocomplete<T>(props: {
             role="listbox"
             className="autocomplete-list"
             style={{
-              left: rect.left,
-              width: Math.max(rect.width, 220),
+              left: Math.max(12, Math.min(rect.left, window.innerWidth - Math.min(Math.max(rect.width, 220), window.innerWidth - 24) - 12)),
+              width: Math.min(Math.max(rect.width, 220), window.innerWidth - 24),
               maxHeight,
               ...(below ? { top: rect.bottom + 2 } : { bottom: window.innerHeight - rect.top + 2 }),
             }}

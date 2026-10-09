@@ -1,4 +1,5 @@
-import { formatCents, type Transaction } from "@fd/shared";
+import { askConfirm } from "./Feedback";
+import { formatCents, type Account, type Transaction } from "@fd/shared";
 import { useState } from "react";
 import { api } from "../api";
 import { useLedgerMutation } from "../ledger";
@@ -48,6 +49,8 @@ export function TransactionEditor(props: {
   /** The transaction being edited; omit to add one. */
   transaction?: Transaction;
   onClose: () => void;
+  initialCategory?: number; initialIncome?: boolean; initialDate?: string;
+  accountOptions?: Account[]; onAccountChange?: (id: number) => void; onSaved?: () => void;
   /** Start a recurring bill from the transaction, as saved. */
   onMakeRecurring?: (t: Transaction) => void;
 }) {
@@ -56,11 +59,13 @@ export function TransactionEditor(props: {
   const [original] = useState<Draft | undefined>(() =>
     t ? draftFrom(t, t.payeeId != null ? (l.payeeById.get(t.payeeId)?.name ?? "") : "") : undefined,
   );
-  const [d, setDraft] = useState<Draft>(() => original ?? blankDraft());
-  const [side, setSide] = useState<Side>(() => (t && t.amount > 0 ? "deposit" : "payment"));
+  const [initial] = useState<Draft>(() => original ?? { ...blankDraft(props.initialDate), categoryId: props.initialCategory ?? null });
+  const [d, setDraft] = useState<Draft>(initial);
+  const [side, setSide] = useState<Side>(() => ((t ? t.amount > 0 : props.initialIncome) ? "deposit" : "payment"));
+  const [transferMode, setTransferMode] = useState(() => !!(t?.payeeId && l.payeeById.get(t.payeeId)?.transferAccountId));
   const [error, setError] = useState<string | null>(null);
   const set = (patch: Partial<Draft>) => {
-    setDraft({ ...d, ...patch });
+    setDraft(previous => ({ ...previous, ...patch }));
     setError(null);
   };
 
@@ -83,7 +88,7 @@ export function TransactionEditor(props: {
       deposit: f.payment,
     });
     // Keep each line's direction relative to the transaction, so a plain split stays plain.
-    setDraft({ ...swap(d), splits: d.splits.map(swap) });
+    setDraft(previous => ({ ...swap(previous), splits: previous.splits.map(swap) }));
     setSide(next);
   }
 
@@ -98,10 +103,12 @@ export function TransactionEditor(props: {
   }
 
   function save() {
+    if (sidedText(d, side).trim().startsWith("-")) return setError("Enter a positive amount and choose Expense or Income.");
+    if (transferMode && !l.payeeById.get(d.payeeId ?? -1)?.transferAccountId) return setError("Choose a destination account");
     if (!original && amountOf(d) === 0 && !d.payeeName && !d.payeeId) return setError("Enter an amount");
     const built = buildBody(d, original);
     if (built.error !== null) return setError(built.error);
-    const done = { onSuccess: props.onClose };
+    const done = { onSuccess: () => { props.onSaved?.(); props.onClose(); } };
     if (!t) return create.mutate({ accountId: l.account.id, ...built.body }, done);
     if (Object.keys(built.body).length === 0) return props.onClose();
     update.mutate(built.body, done);
@@ -115,8 +122,8 @@ export function TransactionEditor(props: {
     update.mutate(built.body, { onSuccess: (saved) => props.onMakeRecurring!(saved) });
   }
 
-  function del() {
-    if (confirm(deleteMessage(t))) remove.mutate(undefined, { onSuccess: props.onClose });
+  async function del() {
+    if ((await askConfirm(deleteMessage(t)))) remove.mutate(undefined, { onSuccess: props.onClose });
   }
 
   const categoryValue = transfer
@@ -127,8 +134,9 @@ export function TransactionEditor(props: {
 
   return (
     <Dialog
-      title={t ? "Edit transaction" : "Add transaction"}
-      submitLabel={t ? "Save" : "Add"}
+      title={t ? "Edit transaction" : transferMode ? "Record transfer" : side === "deposit" ? "Record income" : "Add purchase"}
+      submitLabel={t ? "Save changes" : transferMode ? "Save transfer" : side === "deposit" ? "Save income" : "Save purchase"}
+      dirty={JSON.stringify(d) !== JSON.stringify(initial)}
       onClose={props.onClose}
       onSubmit={save}
       pending={pending}
@@ -136,28 +144,22 @@ export function TransactionEditor(props: {
     >
       <div className="txn-form">
         <div className="field-row">
-          <label className="field">
-            <span>Date</span>
-            <input type="date" value={d.date} onChange={(e) => set({ date: e.target.value })} required />
-          </label>
           <div className="field">
             <span>Amount</span>
             <div className="txn-amount">
               <div className="segmented" role="group" aria-label="Direction">
-                {(["payment", "deposit"] as const).map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    className={side === s ? "active" : undefined}
-                    onClick={() => flip(s)}
-                  >
-                    {s === "payment" ? "Payment" : "Deposit"}
-                  </button>
-                ))}
+                {(["expense", "income", "transfer"] as const).map(kind => <button key={kind} type="button"
+                  aria-pressed={kind === "transfer" ? transferMode : !transferMode && side === (kind === "income" ? "deposit" : "payment")}
+                  className={(kind === "transfer" ? transferMode : !transferMode && side === (kind === "income" ? "deposit" : "payment")) ? "active" : undefined}
+                  onClick={async () => { setTransferMode(kind === "transfer"); flip(kind === "income" ? "deposit" : "payment"); if (kind !== "transfer" && transferMode) set({ payeeId: null, payeeName: "" }); }}>
+                  {kind === "expense" ? "Expense" : kind === "income" ? "Income" : "Transfer"}
+                </button>)}
               </div>
               <input
                 aria-label="Amount"
                 className="amount"
+                autoFocus={!t}
+                data-autofocus={!t || undefined}
                 inputMode="decimal"
                 placeholder="0.00"
                 value={sidedText(d, side)}
@@ -168,12 +170,12 @@ export function TransactionEditor(props: {
         </div>
 
         <div className="field">
-          <span>Payee</span>
+          <span>{transferMode ? "Transfer to" : "Merchant or payee"}</span>
           <Autocomplete
             ariaLabel="Payee"
             value={d.payeeId != null ? payeeLabel(l.payeeById.get(d.payeeId)) : d.payeeName}
-            options={l.payeeOptions}
-            create={createPayee}
+            options={l.payeeOptions.filter(o => transferMode === !!(o.value.id && l.payeeById.get(o.value.id)?.transferAccountId))}
+            create={transferMode ? undefined : createPayee}
             onSelect={(v) => {
               const patch: Partial<Draft> = { payeeId: v.id, payeeName: v.name };
               if (isBudgetTransfer(l, v.id)) Object.assign(patch, { categoryId: null, split: false, splits: [] });
@@ -184,7 +186,7 @@ export function TransactionEditor(props: {
               set(patch);
             }}
             onClear={() => set({ payeeId: null, payeeName: "" })}
-            placeholder="Optional"
+            placeholder={transferMode ? "Choose destination account" : "Who did you pay?"}
           />
         </div>
 
@@ -202,7 +204,7 @@ export function TransactionEditor(props: {
                 placeholder={transfer ? "Transfer" : "Uncategorized"}
               />
               {!transfer && (
-                <button type="button" className="link-button" onClick={() => set(startSplit(d))}>
+                <button type="button" className="link-button" onClick={async () => set(startSplit(d))}>
                   Split
                 </button>
               )}
@@ -259,7 +261,7 @@ export function TransactionEditor(props: {
                         className="icon-button"
                         aria-label="Remove split"
                         title="Remove split"
-                        onClick={() => removeSplit(s.key)}
+                        onClick={async () => removeSplit(s.key)}
                       >
                         ×
                       </button>
@@ -286,7 +288,7 @@ export function TransactionEditor(props: {
                 <button
                   type="button"
                   className="link-button"
-                  onClick={() => set({ splits: [...d.splits, newSplitLine(d)] })}
+                  onClick={async () => set({ splits: [...d.splits, newSplitLine(d)] })}
                 >
                   Add split
                 </button>
@@ -300,6 +302,12 @@ export function TransactionEditor(props: {
           </div>
         )}
 
+        {props.accountOptions && <label className="field"><span>{transferMode ? "Transfer from" : side === "deposit" ? "Paid into" : "Paid from"}</span><select value={l.account.id} onChange={e => { props.onAccountChange?.(Number(e.target.value)); set({ payeeId: null, payeeName: "" }); }}>
+          {props.accountOptions.map(a => <option key={a.id} value={a.id}>{a.name}{a.private ? " · Private" : ""}</option>)}
+        </select></label>}
+        <label className="field"><span>Date</span><input type="date" value={d.date} onChange={e => set({ date: e.target.value })} required /></label>
+        {transferMode && <p className="muted">This records money moved between your accounts. It does not move money at your bank. Transfers within the budget are not spending; transfers out of the budget need a category.</p>}
+        <details className="entry-details" open={d.split || undefined}><summary>More details: notes, splits & bank status</summary>
         <label className="field">
           <span>Notes</span>
           <input
@@ -312,8 +320,9 @@ export function TransactionEditor(props: {
 
         <label className="checkbox">
           <input type="checkbox" checked={d.cleared} onChange={(e) => set({ cleared: e.target.checked })} />
-          <span>Cleared</span>
+          <span>Confirmed by bank <small className="muted">(cleared)</small></span>
         </label>
+        </details>
         {choosesBudget(l.account) && (
           <label className="checkbox">
             <input type="checkbox" checked={d.inBudget} onChange={(e) => set({ inBudget: e.target.checked })} />
@@ -322,6 +331,7 @@ export function TransactionEditor(props: {
             </span>
           </label>
         )}
+
 
         {t && (
           <div className="txn-editor-actions">

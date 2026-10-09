@@ -1,3 +1,4 @@
+import { askConfirm, askText } from "./Feedback";
 import { describeMonthMask, formatMonthMask, type Category, type CategoryGroup } from "@fd/shared";
 import { useState } from "react";
 import { api } from "../api";
@@ -49,12 +50,9 @@ export function CategoriesCard() {
     method === "delete" ? api.delete(path) : api[method](path, body),
   );
 
-  function ask(label: string, initial = "") {
-    return prompt(label, initial)?.trim() || null;
-  }
 
-  function addGroup(isIncome: boolean) {
-    const name = ask("New category group name");
+  async function addGroup(isIncome: boolean) {
+    const name = (await askText("New category group name"));
     if (name) mutate.mutate({ method: "post", path: "/categories/groups", body: { name, isIncome } });
   }
 
@@ -72,8 +70,8 @@ export function CategoriesCard() {
             <span className="spacer" />
             <button
               className="link-button"
-              onClick={() => {
-                const name = ask(`New category in ${g.name}`);
+              onClick={async () => {
+                const name = (await askText(`New category in ${g.name}`));
                 if (name) mutate.mutate({ method: "post", path: "/categories", body: { groupId: g.id, name } });
               }}
             >
@@ -81,8 +79,8 @@ export function CategoriesCard() {
             </button>
             <button
               className="link-button"
-              onClick={() => {
-                const name = ask("Rename group", g.name);
+              onClick={async () => {
+                const name = (await askText("Rename group", g.name));
                 if (name) mutate.mutate({ method: "patch", path: `/categories/groups/${g.id}`, body: { name } });
               }}
             >
@@ -90,15 +88,15 @@ export function CategoriesCard() {
             </button>
             <button
               className="link-button"
-              onClick={() => mutate.mutate({ method: "patch", path: `/categories/groups/${g.id}`, body: { hidden: !g.hidden } })}
+              onClick={async () => mutate.mutate({ method: "patch", path: `/categories/groups/${g.id}`, body: { hidden: !g.hidden } })}
             >
               {g.hidden ? "Show" : "Hide"}
             </button>
             <button
               className="link-button danger"
-              onClick={() => {
+              onClick={async () => {
                 const msg = `Delete the "${g.name}" group and its ${g.categories.length} categories? Their transactions become uncategorized.`;
-                if (confirm(msg)) mutate.mutate({ method: "delete", path: `/categories/groups/${g.id}` });
+                if ((await askConfirm(msg))) mutate.mutate({ method: "delete", path: `/categories/groups/${g.id}` });
               }}
             >
               Delete
@@ -120,7 +118,7 @@ export function CategoriesCard() {
                 <button
                   className="link-button"
                   title="Set the months this usually comes up"
-                  onClick={() => setMonthsFor(c)}
+                  onClick={async () => setMonthsFor(c)}
                 >
                   Months
                 </button>
@@ -129,7 +127,7 @@ export function CategoriesCard() {
                 <button
                   className="link-button"
                   title="Budget this income in the month after it arrives, e.g. pay that lands at the end of the month"
-                  onClick={() =>
+                  onClick={async () =>
                     mutate.mutate({ method: "patch", path: `/categories/${c.id}`, body: { forNextMonth: !c.forNextMonth } })
                   }
                 >
@@ -138,8 +136,8 @@ export function CategoriesCard() {
               )}
               <button
                 className="link-button"
-                onClick={() => {
-                  const name = ask("Rename category", c.name);
+                onClick={async () => {
+                  const name = (await askText("Rename category", c.name));
                   if (name) mutate.mutate({ method: "patch", path: `/categories/${c.id}`, body: { name } });
                 }}
               >
@@ -147,14 +145,14 @@ export function CategoriesCard() {
               </button>
               <button
                 className="link-button"
-                onClick={() => mutate.mutate({ method: "patch", path: `/categories/${c.id}`, body: { hidden: !c.hidden } })}
+                onClick={async () => mutate.mutate({ method: "patch", path: `/categories/${c.id}`, body: { hidden: !c.hidden } })}
               >
                 {c.hidden ? "Show" : "Hide"}
               </button>
               <button
                 className="link-button"
                 title="Keep this category out of the budget and reports, e.g. reimbursable work expenses"
-                onClick={() =>
+                onClick={async () =>
                   mutate.mutate({
                     method: "patch",
                     path: `/categories/${c.id}`,
@@ -164,7 +162,7 @@ export function CategoriesCard() {
               >
                 {c.excludeFromBudget ? "Include in budget" : "Exclude from budget"}
               </button>
-              <button className="link-button danger" onClick={() => setDeleting(c)}>
+              <button className="link-button danger" onClick={async () => setDeleting(c)}>
                 Delete
               </button>
             </div>
@@ -172,10 +170,10 @@ export function CategoriesCard() {
         </div>
       ))}
       <div className="row-actions">
-        <button className="btn" onClick={() => addGroup(false)}>
+        <button className="btn" onClick={async () => addGroup(false)}>
           Add group
         </button>
-        <button className="btn" onClick={() => addGroup(true)}>
+        <button className="btn" onClick={async () => addGroup(true)}>
           Add income group
         </button>
       </div>

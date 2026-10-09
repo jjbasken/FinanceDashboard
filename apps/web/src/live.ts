@@ -21,7 +21,9 @@ export function useLiveUpdates() {
     source.addEventListener("ready", () => {
       if (connectedBefore) refresh();
       connectedBefore = true;
+      window.dispatchEvent(new CustomEvent("fd:connection", { detail: true }));
     });
+    source.addEventListener("error", () => window.dispatchEvent(new CustomEvent("fd:connection", { detail: false })));
     source.addEventListener("change", (e) => {
       try {
         if (JSON.parse((e as MessageEvent).data).origin === clientId) return;

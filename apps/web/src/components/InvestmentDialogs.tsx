@@ -1,3 +1,4 @@
+import { askConfirm } from "./Feedback";
 import {
   INVESTMENT_ACTIONS,
   INVESTMENT_ACTION_LABELS,
@@ -241,8 +242,8 @@ export function InvestmentTxnDialog(props: {
         <button
           type="button"
           className="link-button danger"
-          onClick={() => {
-            if (confirm("Delete this investment transaction? Its cash entry in the register is deleted too.")) {
+          onClick={async () => {
+            if ((await askConfirm("Delete this investment transaction? Its cash entry in the register is deleted too."))) {
               remove.mutate(undefined, { onSuccess: props.onClose });
             }
           }}
@@ -368,7 +369,7 @@ export function SecurityDialog(props: { security?: Security; onClose: (created?:
             type="button"
             className="btn btn-small"
             disabled={addPrice.isPending}
-            onClick={() => {
+            onClick={async () => {
               const micros = parsePrice(manual);
               if (!micros) return setError("Enter a price, like 101.25");
               setError(null);
@@ -384,8 +385,8 @@ export function SecurityDialog(props: { security?: Security; onClose: (created?:
         <button
           type="button"
           className="link-button danger"
-          onClick={() => {
-            if (confirm(`Delete ${s.symbol} and its price history?`))
+          onClick={async () => {
+            if ((await askConfirm(`Delete ${s.symbol} and its price history?`)))
               remove.mutate(undefined, { onSuccess: () => props.onClose() });
           }}
         >

@@ -260,3 +260,23 @@ export function categoryActivity(
   `);
   return rows.map((r) => ({ ...r, privateAccount: !!r.privateAccount }));
 }
+
+/** Review rows follow the same budget and privacy rules as category activity. */
+export function uncategorizedActivity(db: DbOrTx, viewer: Actor, month: string): CategoryActivityItem[] {
+  const rows = db.all<Omit<CategoryActivityItem, "privateAccount"> & { privateAccount: number }>(sql`
+    select t.id as id, coalesce(t.parent_id, t.id) as transactionId, t.account_id as accountId,
+      (a.owner_id is not null and a.owner_id != ${viewer.userId}) as privateAccount,
+      case when a.owner_id is not null and a.owner_id != ${viewer.userId} then 'Private account' else a.name end as accountName,
+      t.date as date, case when oa.owner_id is not null and oa.owner_id != ${viewer.userId} then 'Transfer: Private account' when p.transfer_account_id is not null then 'Transfer: ' || p.name else coalesce(p.name, '') end as payeeName, t.notes as notes, t.amount as amount
+    from transactions t join accounts a on a.id = t.account_id
+    left join payees p on p.id = t.payee_id
+    left join transactions o on o.id = t.transfer_id
+    left join accounts oa on oa.id = o.account_id
+    where t.household_id = ${viewer.householdId} and ${inFamilyBudget}
+      and t.is_parent = 0 and t.category_id is null
+      and t.date >= ${monthStart(month)} and t.date < ${monthStart(addMonths(month, 1))}
+      and (t.transfer_id is null or oa.on_budget = 0)
+    order by t.date desc, t.id desc
+  `);
+  return rows.map(r => ({ ...r, privateAccount: !!r.privateAccount }));
+}

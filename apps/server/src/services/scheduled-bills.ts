@@ -5,9 +5,10 @@ import {
   occurrencesInMonth,
   type CreateScheduledBillInput,
   type ScheduledBill,
+  type BillPayment,
   type UpdateScheduledBillInput,
 } from "@fd/shared";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import type { Db, DbOrTx } from "../db";
 import { accounts, scheduledBills, transactions } from "../db/schema";
@@ -20,6 +21,7 @@ import {
   getAccount,
   resolvePayee,
   visibleAccount,
+  visibleTo,
   type Actor,
 } from "./ledger";
 
@@ -242,4 +244,22 @@ export function postScheduledBills(db: Db, today: string, log?: Logger) {
     });
   }
   return new Set(posted.keys());
+}
+
+export function listBillPayments(db: DbOrTx, actor: Actor, date: string): BillPayment[] {
+    const month = date.slice(0, 7);
+    const rows = db.all<Omit<BillPayment, "cleared"> & { cleared: number }>(sql`
+      select t.id as id, t.scheduled_bill_id as scheduledBillId, t.account_id as accountId,
+        a.name as accountName, case when pa.owner_id is not null and pa.owner_id != ${actor.userId} then 'Transfer: Private account' when p.transfer_account_id is not null then 'Transfer: ' || p.name else coalesce(p.name, t.notes, '') end as payeeName,
+        t.date as date, t.amount as amount, t.cleared as cleared
+      from transactions t join accounts a on a.id = t.account_id
+      left join payees p on p.id = t.payee_id
+      left join accounts pa on pa.id = p.transfer_account_id
+      where t.household_id = ${actor.householdId} and ${visibleTo(actor.userId)}
+        and t.scheduled_bill_id is not null and t.parent_id is null
+        and t.date < ${`${addMonths(month, 1)}-01`}
+        and (t.cleared = 0 or t.date >= ${`${month}-01`})
+      order by t.date, t.id
+    `);
+    return rows.map(r => ({ ...r, cleared: !!r.cleared }));
 }

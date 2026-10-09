@@ -1,3 +1,4 @@
+import { askConfirm } from "./Feedback";
 import { CURRENCIES, type HouseholdMember } from "@fd/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
@@ -78,7 +79,7 @@ export function YourAccountCard() {
         </div>
       </form>
       <div className="row-actions align-center">
-        <button className="btn" onClick={() => others.mutate()} disabled={others.isPending}>
+        <button className="btn" onClick={async () => others.mutate()} disabled={others.isPending}>
           Sign out other devices
         </button>
         {others.data && (
@@ -88,7 +89,7 @@ export function YourAccountCard() {
         )}
         {others.error && <span className="error-text">{others.error.message}</span>}
         <span className="spacer" />
-        <button className="btn" onClick={() => logout.mutate()} disabled={logout.isPending}>
+        <button className="btn" onClick={async () => logout.mutate()} disabled={logout.isPending}>
           Sign out
         </button>
       </div>
@@ -143,17 +144,17 @@ export function MemberActions(props: { member: HouseholdMember }) {
   return (
     <span className="member-actions">
       {!m.disabled && (
-        <button className="link-button" onClick={() => setSettingPassword(true)}>
+        <button className="link-button" onClick={async () => setSettingPassword(true)}>
           Set password
         </button>
       )}
       <button
         className={m.disabled ? "link-button" : "link-button danger"}
         disabled={toggle.isPending}
-        onClick={() => {
+        onClick={async () => {
           if (
             m.disabled ||
-            confirm(`Remove ${m.displayName}? They'll be signed out and can't sign in. Everything they entered stays.`)
+            (await askConfirm(`Remove ${m.displayName}? They'll be signed out and can't sign in. Everything they entered stays.`))
           ) {
             toggle.mutate();
           }

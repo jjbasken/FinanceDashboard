@@ -69,7 +69,7 @@ To tidy payee names, for example the ones bank statements bring in, use **Settin
 
 ## Recurring bills
 
-For bills that repeat (rent, utilities, daycare, insurance), go to **Bills** (on a phone: **More → Manage recurring bills**) and click **Add bill**. Or start from a payment that's already in the register: open the transaction and click **Make recurring**. The account, payee, amount, category and notes are filled in, and the first due date is the same day next month (the first one after today), so the payment you started from isn't added twice. Choose how often it repeats and save. Pick the payee, amount, account and category, how often it repeats (every month, every week, every 2 weeks, or every year) and the first due date. The first due date sets the schedule: a monthly bill first due on the 15th comes back on the 15th, and one on the 31st falls on the last day of shorter months.
+For bills that repeat (rent, utilities, daycare, insurance), go to **Bills** and click **Add bill**. Or start from a payment that's already in the register: open the transaction and click **Make recurring**. The account, payee, amount, category and notes are filled in, and the first due date is the same day next month (the first one after today), so the payment you started from isn't added twice. Choose how often it repeats and save. Pick the payee, amount, account and category, how often it repeats (every month, every week, every 2 weeks, or every year) and the first due date. The first due date sets the schedule: a monthly bill first due on the 15th comes back on the 15th, and one on the 31st falls on the last day of shorter months.
 
 - **On the 1st of each month**, every bill due that month is added to its account's register with its due date, not cleared yet, so the month's bills are in the register from the start. An every-2-weeks bill can come up two or three times in a month. A new bill adds the rest of the current month right away. If the server was off on the 1st, it catches up when it starts.
 - In the register, bill rows have a ↻, and rows dated after today are dimmed. The account header shows the balance **Today** next to the balance **After upcoming** bills.
@@ -81,10 +81,10 @@ For bills that repeat (rent, utilities, daycare, insurance), go to **Bills** (on
 
 The budget is a plan for one month at a time. Each month stands on its own:
 
-- **To Budget** = this month's income minus what you've budgeted this month.
+- **Left to assign** = this month's income minus what you've planned this month.
 - **Pay at the end of the month:** click **Use next month** on an income category (on the Budget page or in Settings → Categories) and all of that category's income is budgeted in the month after it arrives. Pay that lands on September 29 or 30 then funds October's budget, and the category shows "From September". Other income categories still count in the month they arrive. Reports still show income in the month it was received.
 - **Keeping things out of the budget:** click **Exclude from budget** on a category (on the Budget page or in Settings → Categories) for money that isn't the family's, such as work expenses you'll be reimbursed for. Put both the expenses and the reimbursements in that category. Its transactions still show on the Budget page, marked "Not in budget", but they don't count toward income, spending, To Budget or reports, and the category can't be budgeted.
-- A category's **balance** = what you budgeted for it this month minus what you spent. Nothing carries over: not unspent money, not overspending, and not income you never budgeted.
+- A category's **remaining amount** = what you budgeted for it this month minus what you spent. Nothing carries over: not unspent money, not overspending, and not income you never budgeted.
 - Click a Budgeted amount to edit it. **Enter**, **Tab** and the arrow keys move between categories. **Copy last month** fills in the previous month's amounts.
 - Click a Spent amount to see the transactions behind it. Drag categories and groups to reorder them.
 - **Usual months:** for spending that only comes up at certain times of year (car registration in March, insurance in January and July), click **Months** on a category and pick them. The category gets a badge listing those months. In a month it's due, the badge is highlighted, with ⚠ if nothing is budgeted for it yet. In other months the row is dimmed unless something was budgeted or spent. This is only a reminder; it doesn't change any amounts.
@@ -178,7 +178,13 @@ The household owner can open **Settings → Activity & logs**. Members don't see
 
 ## On your phone
 
-On a phone the app switches to a phone layout. Tabs along the bottom lead to **Budget**, **Accounts**, **Reports**, **Investments** and **More** (settings, imports, payees and sign out). An account's register lists one transaction per row: tap a row to edit it, or tap **+** to add one. On the Budget page, tap a category or group name for its actions, such as Add transaction, Months or Rename.
+Phones and tablets use bottom tabs for **Home**, **Budget**, **Accounts**, **Bills**, and **More**. Reports, Investments, imports, and settings are available from More. Narrow account views use a compact transaction list even when a resized desktop sidebar leaves less room. Mobile budget categories show their full names, planned spending, and remaining amounts without horizontal scrolling.
+
+**Home** shows favorite categories, categories over plan, transactions needing a category, and upcoming bills. In **Settings → Your everyday view**, each member can choose their starting page, favorite categories, personal shortcuts, and whether compact lists show running balances. Preferences are saved separately for each member in each browser.
+
+Use **Add purchase** to record an expense, income, or transfer. The same form is used from Home, Budget, and Accounts; it remembers the last account used in that browser. Notes, splits, and bank status are available when needed. Category searches require an explicit selection when the text is not an exact match. Failed saves retain the entered values; unfinished forms warn before closing or leaving the page. The desktop register also keeps keyboard entry and inline editing.
+
+The budget’s **Review now** link opens all transactions needing a category for that month. Entries included from another member’s private account are shown for reference; only their owner can edit them. **Bills** separates posted payments from recurring schedules. Confirming a bank payment marks the existing entry cleared without adding another transaction. The app records transactions and does not send payments or move money at a bank.
 
 ### Install it as an app
 
@@ -187,7 +193,7 @@ The app can be installed to your home screen and opens full screen like a native
 - **Android (Chrome):** open the site, sign in, then use the menu → **Install app** (or **Add to Home screen**).
 - **iPhone (Safari):** open the site, tap **Share** → **Add to Home Screen**. An installed iPhone app keeps its own sign-in, so you sign in once more inside it.
 
-The installed app always loads your data from the server; nothing financial is stored on the phone. Without a connection it shows "Can't reach the server" until you're back online. After an update, the app picks up the new version the next time it's opened.
+The installed app always loads your data from the server; nothing financial is stored on the phone. Without a connection it offers a retry screen; an already-open app shows connection status and keeps failed transaction forms open for retry. After an update, the app picks up the new version the next time it's opened.
 
 If you use Cloudflare Access and the install option doesn't appear, add an Access **Bypass** policy for the paths `/manifest.webmanifest` and `/icons/*`. They contain only the app's name and icons, and some browsers fetch them without your Access sign-in.
 

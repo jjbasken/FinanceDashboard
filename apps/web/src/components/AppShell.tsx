@@ -1,10 +1,15 @@
-import { type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent, useState } from "react";
-import { NavLink, Outlet } from "react-router";
+import { type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent, useState, useEffect } from "react";
+import { NavLink, Outlet, useLocation } from "react-router";
 import { useAuthMutation, useAuthStatus } from "../auth";
 import { useLiveUpdates } from "../live";
+import { QuickEntry } from "./QuickEntry";
+import { usePreferences } from "../preferences";
+import { ConnectionStatus } from "./ConnectionStatus";
 import { SidebarAccounts } from "./SidebarAccounts";
 
 const nav = [
+  { to: "/home", label: "Home" },
+  { to: "/accounts", label: "Accounts" },
   { to: "/budget", label: "Budget" },
   { to: "/reports", label: "Reports" },
   { to: "/bills", label: "Bills" },
@@ -13,11 +18,11 @@ const nav = [
 
 /** Phone tabs. Icons are 24×24 outline paths drawn with currentColor. */
 const tabs = [
+  { to: "/home", label: "Home", icon: "M3 11l9-8 9 8M5 10v11h14V10M9 21v-8h6v8" },
   { to: "/budget", label: "Budget", icon: "M4 6h16M4 12h16M4 18h10" },
   { to: "/accounts", label: "Accounts", icon: "M3 7h18v12H3zM3 11h18M7 15h4" },
-  { to: "/reports", label: "Reports", icon: "M5 20V10M12 20V4M19 20v-7" },
-  { to: "/investments", label: "Investments", icon: "M4 17l5-6 4 3 7-8M14 6h6v6" },
-  { to: "/settings", label: "More", icon: "M5 12h.01M12 12h.01M19 12h.01" },
+  { to: "/bills", label: "Bills", icon: "M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6" },
+  { to: "/more", label: "More", icon: "M5 12h.01M12 12h.01M19 12h.01" },
 ];
 
 const WIDTH_KEY = "fd.sidebarWidth";
@@ -85,6 +90,10 @@ export function AppShell() {
   const { data: status } = useAuthStatus();
   const logout = useAuthMutation<void>("/auth/logout");
   const sidebar = useSidebarWidth();
+  const [adding, setAdding] = useState(false);
+  const location = useLocation();
+  useEffect(() => setAdding(false), [location.pathname]);
+  const { preferences } = usePreferences();
 
   const householdName = status?.household?.name ?? "Family Finance";
 
@@ -93,6 +102,7 @@ export function AppShell() {
       <header className="topbar">
         <img src="/favicon.svg" alt="" width={22} height={22} />
         <span className="truncate">{householdName}</span>
+        <button className="btn btn-primary" onClick={() => setAdding(true)}>+ Add purchase</button>
       </header>
       <aside className="sidebar" style={{ "--sidebar-width": `${sidebar.width}px` } as CSSProperties}>
         <div className="sidebar-brand">
@@ -108,6 +118,7 @@ export function AppShell() {
           ))}
         </nav>
 
+        <button className="btn btn-primary" onClick={() => setAdding(true)}>+ Add purchase</button>
         <SidebarAccounts />
 
         <div className="sidebar-footer">
@@ -135,8 +146,11 @@ export function AppShell() {
         onKeyDown={sidebar.onKeyDown}
       />
       <main className="main">
+        <ConnectionStatus />
+        {preferences.shortcuts.length > 0 && <nav className="personal-shortcuts" aria-label="Your shortcuts">{preferences.shortcuts.map(to => <NavLink key={to} to={to}>{to === "/reports" ? "Reports" : to === "/investments" ? "Investments" : "Review purchases"}</NavLink>)}</nav>}
         <Outlet />
       </main>
+      {adding && <QuickEntry onClose={() => setAdding(false)} />}
       <nav className="tabbar" aria-label="Sections">
         {tabs.map((t) => (
           <NavLink key={t.to} to={t.to}>

@@ -8,8 +8,8 @@
   --accent: #6d4aff;
   --accent-hover: #5a37ef;
   --accent-text: #ffffff;
-  --danger: #d6334a;
-  --positive: #1f9d55;
+  --danger: #b8243a;
+  --positive: #15733d;
   --sidebar-bg: #23232f;
   --sidebar-text: #c9cad6;
   --sidebar-text-strong: #ffffff;
@@ -40,8 +40,8 @@
     --border: #2d2d3a;
     --text: #e8e9f0;
     --text-muted: #9a9cad;
-    --accent: #8c70ff;
-    --accent-hover: #9d85ff;
+    --accent: #ad99ff;
+    --accent-hover: #b9a8ff;
     --danger: #ff6b7f;
     --positive: #4ccf85;
     --sidebar-bg: #111118;
@@ -1676,7 +1676,7 @@ select {
   gap: 12px;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 1000px) {
   /* Phones: a top bar, the page, and a tab bar; the account list is its own tab. */
   .shell {
     flex-direction: column;
@@ -1817,7 +1817,7 @@ select {
   justify-content: flex-end;
   margin-top: -8px;
 }
-@media (max-width: 720px) {
+@media (max-width: 1000px) {
   .txn-form .field-row {
     grid-template-columns: 1fr;
   }
@@ -1882,7 +1882,7 @@ select {
   align-self: flex-start;
   flex-wrap: wrap;
 }
-@media (max-width: 720px) {
+@media (max-width: 1000px) {
   .import-sources {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -1929,7 +1929,7 @@ select {
   color: var(--accent);
   font-weight: 600;
 }
-@media (max-width: 720px) {
+@media (max-width: 1000px) {
   .topbar {
     display: flex;
   }
@@ -2082,7 +2082,7 @@ select {
 .mobile-register-scroll {
   padding-bottom: 76px;
 }
-@media (max-width: 720px) {
+@media (max-width: 1000px) {
   .data-table,
   .activity-table {
     display: block;
@@ -2105,7 +2105,7 @@ select {
 
 /* Phones: a budget row's badges (usual months, "Not in budget"…) go on a second line, so the
    narrow name column shows the whole name. */
-@media (max-width: 720px) {
+@media (max-width: 1000px) {
   .budget-row .name {
     flex-wrap: wrap;
     row-gap: 2px;
@@ -2150,7 +2150,7 @@ select {
   justify-content: space-between;
   gap: 12px;
 }
-@media (max-width: 720px) {
+@media (max-width: 1000px) {
   /* Phones: payee, amount and Edit, with the schedule on a second line; pause and delete are in the dialog. */
   .bill-detail {
     display: none;
@@ -2265,7 +2265,7 @@ select {
     color: #f2c94c;
   }
 }
-@media (max-width: 720px) {
+@media (max-width: 1000px) {
   /* Phones: when on its own line above who and what. */
   /* Collapsed rather than display: none, so an opened row's colspan still spans the full width. */
   .data-table.report-table .report-detail {
@@ -2297,4 +2297,175 @@ select {
   .audit-fields dl {
     grid-template-columns: minmax(0, auto) minmax(0, 1fr);
   }
+}
+
+/* Everyday view and comfortable controls */
+.main { container: content / inline-size; }
+button, a, summary { touch-action: manipulation; }
+button:focus-visible, a:focus-visible, summary:focus-visible, select:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.btn { min-height: 38px; height: auto; padding-top: 7px; padding-bottom: 7px; }
+.btn-primary { background: #6440e8; border-color: #6440e8; color: #fff; }
+.btn-primary:hover { background: #5330cd; }
+.segmented button.active { background: #6440e8; color: #fff; }
+.topbar .btn { margin-left: auto; flex-shrink: 0; }
+.card p { line-height: 1.55; }
+.home-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+.eyebrow { color: var(--text-muted); margin: 0 0 6px; }
+.home-body { max-width: 1200px; width: 100%; }
+.home-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.home-summary > div { display: flex; flex-direction: column; gap: 12px; }
+.home-summary strong { font-size: 30px; }
+.home-summary small { line-height: 1.5; }
+.favorite-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 12px; }
+.favorite-card { color: var(--text); text-decoration: none; display: flex; flex-direction: column; gap: 14px; }
+.favorite-card:hover { border-color: var(--accent); }
+.favorite-card strong { font-size: 20px; }
+.favorite-card small { line-height: 1.5; }
+.review-list, .simple-list, .bill-payment-list { list-style: none; margin: 0; padding: 0; }
+.review-list { display: flex; flex-direction: column; gap: 12px; }
+.review-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+.review-item .btn { justify-self: start; }
+.review-item strong, .bill-payment-list strong { overflow-wrap: anywhere; }
+.review-item p { margin: 6px 0; }
+.simple-list li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; padding: 12px 0; }
+.more-item { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; align-items: center; }
+.more-item a { text-decoration: none; }
+.more-item h2 { font-size: 19px; }
+.personal-shortcuts { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 12px 24px 0; }
+.personal-shortcuts a { padding: 8px 0; }
+.toast-region { position: fixed; z-index: 100; bottom: calc(80px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); max-width: calc(100vw - 24px); }
+.toast { display: flex; align-items: center; gap: 16px; background: var(--text); color: var(--surface); padding: 10px 16px; border-radius: 12px; box-shadow: var(--shadow); }
+.toast .icon-button { color: inherit; }
+.save-status { min-height: 20px; margin: 0 24px 8px; color: var(--text-muted); font-size: 13px; }
+.budget-explainer { margin-top: 8px; line-height: 1.5; }
+.budget-explainer summary { cursor: pointer; padding: 8px 0; }
+.budget-grid .row-actions-inline { display: none !important; }
+.budget-row .name { padding-top: 8px; padding-bottom: 8px; }
+.budget-row .name-button { display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 10px; min-height: 28px; white-space: normal; }
+.budget-row .name-button span:first-child { overflow-wrap: anywhere; }
+.budget-row { grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(100px, 140px)); }
+.budget-row .drag-handle { opacity: 0.75; }
+.budget-row.highlighted { box-shadow: inset 4px 0 var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.to-budget { flex-wrap: wrap; gap: 14px; }
+.to-budget-amount span { white-space: normal; }
+.balance-details { flex-basis: 100%; text-align: right; }
+.balance-details summary { padding: 10px 0; cursor: pointer; color: var(--text-muted); }
+.balance-details .stat { display: inline-flex; margin: 8px 12px; }
+.balance-details p { margin: 8px 0; }
+.account-stats { flex-wrap: wrap; }
+.account-header { flex-wrap: wrap; }
+.register-row.future, .m-row.future { opacity: 1; background: color-mix(in srgb, var(--accent) 4%, var(--surface)); }
+.bill-mark { color: var(--text); }
+.cleared-toggle { min-width: 28px; width: 28px; height: 28px; }
+.m-row .cleared-toggle { min-width: 44px; width: 44px; height: 44px; border-radius: 12px; color: var(--text-muted); }
+.m-row .cleared-toggle.on { color: #fff; background: #15733d; }
+.m-row .cleared-toggle:not(.on):not(.reconciled) { color: var(--text-muted); }
+.entry-details { display: flex; flex-direction: column; }
+.entry-details summary { padding: 12px 0; cursor: pointer; }
+.entry-details > .field, .entry-details > .checkbox { margin-top: 12px; }
+.txn-amount { flex-wrap: wrap; }
+.txn-amount .segmented { flex: 1 1 100%; }
+.txn-amount .segmented button { flex: 1; }
+.txn-amount > input { width: 100%; flex: 1; height: 48px; font-size: 22px; text-align: left; }
+.txn-form .field-row { min-width: 0; }
+.dialog { max-height: calc(100dvh - 24px); padding: 20px; overflow-y: auto; overscroll-behavior: contain; }
+.dialog form { min-width: 0; }
+.dialog-actions { position: sticky; bottom: -20px; background: var(--surface); padding: 14px 0; margin-bottom: -8px; z-index: 2; }
+.draft-warning { line-height: 1.5; }
+.preference-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 8px; }
+fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 14px; min-width: 0; }
+fieldset legend { padding: 0 6px; }
+fieldset .checkbox { margin: 6px 0; }
+.bill-payment-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; padding: 18px 0; border-bottom: 1px solid var(--border); }
+.bill-payment-list li:last-child { border-bottom: 0; }
+.bill-payment-list li > div:first-child { display: flex; flex-direction: column; gap: 8px; }
+.payment-status { font-size: 13px; }
+.payment-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 10px; }
+@container content (max-width: 760px) {
+  .budget-grid { overflow: visible; border: 0; background: transparent; }
+  .budget-grid > .budget-head { display: none; }
+  .budget-row { font-size: 15px; }
+  .budget-total { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 14px; border-radius: 10px; margin-bottom: 14px; }
+  .budget-total > div:first-child { grid-column: 1 / -1; }
+  .budget-total > :nth-child(2)::before { content: "Planned "; color: var(--text-muted); font-weight: 400; }
+  .budget-total > :nth-child(3)::before { content: "Spent "; color: var(--text-muted); font-weight: 400; }
+  .budget-total > :nth-child(4) { grid-column: 1 / -1; }
+  .budget-total > :nth-child(4)::before { content: "Remaining "; font-weight: 400; }
+  .group-row { display: flex; flex-wrap: wrap; padding: 10px 0; border: 0; background: transparent; }
+  .group-row > .name { width: 100%; }
+  .group-row > .amount { display: none; }
+  .category-line { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "name name" "plan balance" "spent balance"; padding: 12px; margin-bottom: 10px; gap: 6px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+  .category-line .name { grid-area: name; flex-wrap: wrap; padding: 0; }
+  .category-line .name-button { font-size: 16px; min-height: 44px; flex: 1 1 100%; }
+  .category-line > :nth-child(2) { grid-area: plan; }
+  .category-line > :nth-child(3) { grid-area: spent; }
+  .category-line > :nth-child(4) { grid-area: balance; }
+  .category-line > .amount { text-align: left; padding: 0; }
+  .category-line .budget-cell, .category-line .activity-cell { text-align: left; min-height: 44px; padding: 6px 0; }
+  .category-line .budget-cell::before { content: "Planned "; display: block; color: var(--text-muted); font-size: 12px; }
+  .category-line .activity-cell::before { content: "Spent "; display: block; color: var(--text-muted); font-size: 12px; }
+  .category-line .balance-pill { display: block; text-align: right; font-weight: 600; padding: 12px 8px; border-radius: 8px; white-space: normal; overflow-wrap: anywhere; }
+  .category-line .balance-pill::after { content: "remaining this month"; display: block; font-weight: 400; font-size: 12px; margin-top: 6px; }
+  .category-line .balance-pill.negative::after { content: "over this month’s plan"; }
+  .budget-group:has(+ .budget-group) { margin-bottom: 12px; }
+  .income-head { display: block; background: transparent; padding: 14px 0; }
+  .income-head > :not(:first-child) { display: none; }
+  .income-head ~ .budget-group .category-line .activity-cell::before { content: "Received "; }
+  .budget-row .drag-handle { display: none; }
+  .home-summary { grid-template-columns: 1fr; }
+  .card-head { flex-wrap: wrap; gap: 12px; }
+  .account-stats { justify-content: flex-start; }
+  .balance-details { text-align: left; }
+}
+@media (max-width: 1000px) {
+  body { font-size: 16px; }
+  input, select, textarea, .cell-input { font-size: 16px; min-height: 44px; }
+  input[type="checkbox"] { min-height: 22px; width: 22px; height: 22px; flex-shrink: 0; }
+  .btn, .btn-small, .icon-button, .segmented button, .menu summary, .menu-items button { min-height: 44px; }
+  .checkbox { min-height: 44px; }
+  .dialog .field-row { flex-direction: column; }
+  .dialog { width: calc(100vw - 24px); max-width: 620px; }
+  .link-button { min-height: 44px; padding: 8px 0; }
+  .sidebar-actions button, .sidebar-folder-toggle, .sidebar a { min-height: 44px; }
+  .sidebar-actions { opacity: 1; }
+  .topbar { font-size: 14px; }
+  .topbar .btn { font-size: 13px; padding: 6px 10px; }
+  .account-stats .stat strong { font-size: 21px; }
+  .account-toolbar { flex-wrap: wrap; gap: 10px; }
+  .account-toolbar input[type="search"] { width: 100%; flex: 1 1 100%; }
+  .page-header h1 { overflow-wrap: anywhere; }
+  .personal-shortcuts { padding: 8px 16px 0; }
+  .to-budget { width: 100%; }
+  .budget-row .badge { font-size: 12px; }
+  .budget-input { height: 44px; }
+  .bill-payment-list .amount { font-size: 15px; }
+  .autocomplete-option { min-height: 44px; padding-top: 12px; padding-bottom: 12px; }
+  .tabbar a { min-height: 56px; justify-content: center; }
+  .mobile-register { flex: 1 0 320px; }
+  .mobile-register-scroll { min-height: 260px; }
+  .toast { font-size: 14px; }
+}
+@media (prefers-color-scheme: dark) {
+  .balance-pill.positive { color: #70e3a0; }
+  .btn-primary, .segmented button.active { background: #6742e8; color: #fff; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; } }
+
+.dialog-content { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.dialog-content[hidden] { display: none; }
+.budget-grid.stale { pointer-events: none; }
+
+.home-body .card, .review-item, .more-item { max-width: none; }
+.home-summary { display: grid; }
+.review-item { display: grid; }
+.more-item { flex-direction: row; }
+.card.favorite-card { display: flex; }
+.budget-explainer.notice { background: var(--surface); border-color: var(--border); color: var(--text-muted); font-size: 14px; }
+.budget-organize .menu-items { min-width: 240px; padding: 12px; }
+.budget-organize .checkbox { white-space: normal; }
+.budget-organize .btn { width: 100%; }
+.dialog { max-height: min(calc(100dvh - 24px), calc(var(--visual-height, 100dvh) - 24px)); }
+@media (max-width: 1000px) {
+  .home-header > .btn-primary, .budget-header > .btn-primary, .account-toolbar > .btn-primary { display: none; }
+  .dialog { top: calc(var(--visual-top, 0px) + 12px); bottom: auto; margin: 0 auto; }
 }

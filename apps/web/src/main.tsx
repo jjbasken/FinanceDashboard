@@ -1,7 +1,9 @@
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter } from "react-router";
+import { createBrowserRouter, RouterProvider } from "react-router";
+import { DraftProtection } from "./components/DraftProtection";
+import { Feedback, notify } from "./components/Feedback";
 import { ApiError } from "./api";
 import { App } from "./App";
 import { authKey } from "./auth";
@@ -14,7 +16,7 @@ function onError(err: Error) {
 
 const queryClient: QueryClient = new QueryClient({
   queryCache: new QueryCache({ onError }),
-  mutationCache: new MutationCache({ onError }),
+  mutationCache: new MutationCache({ onError, onSuccess: () => notify("Saved successfully") }),
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: true,
@@ -31,12 +33,12 @@ if (import.meta.env.PROD && "serviceWorker" in navigator) {
   });
 }
 
+const router = createBrowserRouter([{ path: "*", element: <DraftProtection><App /><Feedback /></DraftProtection> }]);
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
+      <RouterProvider router={router} />
     </QueryClientProvider>
   </StrictMode>,
 );

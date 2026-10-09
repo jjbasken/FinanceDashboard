@@ -175,7 +175,7 @@ function CashFlowReport() {
         </div>
         {months.length > 0 && <CashFlowChart months={months} />}
         <p className="muted small">
-          By category, from on-budget accounts. Transfers between your accounts aren't counted.
+          By category, from accounts included in the budget. Transfers between your accounts aren’t counted here. Your budget can include transfers to off-budget accounts, so its spending total may differ from this report.
         </p>
         <div className="table-scroll">
           <table className="data-table">

@@ -1,4 +1,5 @@
 import type {
+  CategoryActivityItem,
   Account,
   AuditEntry,
   AuditFilters,
@@ -88,6 +89,7 @@ export function useLedgerMutation<TInput, TResult = unknown>(fn: (input: TInput)
         qc.invalidateQueries({ queryKey: ledgerKeys.accounts }),
         qc.invalidateQueries({ queryKey: ledgerKeys.folders }),
         qc.invalidateQueries({ queryKey: ["register"] }),
+        qc.invalidateQueries({ queryKey: ["transaction"] }),
         qc.invalidateQueries({ queryKey: ledgerKeys.payees }),
         qc.invalidateQueries({ queryKey: ledgerKeys.categories }),
         qc.invalidateQueries({ queryKey: ledgerKeys.scheduledBills }),
@@ -104,6 +106,8 @@ export const useBudget = (month: string) =>
     queryFn: () => api.get<BudgetMonth>(`/budget/${month}`),
     placeholderData: (prev) => prev,
   });
+
+export const useReview = (month: string) => useQuery({ queryKey: ["budget", month, "uncategorized"], queryFn: () => api.get<CategoryActivityItem[]>(`/budget/${month}/uncategorized`) });
 
 export const useSecurities = () =>
   useQuery({ queryKey: ["investments", "securities"], queryFn: () => api.get<Security[]>("/investments/securities") });

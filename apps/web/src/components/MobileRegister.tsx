@@ -1,6 +1,8 @@
+import { askConfirm } from "./Feedback";
 import { formatCents, type Account, type CategoryGroup, type Payee, type Transaction } from "@fd/shared";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { usePreferences } from "../preferences";
 import { api } from "../api";
 import { formatDate, today, useLedgerMutation } from "../ledger";
 import {
@@ -33,6 +35,7 @@ export function MobileRegister(props: {
   onCloseAdding: () => void;
 }) {
   const { account, transactions } = props;
+  const { preferences } = usePreferences();
   const lookups = useLookups(account, props.accounts, props.payees, props.categories);
   const showCategory = account.onBudget;
   const [editing, setEditing] = useState<Transaction | null>(null);
@@ -55,16 +58,16 @@ export function MobileRegister(props: {
     return q ? transactions.filter((t) => matchesSearch(lookups, t, q, showCategory)) : transactions;
   }, [transactions, props.search, lookups, showCategory]);
 
-  function open(t: Transaction) {
+  async function open(t: Transaction) {
     const linked = linkedKind(t);
     if (linked) return setLinkedNotice(linked);
-    if (t.reconciled && !confirm("This transaction is reconciled. Edit it anyway?")) return;
+    if (t.reconciled && !(await askConfirm("This transaction is reconciled. Edit it anyway?"))) return;
     setLinkedNotice(null);
     setEditing(t);
   }
 
-  function toggleCleared(t: Transaction) {
-    if (t.reconciled && !confirm("This transaction is reconciled. Unlock it?")) return;
+  async function toggleCleared(t: Transaction) {
+    if (t.reconciled && !(await askConfirm("This transaction is reconciled. Unlock it?"))) return;
     setSaveError(null);
     update.mutate({ id: t.id, body: { cleared: !t.cleared } }, { onError: (err) => setSaveError(err.message) });
   }
@@ -110,7 +113,7 @@ export function MobileRegister(props: {
                     <button
                       type="button"
                       className="m-row-main"
-                      onClick={() => open(t)}
+                      onClick={async () => open(t)}
                       aria-label={
                         `${formatDate(t.date)}, ${payee || "no payee"}, ${formatCents(t.amount)}. ` + "Tap to edit."
                       }
@@ -123,6 +126,7 @@ export function MobileRegister(props: {
                         <span className="truncate">
                           {formatDate(t.date)}
                           {t.scheduledBillId != null && <BillMark />}
+                          {t.date > today() && " · Scheduled"}
                           {category === null ? (
                             <>
                               {" · "}
@@ -133,9 +137,7 @@ export function MobileRegister(props: {
                           ) : null}
                           {choosesBudget(account) && t.inBudget && " · Family"}
                         </span>
-                        <span className={t.runningBalance < 0 ? "amount negative" : "amount"}>
-                          {formatCents(t.runningBalance)}
-                        </span>
+                        {preferences.showRunningBalance && <span className={t.runningBalance < 0 ? "amount negative" : "amount"}>After: {formatCents(t.runningBalance)}</span>}
                       </span>
                     </button>
                     <button
@@ -143,11 +145,11 @@ export function MobileRegister(props: {
                       className={
                         t.reconciled ? "cleared-toggle reconciled" : t.cleared ? "cleared-toggle on" : "cleared-toggle"
                       }
-                      aria-label={t.reconciled ? "Reconciled" : t.cleared ? "Cleared" : "Not cleared"}
+                      aria-label={`${payee || "Transaction"} on ${formatDate(t.date)}: ${t.reconciled ? "Reconciled" : t.cleared ? "Confirmed by bank; mark unconfirmed" : "Not confirmed; mark confirmed by bank"}`}
                       title={t.reconciled ? "Reconciled" : t.cleared ? "Cleared" : "Not cleared"}
-                      onClick={() => toggleCleared(t)}
+                      onClick={async () => toggleCleared(t)}
                     >
-                      {t.reconciled ? "🔒" : "✓"}
+                      {t.reconciled ? "🔒" : t.cleared ? "✓" : "○"}
                     </button>
                   </div>
                 </div>

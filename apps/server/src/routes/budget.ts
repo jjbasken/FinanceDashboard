@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { AppEnv } from "../app";
 import { actorOf, idParam, parseBody, requireAuth } from "../middleware";
-import { categoryActivity, copyLastMonth, getBudgetMonth, setBudget } from "../services/budget";
+import { uncategorizedActivity, categoryActivity, copyLastMonth, getBudgetMonth, setBudget } from "../services/budget";
 
 function monthParam(raw: string | undefined) {
   const parsed = monthSchema.safeParse(raw);
@@ -15,6 +15,8 @@ export const budgetRoutes = new Hono<AppEnv>()
   .use(requireAuth)
 
   .get("/:month", (c) => c.json(getBudgetMonth(c.var.db, actorOf(c).householdId, monthParam(c.req.param("month")))))
+
+  .get("/:month/uncategorized", c => c.json(uncategorizedActivity(c.var.db, actorOf(c), monthParam(c.req.param("month")))))
 
   .put("/:month/categories/:id", async (c) => {
     const month = monthParam(c.req.param("month"));
