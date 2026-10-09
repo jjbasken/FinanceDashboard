@@ -29,10 +29,17 @@ export function importedIds(accountId: number, txns: BankTxn[]) {
   });
 }
 
+const isStatementId = (id: string | null) => !!id && (id.startsWith("ofx:") || id.startsWith("csv:"));
+
 /**
- * Sort each row into new, duplicate (already imported) or match (a transaction entered by hand or
- * brought in from GnuCash, with the same amount within a few days, which gets linked instead of
- * duplicated).
+ * Sort each row into new, duplicate (already imported) or match (an existing transaction with the
+ * same amount within a few days, which gets linked instead of duplicated).
+ *
+ * Transactions entered by hand or brought in from GnuCash are matched first. Ones an earlier file
+ * brought in can match too, for when a row's id changed between downloads (a reworded CSV payee, a
+ * bank that reissued its OFX ids, or switching between OFX and CSV), but only when they're dated
+ * within this file's range: a file that covers the date and doesn't carry the row's old id is
+ * presumably showing it under a new one, while one outside the range is a separate purchase.
  */
 export function planBankImport(
   db: DbOrTx,
@@ -41,29 +48,32 @@ export function planBankImport(
   txns: BankTxn[],
 ): BankPreview & { ids: string[] } {
   const ids = importedIds(account.id, txns);
-  const existing = new Set(
+  const existing = new Map(
     db
-      .select({ id: transactions.importedId })
+      .select({ id: transactions.id, importedId: transactions.importedId })
       .from(transactions)
       .where(and(eq(transactions.householdId, householdId), isNotNull(transactions.importedId)))
       .all()
-      .map((r) => r.id!),
+      .map((r) => [r.importedId!, r.id]),
   );
 
+  const dates = txns.map((t) => t.date).sort();
+  const [firstDate, lastDate] = [dates[0] ?? "", dates.at(-1) ?? ""];
   const candidates = db
-    .select({ id: transactions.id, date: transactions.date, amount: transactions.amount, payee: payees.name })
+    .select({
+      id: transactions.id,
+      date: transactions.date,
+      amount: transactions.amount,
+      payee: payees.name,
+      importedId: transactions.importedId,
+    })
     .from(transactions)
     .leftJoin(payees, eq(payees.id, transactions.payeeId))
-    .where(
-      and(
-        eq(transactions.accountId, account.id),
-        isNull(transactions.parentId),
-        // Anything not already linked to a statement can match, including rows imported from GnuCash.
-        sql`(${transactions.importedId} is null or (${transactions.importedId} not like 'ofx:%' and ${transactions.importedId} not like 'csv:%'))`,
-      ),
-    )
-    .all();
-  const claimed = new Set<number>();
+    .where(and(eq(transactions.accountId, account.id), isNull(transactions.parentId)))
+    .all()
+    .filter((c) => !isStatementId(c.importedId) || (c.date >= firstDate && c.date <= lastDate));
+  // Transactions this file already brought in can't also match one of its other rows.
+  const claimed = new Set(ids.flatMap((id) => (existing.has(id) ? [existing.get(id)!] : [])));
 
   // Category suggestions: what the payee was last categorised as.
   const lastCategory = new Map(
@@ -100,7 +110,9 @@ export function planBankImport(
           Math.abs(dayNumber(c.date) - dayNumber(t.date)) <= MATCH_WINDOW_DAYS,
       )
       .sort(
-        (a, b) => Math.abs(dayNumber(a.date) - dayNumber(t.date)) - Math.abs(dayNumber(b.date) - dayNumber(t.date)),
+        (a, b) =>
+          Number(isStatementId(a.importedId)) - Number(isStatementId(b.importedId)) ||
+          Math.abs(dayNumber(a.date) - dayNumber(t.date)) - Math.abs(dayNumber(b.date) - dayNumber(t.date)),
       )[0];
     if (match) {
       claimed.add(match.id);
