@@ -49,4 +49,5 @@ services:
 
 secrets:
   tunnel_token:
-    file: ./secrets/cloudflare-tunnel-token
+    # Set TUNNEL_TOKEN_FILE in docker/.env to keep the token elsewhere (see docker/.env.example).
+    file: ${TUNNEL_TOKEN_FILE:-./secrets/cloudflare-tunnel-token}
