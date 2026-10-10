@@ -1,5 +1,6 @@
 # Family Finance behind a Cloudflare Tunnel. Run from docker/:
 #   GIT_COMMIT=$(git rev-parse --short HEAD) docker compose up -d --build
+# For subsequent app updates, run ./update.sh to set the version and rebuild finance.
 # (GIT_COMMIT is optional; it labels the version in the owner's Logs.)
 # Setup (tunnel token, Cloudflare route and Access policy) is described in the README.
 # Without a name, Compose would call the project "docker" after this folder.
