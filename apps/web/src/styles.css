@@ -2364,8 +2364,9 @@ button:focus-visible, a:focus-visible, summary:focus-visible, select:focus-visib
 .entry-details summary { padding: 12px 0; cursor: pointer; }
 .entry-details > .field, .entry-details > .checkbox { margin-top: 12px; }
 .txn-amount { flex-wrap: wrap; }
+.txn-form .txn-amount-row { grid-template-columns: minmax(0, 1fr); }
 .txn-amount .segmented { flex: 1 1 100%; }
-.txn-amount .segmented button { flex: 1; }
+.txn-amount .segmented button { flex: 1; min-width: 0; padding-inline: 8px; white-space: nowrap; }
 .txn-amount > input { width: 100%; flex: 1; height: 48px; font-size: 22px; text-align: left; }
 .txn-form .field-row { min-width: 0; }
 .dialog { max-height: calc(100dvh - 24px); padding: 20px; overflow-y: auto; overscroll-behavior: contain; }
