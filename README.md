@@ -4,6 +4,34 @@ A self-hosted family finance manager with an Actual Budget-style interface: mont
 
 > **Status:** all six milestones are done: auth and households; the ledger (accounts, categories, payees, and a keyboard-driven register with transfers, splits and reconciliation); the monthly budget; GnuCash and bank-statement imports; investments with automatic daily prices; and reports, live updates between sessions, and nightly backups.
 
+## Screenshots
+
+These screenshots use fictional household data.
+
+### Household overview
+
+See the month's unassigned income, favorite categories, and upcoming bills at a glance.
+
+![Household overview showing favorite category balances and upcoming bills](docs/screenshots/overview.png)
+
+### Monthly budget
+
+Plan each category and compare planned amounts, spending, and what's remaining.
+
+![October budget showing planned amounts, spending, remaining balances, and overspending alerts](docs/screenshots/budget.png)
+
+### Transaction register
+
+Review purchases, transfers, and scheduled bills alongside account balances.
+
+![Checking account register showing categorized transactions, transfers, and scheduled bills](docs/screenshots/register.png)
+
+### Reports
+
+Track net worth over time, with separate views for cash flow and spending by category.
+
+![Net worth report showing assets, liabilities, and a monthly trend chart](docs/screenshots/reports.png)
+
 ## Stack
 
 - **Runtime:** [Bun](https://bun.sh) 1.3+, a monorepo built on Bun workspaces
