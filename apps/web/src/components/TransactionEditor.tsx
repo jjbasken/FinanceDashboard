@@ -143,7 +143,7 @@ export function TransactionEditor(props: {
       error={error ?? (create.error ?? update.error ?? remove.error)?.message}
     >
       <div className="txn-form">
-        <div className="field-row">
+        <div className="field-row txn-amount-row">
           <div className="field">
             <span>Amount</span>
             <div className="txn-amount">
