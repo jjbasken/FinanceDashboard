@@ -77,4 +77,4 @@ export function App() {
   );
 }
 
-function StartPage() { const { preferences } = usePreferences(); return <Navigate to={preferences.startPage} replace />; }
+function StartPage() { const { preferences, loaded } = usePreferences(); return loaded ? <Navigate to={preferences.startPage} replace /> : null; }

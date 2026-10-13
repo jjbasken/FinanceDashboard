@@ -1,4 +1,4 @@
-import { acceptInviteInput, changePasswordInput, loginInput, setupInput, type AuthStatus } from "@fd/shared";
+import { acceptInviteInput, changePasswordInput, loginInput, preferencesSchema, setupInput, type AuthStatus } from "@fd/shared";
 import { and, count, eq, gt, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -106,6 +106,19 @@ export const authRoutes = new Hono<AppEnv>()
       // Release reservations after throttling or unexpected verification failures, too.
       finish(null);
     }
+  })
+
+  /** Your own preferences, or null if you've never saved any. */
+  .get("/preferences", requireAuth, (c) => {
+    const { user } = sessionOf(c);
+    const row = c.var.db.select({ preferences: users.preferences }).from(users).where(eq(users.id, user.id)).get();
+    return c.json({ preferences: row?.preferences ?? null });
+  })
+
+  .put("/preferences", requireAuth, async (c) => {
+    const preferences = await parseBody(c, preferencesSchema);
+    c.var.db.update(users).set({ preferences }).where(eq(users.id, sessionOf(c).user.id)).run();
+    return c.json({ preferences });
   })
 
   /** Change your own password. Your other sessions are signed out; this one stays. */
