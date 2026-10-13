@@ -51,6 +51,8 @@ export function TransactionEditor(props: {
   onClose: () => void;
   initialCategory?: number; initialIncome?: boolean; initialDate?: string;
   accountOptions?: Account[]; onAccountChange?: (id: number) => void; onSaved?: () => void;
+  /** Offered as a last account option when accountOptions is a shortlist. */
+  onShowAllAccounts?: () => void;
   /** Start a recurring bill from the transaction, as saved. */
   onMakeRecurring?: (t: Transaction) => void;
 }) {
@@ -302,8 +304,9 @@ export function TransactionEditor(props: {
           </div>
         )}
 
-        {props.accountOptions && <label className="field"><span>{transferMode ? "Transfer from" : side === "deposit" ? "Paid into" : "Paid from"}</span><select value={l.account.id} onChange={e => { props.onAccountChange?.(Number(e.target.value)); set({ payeeId: null, payeeName: "" }); }}>
+        {props.accountOptions && <label className="field"><span>{transferMode ? "Transfer from" : side === "deposit" ? "Paid into" : "Paid from"}</span><select value={l.account.id} onChange={e => { if (e.target.value === "all") return props.onShowAllAccounts?.(); props.onAccountChange?.(Number(e.target.value)); set({ payeeId: null, payeeName: "" }); }}>
           {props.accountOptions.map(a => <option key={a.id} value={a.id}>{a.name}{a.private ? " · Private" : ""}</option>)}
+          {props.onShowAllAccounts && <option value="all">More accounts…</option>}
         </select></label>}
         <label className="field"><span>Date</span><input type="date" value={d.date} onChange={e => set({ date: e.target.value })} required /></label>
         {transferMode && <p className="muted">This records money moved between your accounts. It does not move money at your bank. Transfers within the budget are not spending; transfers out of the budget need a category.</p>}

@@ -1,8 +1,8 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { useAuthStatus } from "./auth";
 
-export type Preferences = { startPage: string; favorites: number[]; shortcuts: string[]; showRunningBalance: boolean };
-const defaults: Preferences = { startPage: "/home", favorites: [], shortcuts: [], showRunningBalance: false };
+export type Preferences = { startPage: string; favorites: number[]; entryAccounts: number[]; shortcuts: string[]; showRunningBalance: boolean };
+const defaults: Preferences = { startPage: "/home", favorites: [], entryAccounts: [], shortcuts: [], showRunningBalance: false };
 const Context = createContext<{ preferences: Preferences; update: (patch: Partial<Preferences>) => void }>({ preferences: defaults, update: () => {} });
 export function PreferencesProvider({ children }: { children: ReactNode }) {
   const { data } = useAuthStatus();
@@ -16,6 +16,7 @@ function Store({ storageKey, children }: { storageKey: string; children: ReactNo
       if (!p || typeof p !== "object") return defaults;
       return { startPage: typeof p.startPage === "string" && /^\/(home|budget|accounts(?:\/\d+)?)$/.test(p.startPage) ? p.startPage : defaults.startPage,
         favorites: Array.isArray(p.favorites) ? p.favorites.filter((id: unknown) => Number.isInteger(id)) : [],
+        entryAccounts: Array.isArray(p.entryAccounts) ? p.entryAccounts.filter((id: unknown) => Number.isInteger(id)) : [],
         shortcuts: Array.isArray(p.shortcuts) ? p.shortcuts.filter((x: unknown) => x === "/reports" || x === "/investments" || x === "/review") : [],
         showRunningBalance: p.showRunningBalance === true };
     } catch { return defaults; }
