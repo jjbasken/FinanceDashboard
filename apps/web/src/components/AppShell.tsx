@@ -1,5 +1,5 @@
 import { type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent, useState, useEffect } from "react";
-import { NavLink, Outlet, useLocation } from "react-router";
+import { NavLink, Outlet, matchPath, useLocation } from "react-router";
 import { useAuthMutation, useAuthStatus } from "../auth";
 import { useLiveUpdates } from "../live";
 import { QuickEntry } from "./QuickEntry";
@@ -93,6 +93,8 @@ export function AppShell() {
   const [adding, setAdding] = useState(false);
   const location = useLocation();
   useEffect(() => setAdding(false), [location.pathname]);
+  // On an account's page, new purchases default to that account.
+  const currentAccountId = Number(matchPath("/accounts/:id", location.pathname)?.params.id) || undefined;
   const { preferences } = usePreferences();
 
   const householdName = status?.household?.name ?? "Family Finance";
@@ -150,7 +152,7 @@ export function AppShell() {
         {preferences.shortcuts.length > 0 && <nav className="personal-shortcuts" aria-label="Your shortcuts">{preferences.shortcuts.map(to => <NavLink key={to} to={to}>{to === "/reports" ? "Reports" : to === "/investments" ? "Investments" : "Review purchases"}</NavLink>)}</nav>}
         <Outlet />
       </main>
-      {adding && <QuickEntry onClose={() => setAdding(false)} />}
+      {adding && <QuickEntry accountId={currentAccountId} onClose={() => setAdding(false)} />}
       <nav className="tabbar" aria-label="Sections">
         {tabs.map((t) => (
           <NavLink key={t.to} to={t.to}>
