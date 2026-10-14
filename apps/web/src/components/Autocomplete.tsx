@@ -9,8 +9,9 @@ export interface Option<T> {
 }
 
 /**
- * A keyboard-first combobox. Arrow keys browse, Enter or Tab picks the highlighted option,
- * and leaving the field after typing accepts only an exact match or a new payee, so fast entry never needs the mouse.
+ * A keyboard-first combobox. Arrow keys browse, Enter or Tab picks the highlighted option (or an exact match),
+ * and otherwise leaving the field after typing accepts only an exact match or a new payee,
+ * so fast entry never needs the mouse.
  * Keys it doesn't use (and Enter/Escape when the list is closed) bubble up to the register.
  */
 export function Autocomplete<T>(props: {
@@ -105,8 +106,11 @@ export function Autocomplete<T>(props: {
     props.onSelect(option.value, option.label);
   }
 
-  /** Settle typed text: empty clears, otherwise take the exact match or the highlighted option. */
-  function settle() {
+  /**
+   * Settle typed text: empty clears, otherwise take the exact match or the option browsed to with the arrows.
+   * With `pickHighlighted` (Enter or Tab), the highlighted option counts even without browsing.
+   */
+  function settle(pickHighlighted = false) {
     if (!typed && !navigated) return setOpen(false);
     const q = text.trim().toLowerCase();
     if (typed && q === "") {
@@ -116,6 +120,7 @@ export function Autocomplete<T>(props: {
       return;
     }
     const exact = shown.find((o) => o.label.toLowerCase() === q);
+    if (pickHighlighted && !exact && shown[highlight]) return choose(shown[highlight]);
     const created = !exact && !navigated && props.create ? props.create(text.trim()) : null;
     if (!exact && !navigated && !created) { setOpen(false); return; }
     choose(navigated ? shown[highlight] : (exact ?? created ?? undefined));
@@ -137,7 +142,7 @@ export function Autocomplete<T>(props: {
         if (open && (typed || navigated)) {
           e.preventDefault();
           e.stopPropagation();
-          settle();
+          settle(true);
         } else {
           setOpen(false);
         }
@@ -153,7 +158,7 @@ export function Autocomplete<T>(props: {
         }
         return;
       case "Tab":
-        settle();
+        settle(open);
         return;
     }
   }
@@ -195,7 +200,7 @@ export function Autocomplete<T>(props: {
           openList();
         }}
         onClick={() => !open && openList()}
-        onBlur={settle}
+        onBlur={() => settle()}
         onChange={(e) => {
           setText(e.target.value);
           setTyped(true);
