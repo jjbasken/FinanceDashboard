@@ -2,6 +2,7 @@ import { type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPoint
 import { NavLink, Outlet, matchPath, useLocation } from "react-router";
 import { useAuthMutation, useAuthStatus } from "../auth";
 import { useLiveUpdates } from "../live";
+import { useAccounts } from "../ledger";
 import { QuickEntry } from "./QuickEntry";
 import { usePreferences } from "../preferences";
 import { ConnectionStatus } from "./ConnectionStatus";
@@ -93,8 +94,12 @@ export function AppShell() {
   const [adding, setAdding] = useState(false);
   const location = useLocation();
   useEffect(() => setAdding(false), [location.pathname]);
-  // On an account's page, new purchases default to that account.
-  const currentAccountId = Number(matchPath("/accounts/:id", location.pathname)?.params.id) || undefined;
+  // On an account's register, new purchases default to that account. Investment accounts open on
+  // their holdings, where the page offers no Add purchase, so those keep the usual default.
+  const accounts = useAccounts();
+  const viewed = accounts.data?.find((a) => a.id === Number(matchPath("/accounts/:id", location.pathname)?.params.id));
+  const holdings = !!viewed && (viewed.type === "investment" || viewed.holdingsValue !== 0) && new URLSearchParams(location.search).get("view") !== "register";
+  const currentAccountId = viewed && !holdings ? viewed.id : undefined;
   const { preferences } = usePreferences();
 
   const householdName = status?.household?.name ?? "Family Finance";

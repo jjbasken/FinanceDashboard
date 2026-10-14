@@ -142,7 +142,7 @@ export function Autocomplete<T>(props: {
         if (open && (typed || navigated)) {
           e.preventDefault();
           e.stopPropagation();
-          settle(true);
+          settle(listShown);
         } else {
           setOpen(false);
         }
@@ -158,7 +158,7 @@ export function Autocomplete<T>(props: {
         }
         return;
       case "Tab":
-        settle(open);
+        settle(listShown);
         return;
     }
   }
@@ -169,6 +169,8 @@ export function Autocomplete<T>(props: {
   const visibleTop = viewport?.offsetTop ?? 0;
   const visibleBottom = viewport ? viewport.offsetTop + viewport.height : window.innerHeight;
   const onScreen = !!rect && rect.bottom > visibleTop && rect.top < visibleBottom;
+  // Enter and Tab only pick the highlighted option when the list is actually on screen.
+  const listShown = open && onScreen && shown.length > 0;
   const spaceBelow = rect ? visibleBottom - rect.bottom - 8 : 0;
   const spaceAbove = rect ? rect.top - visibleTop - 8 : 0;
   const below = spaceBelow >= 260 || spaceBelow >= spaceAbove;
