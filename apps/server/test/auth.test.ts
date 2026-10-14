@@ -204,3 +204,29 @@ test("passwords need at least 5 characters", async () => {
   expect((await c.post("/api/auth/setup", { ...owner, password: "abcde" })).status).toBe(201);
   expect((await new Client(app).post("/api/auth/login", { username: "jeremy", password: "abcde" })).status).toBe(200);
 });
+
+describe("preferences", () => {
+  const prefs = { startPage: "/budget", favorites: [3], entryAccounts: [1, 2], shortcuts: ["/reports"], showRunningBalance: true };
+
+  test("follow you to another device, and aren't shared with your partner", async () => {
+    const { app, jeremy } = await setUp();
+    expect((await jeremy.get("/api/auth/preferences")).json).toEqual({ preferences: null });
+    expect((await jeremy.request("PUT", "/api/auth/preferences", prefs)).status).toBe(200);
+
+    const phone = new Client(app);
+    await phone.post("/api/auth/login", { username: owner.username, password: owner.password });
+    expect((await phone.get("/api/auth/preferences")).json).toEqual({ preferences: prefs });
+
+    const invite = await jeremy.post("/api/household/invites");
+    const partner = new Client(app);
+    await partner.post("/api/auth/accept-invite", { token: invite.json.token, displayName: "Partner", username: "partner", password: "another long password" });
+    expect((await partner.get("/api/auth/preferences")).json).toEqual({ preferences: null });
+  });
+
+  test("require a session and are validated", async () => {
+    const { app, jeremy } = await setUp();
+    expect((await new Client(app).get("/api/auth/preferences")).status).toBe(401);
+    expect((await jeremy.request("PUT", "/api/auth/preferences", { ...prefs, startPage: "https://evil.example" })).status).toBe(400);
+    expect((await jeremy.request("PUT", "/api/auth/preferences", { ...prefs, entryAccounts: ["1"] })).status).toBe(400);
+  });
+});

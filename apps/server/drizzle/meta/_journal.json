@@ -99,6 +99,13 @@
       "when": 1791483270608,
       "tag": "0013_audit_and_logs",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1791857247292,
+      "tag": "0014_user_preferences",
+      "breakpoints": true
     }
   ]
 }

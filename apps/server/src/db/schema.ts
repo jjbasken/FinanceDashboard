@@ -6,6 +6,7 @@ import {
   LOG_LEVELS,
   LOG_SOURCES,
   SECURITY_TYPES,
+  type Preferences,
 } from "@fd/shared";
 import { sql } from "drizzle-orm";
 import { type AnySQLiteColumn, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
@@ -48,6 +49,8 @@ export const users = sqliteTable("users", {
   role: text("role", { enum: ["owner", "member"] }).notNull(),
   /** Set when the owner removes a member: they can't sign in, but their name stays on their entries. */
   disabledAt: text("disabled_at"),
+  /** Their Preferences as JSON; null until they first change one. */
+  preferences: text("preferences", { mode: "json" }).$type<Preferences>(),
   createdAt: createdAt(),
 });
 

@@ -101,3 +101,15 @@ export interface InviteInfo {
   token: string;
   expiresAt: string;
 }
+
+/** One person's everyday view, kept on the server so it follows them across devices. */
+export const preferencesSchema = z.object({
+  startPage: z.string().regex(/^\/(home|budget|accounts(?:\/\d+)?)$/),
+  /** Favorite budget category ids, shown on Home. */
+  favorites: z.array(z.number().int()).max(500),
+  /** Accounts offered when adding a transaction; empty offers them all. */
+  entryAccounts: z.array(z.number().int()).max(500),
+  shortcuts: z.array(z.string().refine((x) => ["/reports", "/investments", "/review"].includes(x))).max(3),
+  showRunningBalance: z.boolean(),
+});
+export type Preferences = z.infer<typeof preferencesSchema>;
