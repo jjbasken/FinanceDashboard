@@ -1,7 +1,8 @@
 import { type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent, useState, useEffect } from "react";
-import { NavLink, Outlet, useLocation } from "react-router";
+import { NavLink, Outlet, matchPath, useLocation } from "react-router";
 import { useAuthMutation, useAuthStatus } from "../auth";
 import { useLiveUpdates } from "../live";
+import { useAccounts } from "../ledger";
 import { QuickEntry } from "./QuickEntry";
 import { usePreferences } from "../preferences";
 import { ConnectionStatus } from "./ConnectionStatus";
@@ -93,6 +94,12 @@ export function AppShell() {
   const [adding, setAdding] = useState(false);
   const location = useLocation();
   useEffect(() => setAdding(false), [location.pathname]);
+  // On an account's register, new purchases default to that account. Investment accounts open on
+  // their holdings, where the page offers no Add purchase, so those keep the usual default.
+  const accounts = useAccounts();
+  const viewed = accounts.data?.find((a) => a.id === Number(matchPath("/accounts/:id", location.pathname)?.params.id));
+  const holdings = !!viewed && (viewed.type === "investment" || viewed.holdingsValue !== 0) && new URLSearchParams(location.search).get("view") !== "register";
+  const currentAccountId = viewed && !holdings ? viewed.id : undefined;
   const { preferences } = usePreferences();
 
   const householdName = status?.household?.name ?? "Family Finance";
@@ -150,7 +157,7 @@ export function AppShell() {
         {preferences.shortcuts.length > 0 && <nav className="personal-shortcuts" aria-label="Your shortcuts">{preferences.shortcuts.map(to => <NavLink key={to} to={to}>{to === "/reports" ? "Reports" : to === "/investments" ? "Investments" : "Review purchases"}</NavLink>)}</nav>}
         <Outlet />
       </main>
-      {adding && <QuickEntry onClose={() => setAdding(false)} />}
+      {adding && <QuickEntry accountId={currentAccountId} onClose={() => setAdding(false)} />}
       <nav className="tabbar" aria-label="Sections">
         {tabs.map((t) => (
           <NavLink key={t.to} to={t.to}>
