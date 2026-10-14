@@ -2,8 +2,6 @@
 
 A self-hosted family finance manager with an Actual Budget-style interface: monthly budgeting, a fast transaction register, investment tracking, reports, and imports from GnuCash and bank statements, with a separate login for each household member.
 
-> **Status:** all six milestones are done: auth and households; the ledger (accounts, categories, payees, and a keyboard-driven register with transfers, splits and reconciliation); the monthly budget; GnuCash and bank-statement imports; investments with automatic daily prices; and reports, live updates between sessions, and nightly backups.
-
 ## Screenshots
 
 These screenshots use fictional household data.
