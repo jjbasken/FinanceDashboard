@@ -340,9 +340,9 @@ export function AccountPage() {
           <div className="account-stats">
             {account.type === "investment" || account.holdingsValue !== 0 ? (
               <>
-                <Amount label="Cash" cents={account.balance} />
+                <Amount label="Cash" cents={account.balanceToday} />
                 <Amount label="Investments" cents={account.holdingsValue} />
-                <Amount label="Total" cents={account.balance + account.holdingsValue} />
+                <Amount label="Total" cents={account.balanceToday + account.holdingsValue} />
               </>
             ) : (
               <>
