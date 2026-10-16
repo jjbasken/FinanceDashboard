@@ -196,6 +196,14 @@ describe("accounts", () => {
     expect(edited.reconciled).toBe(false);
   });
 
+  test("today's balance leaves out transactions dated in the future", async () => {
+    const { jeremy } = await setUp();
+    const checking = await newAccount(jeremy, { name: "Checking", type: "checking", startingBalance: 10000 });
+    await addTxn(jeremy, { accountId: checking.id, amount: -2500, date: "2099-01-01" });
+    const account = (await accounts(jeremy)).find((a) => a.id === checking.id)!;
+    expect(account).toMatchObject({ balance: 7500, balanceToday: 10000 });
+  });
+
   test("deleting an account keeps the other side of its transfers", async () => {
     const { jeremy } = await setUp();
     const checking = await newAccount(jeremy, { name: "Checking", type: "checking" });

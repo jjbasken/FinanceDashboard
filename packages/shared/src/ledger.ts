@@ -88,6 +88,8 @@ export interface Account {
   private: boolean;
   /** Sum of all transactions, in cents. */
   balance: number;
+  /** Sum of transactions dated today or earlier (leaves out scheduled ones still to come), in cents. */
+  balanceToday: number;
   /** Sum of cleared and reconciled transactions, in cents. */
   clearedBalance: number;
   /** Market value of investments held in this account, in cents (on top of `balance`, which is cash). */

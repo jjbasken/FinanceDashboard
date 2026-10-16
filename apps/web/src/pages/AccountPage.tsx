@@ -30,7 +30,6 @@ import {
   usePayees,
   useRegister,
   useSecurities,
-  today,
 } from "../ledger";
 
 function Amount(props: { label: string; cents: number }) {
@@ -300,10 +299,6 @@ export function AccountPage() {
   const payees = usePayees();
   const categories = useCategories();
   const register = useRegister(id);
-  // Bills added on the 1st are dated later in the month; this is what the account holds today.
-  const now = today();
-  const upcoming = (register.data ?? []).filter((t) => t.date > now);
-  const upcomingTotal = upcoming.reduce((sum, t) => sum + t.amount, 0);
   const [search, setSearch] = useState("");
   const [reconciling, setReconciling] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -351,9 +346,9 @@ export function AccountPage() {
               </>
             ) : (
               <>
-                <Amount label="Balance today" cents={account.balance - upcomingTotal} />
-                {upcoming.length > 0 && <Amount label="After scheduled transactions" cents={account.balance} />}
-                <details className="balance-details"><summary>Bank status details</summary><Amount label="Confirmed (cleared)" cents={account.clearedBalance} /><Amount label="Not confirmed (uncleared)" cents={account.balance - account.clearedBalance} /><p className="muted">These are recorded balances, not a live connection to your bank.</p></details>
+                <Amount label="Balance today" cents={account.balanceToday} />
+                <Amount label="Cleared" cents={account.clearedBalance} />
+                {account.balanceToday !== account.balance && <Amount label="After scheduled transactions" cents={account.balance} />}
               </>
             )}
           </div>
