@@ -4,6 +4,7 @@ import { createSession } from "../src/auth/sessions";
 import { users } from "../src/db/schema";
 import { createHousehold } from "../src/services/household";
 import { SESSION_COOKIE } from "../src/middleware";
+import { localDate } from "../src/util";
 import { Client, owner, testApp } from "./helpers";
 
 async function setUp() {
@@ -194,6 +195,15 @@ describe("accounts", () => {
     // Un-clearing a reconciled transaction un-reconciles it.
     const edited = (await jeremy.patch(`/api/transactions/${a.id}`, { cleared: false })).json as Transaction;
     expect(edited.reconciled).toBe(false);
+  });
+
+  test("today's balance leaves out transactions dated in the future", async () => {
+    const { jeremy } = await setUp();
+    const checking = await newAccount(jeremy, { name: "Checking", type: "checking", startingBalance: 10000 });
+    await addTxn(jeremy, { accountId: checking.id, amount: -1000, date: localDate() });
+    await addTxn(jeremy, { accountId: checking.id, amount: -2500, date: "2099-01-01" });
+    const account = (await accounts(jeremy)).find((a) => a.id === checking.id)!;
+    expect(account).toMatchObject({ balance: 6500, balanceToday: 9000 });
   });
 
   test("deleting an account keeps the other side of its transfers", async () => {

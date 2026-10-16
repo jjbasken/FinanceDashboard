@@ -22,8 +22,8 @@ const SECTIONS: { section: AccountSection; title: string }[] = [
   { section: "investment", title: "Investments" },
 ];
 
-/** Cash plus the market value of any investments held. */
-const worth = (a: Account) => a.balance + a.holdingsValue;
+/** Cash on hand today (before scheduled transactions) plus the market value of any investments held. */
+const worth = (a: Account) => a.balanceToday + a.holdingsValue;
 const total = (list: Account[]) => list.reduce((sum, a) => sum + worth(a), 0);
 
 function Money(props: { cents: number }) {

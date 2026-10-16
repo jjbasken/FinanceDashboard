@@ -18,6 +18,7 @@ import { accounts, categories, categoryGroups, investmentTxns, payees, transacti
 import { assertParent, getFolder, nextSidebarOrder } from "./folders";
 import { holdingsValueByAccount } from "./holdings";
 import { STARTING_BALANCES } from "./household";
+import { localDate } from "../util";
 
 /** Who is making a change, and in which household. Every query is scoped by householdId. */
 export interface Actor {
@@ -138,7 +139,7 @@ function findStartingBalancesCategory(db: DbOrTx, householdId: number) {
 // --- Accounts ---
 
 /** The accounts a member can see. */
-export function listAccounts(db: DbOrTx, viewer: Actor): Account[] {
+export function listAccounts(db: DbOrTx, viewer: Actor, today = localDate()): Account[] {
   const { householdId } = viewer;
   const rows = db
     .select({
@@ -168,6 +169,7 @@ export function listAccounts(db: DbOrTx, viewer: Actor): Account[] {
     .select({
       accountId: transactions.accountId,
       balance: sql<number>`coalesce(sum(${transactions.amount}), 0)`,
+      today: sql<number>`coalesce(sum(case when ${transactions.date} <= ${today} then ${transactions.amount} else 0 end), 0)`,
       cleared: sql<number>`coalesce(sum(case when ${transactions.cleared} then ${transactions.amount} else 0 end), 0)`,
     })
     .from(transactions)
@@ -181,6 +183,7 @@ export function listAccounts(db: DbOrTx, viewer: Actor): Account[] {
     ...r,
     private: ownerId !== null,
     balance: byAccount.get(r.id)?.balance ?? 0,
+    balanceToday: byAccount.get(r.id)?.today ?? 0,
     clearedBalance: byAccount.get(r.id)?.cleared ?? 0,
     holdingsValue: holdings.get(r.id) ?? 0,
   }));

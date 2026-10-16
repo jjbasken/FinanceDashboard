@@ -2348,10 +2348,6 @@ button:focus-visible, a:focus-visible, summary:focus-visible, select:focus-visib
 .budget-row.highlighted { box-shadow: inset 4px 0 var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
 .to-budget { flex-wrap: wrap; gap: 14px; }
 .to-budget-amount span { white-space: normal; }
-.balance-details { flex-basis: 100%; text-align: right; }
-.balance-details summary { padding: 10px 0; cursor: pointer; color: var(--text-muted); }
-.balance-details .stat { display: inline-flex; margin: 8px 12px; }
-.balance-details p { margin: 8px 0; }
 .account-stats { flex-wrap: wrap; }
 .account-header { flex-wrap: wrap; }
 .register-row.future, .m-row.future { opacity: 1; background: color-mix(in srgb, var(--accent) 4%, var(--surface)); }
@@ -2416,7 +2412,6 @@ fieldset .checkbox { margin: 6px 0; }
   .home-summary { grid-template-columns: 1fr; }
   .card-head { flex-wrap: wrap; gap: 12px; }
   .account-stats { justify-content: flex-start; }
-  .balance-details { text-align: left; }
 }
 @media (max-width: 1000px) {
   body { font-size: 16px; }
