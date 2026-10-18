@@ -26,11 +26,23 @@ export function BackupCard(props: { isOwner: boolean }) {
         </p>
       )}
       {props.isOwner ? (
-        <div>
-          <a className="btn" href="/api/backup/download" download>
-            Download a backup now
-          </a>
-        </div>
+        <>
+          <div>
+            <a className="btn" href="/api/backup/download" download>
+              Download a backup now
+            </a>
+          </div>
+          <p className="muted">
+            To move back to GnuCash, download a GnuCash file and open it there. It has your accounts, categories,
+            transactions, investments and prices; budgets and recurring bills aren't included, and other members'
+            private accounts stay private.
+          </p>
+          <div>
+            <a className="btn" href="/api/backup/gnucash" download>
+              Download for GnuCash
+            </a>
+          </div>
+        </>
       ) : (
         <p className="muted">The household owner can download a backup.</p>
       )}

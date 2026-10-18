@@ -142,6 +142,17 @@ To bring in a single investment account (a 401k, say), export just that account 
 
 The preview shows how many transactions will be imported and compares each account's balance with GnuCash's. You can import the same book again later: only transactions you haven't imported yet are added, and your previous mapping is remembered. A transaction you deleted here is not brought back. Each import can be undone from the same page.
 
+## Moving back to GnuCash
+
+The household owner can download everything as a GnuCash file from **Settings → Backups → Download for GnuCash**, then open it in GnuCash (File → Open). It's a new book in GnuCash's usual compressed XML format:
+
+- Accounts go under Assets and Liabilities, with closed accounts hidden. Each investment account holds one stock or mutual fund account per security, with its buys, sells, dividends, reinvestments and splits, and the price history comes along too.
+- Categories become `Income:<group>:<category>` and `Expenses:<group>:<category>` (a group called "Income" is left out of the path), and Starting Balances becomes `Equity:Opening Balances`.
+- Uncategorized transactions go to `Imbalance-USD` (in your currency), the way GnuCash shows them.
+- A transfer is one GnuCash transaction between the two accounts. If it had a category (money moving off budget), the category isn't kept, since GnuCash has no budget to count it in.
+- `:` separates account names in GnuCash, so it's replaced with `-` in names.
+- Budgets, recurring bills and sidebar folders aren't included. Other members' private accounts aren't either; a transfer to one goes to Imbalance.
+
 ## Importing bank statements
 
 On the Import page, choose **Bank or card statement**, pick an account and upload an **OFX/QFX** or **CSV** file from your bank:
