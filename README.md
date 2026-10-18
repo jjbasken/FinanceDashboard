@@ -244,7 +244,7 @@ The script sets `GIT_COMMIT` automatically and rebuilds and replaces just the ap
 
 Before rebuilding, the script backs up the database to `docker/data/backups/`, named after the version you're updating from (for example `finance-2026-10-18-093012-before-update-from-a75926e.db`). If the backup fails, nothing is rebuilt. If the app isn't running, the script stops rather than update without a backup; start it first, or run `SKIP_BACKUP=1 ./docker/update.sh` to skip the backup. These copies are never deleted automatically, so clear out old ones now and then.
 
-If an update goes wrong, put the copy back and rebuild the version in its name. Changes made since the update are lost, so keep a copy of the current state too:
+If an update goes wrong, put the copy back and rebuild the version in its name. Changes made since the pre-update backup (including while the image was building) are lost, so keep a copy of the current state too. Run these commands from the repository root, substituting your actual backup filename and commit:
 
 ```sh
 docker exec -u bun family-finance bun apps/server/src/cli.ts backup broken-update

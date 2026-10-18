@@ -30,8 +30,17 @@ elif [ "$(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null)" = "t
       const path = `${process.env.DATA_DIR}/backups/${name}`;
       require("node:fs").mkdirSync(`${process.env.DATA_DIR}/backups`, { recursive: true });
       const db = new Database(`${process.env.DATA_DIR}/finance.db`, { readwrite: true });
-      db.exec("PRAGMA busy_timeout = 5000;");
-      db.run("VACUUM INTO ?", [path]);
+      const fs = require("node:fs");
+      fs.closeSync(fs.openSync(path, "wx"));
+      try {
+        db.exec("PRAGMA busy_timeout = 5000;");
+        db.run("VACUUM INTO ?", [path]);
+      } catch (err) {
+        fs.unlinkSync(path);
+        throw err;
+      } finally {
+        db.close();
+      }
       console.log(`Backed up the database to ${path}`);
     '
   fi

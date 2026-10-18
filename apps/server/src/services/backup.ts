@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { sql } from "drizzle-orm";
 import type { Db } from "../db";
@@ -68,8 +68,16 @@ export function runManualBackup(dbPath: string, dir: string, label = "", now = n
   if (existsSync(path)) throw new Error(`${path} already exists.`);
   const sqlite = new Database(dbPath, { readwrite: true });
   try {
-    sqlite.exec("PRAGMA busy_timeout = 5000;");
-    sqlite.run("VACUUM INTO ?", [path]);
+    // Reserve the destination without overwriting a concurrent backup.
+    closeSync(openSync(path, "wx"));
+    try {
+      sqlite.exec("PRAGMA busy_timeout = 5000;");
+      sqlite.run("VACUUM INTO ?", [path]);
+    } catch (err) {
+      // A failed VACUUM can leave an empty or incomplete database.
+      unlinkSync(path);
+      throw err;
+    }
   } finally {
     sqlite.close();
   }
