@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
 import type { AppEnv } from "../app";
-import { requireAuth, requireOwner } from "../middleware";
+import { exportGnucash } from "../exporters/gnucash";
+import { actorOf, requireAuth, requireOwner } from "../middleware";
 import { listBackups, snapshotTo } from "../services/backup";
 import { localDate } from "../util";
 
@@ -31,4 +32,14 @@ export const backupRoutes = new Hono<AppEnv>()
     } finally {
       await unlink(path).catch(() => {});
     }
+  })
+
+  /** The books as a GnuCash file, for moving back to GnuCash. Private accounts stay with their owner. */
+  .get("/gnucash", requireOwner, (c) => {
+    const { bytes } = exportGnucash(c.var.db, actorOf(c));
+    return c.body(bytes, 200, {
+      "content-type": "application/x-gnucash",
+      "content-disposition": `attachment; filename="finance-${localDate()}.gnucash"`,
+      "cache-control": "no-store",
+    });
   });
