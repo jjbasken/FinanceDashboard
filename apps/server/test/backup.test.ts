@@ -1,9 +1,10 @@
 import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { listBackups, runNightlyBackup } from "../src/services/backup";
+import { openDb } from "../src/db";
+import { listBackups, runManualBackup, runNightlyBackup } from "../src/services/backup";
 import { Client, owner, testApp } from "./helpers";
 
 const tempDir = () => mkdtempSync(join(tmpdir(), "fd-backup-test-"));
@@ -88,4 +89,164 @@ test("disabled nightly backups still list existing copies and allow manual downl
     enabled: false, count: 1, latest: { date: "2026-10-05" },
   });
   expect((await app.request("/api/backup/download", { headers: { cookie: c.cookie! } })).status).toBe(200);
+});
+
+describe("backing up from the command line", () => {
+  function dataFolder() {
+    const dir = tempDir();
+    const db = openDb(join(dir, "finance.db"));
+    db.$client.exec("create table marker (name text); insert into marker values ('Savings');");
+    return dir;
+  }
+
+  test("copies the database with the date, time and label, apart from the nightly ones", () => {
+    const dir = dataFolder();
+    const backups = join(dir, "backups");
+    const when = new Date(2026, 9, 18, 9, 5, 7);
+    const path = runManualBackup(join(dir, "finance.db"), backups, "Before update from a75926e", when);
+    expect(path).toBe(join(backups, "finance-2026-10-18-090507-before-update-from-a75926e.db"));
+    const copy = new Database(path, { readonly: true });
+    expect(copy.query("select name from marker").all()).toEqual([{ name: "Savings" }]);
+    copy.close();
+    // Nightly pruning and the Settings card only count nightly copies.
+    expect(listBackups(backups)).toEqual([]);
+    runNightlyBackup(openDb(join(dir, "finance.db")), backups, "2026-10-19", 1);
+    runNightlyBackup(openDb(join(dir, "finance.db")), backups, "2026-10-20", 1);
+    expect(existsSync(path)).toBe(true);
+
+    expect(() => runManualBackup(join(dir, "finance.db"), backups, "Before update from a75926e", when)).toThrow(
+      /already exists/,
+    );
+    expect(runManualBackup(join(dir, "finance.db"), backups, "", when)).toEndWith("finance-2026-10-18-090507.db");
+  });
+
+  test("removes an incomplete copy when the database is locked", () => {
+    const dir = tempDir();
+    const backups = join(dir, "backups");
+    const locker = new Database(join(dir, "finance.db"));
+    locker.exec("CREATE TABLE marker (name TEXT); BEGIN EXCLUSIVE;");
+    try {
+      expect(() => runManualBackup(join(dir, "finance.db"), backups)).toThrow();
+      expect(readdirSync(backups)).toEqual([]);
+    } finally {
+      locker.exec("ROLLBACK");
+      locker.close();
+    }
+  }, 10000);
+
+  test("refuses a missing database instead of creating an empty one", () => {
+    const dir = tempDir();
+    expect(() => runManualBackup(join(dir, "finance.db"), join(dir, "backups"))).toThrow(/No database/);
+    expect(existsSync(join(dir, "finance.db"))).toBe(false);
+  });
+
+  test("the backup command prints where the copy went", () => {
+    const dir = dataFolder();
+    const result = Bun.spawnSync(["bun", join(import.meta.dir, "../src/cli.ts"), "backup", "manual"], {
+      env: { ...process.env, DATA_DIR: dir },
+    });
+    expect(result.exitCode).toBe(0);
+    const [name] = readdirSync(join(dir, "backups"));
+    expect(name).toMatch(/^finance-\d{4}-\d{2}-\d{2}-\d{6}-manual\.db$/);
+    expect(result.stdout.toString()).toContain(join(dir, "backups", name!));
+  });
+});
+
+describe("docker/update.sh", () => {
+  // Fake docker and git: record what the script asks for without touching a real container.
+  function update(opts: { running?: boolean; hasBackupCommand?: boolean; backupFails?: boolean; database?: boolean; env?: Record<string, string> } = {}) {
+    const dir = tempDir();
+    const log = join(dir, "calls");
+    writeFileSync(log, "");
+    const docker = `
+printf '%s\\n' "$*" >> "$MOCK_LOG"
+case "$1" in
+  inspect) [ "$MOCK_RUNNING" = 1 ] && echo true || exit 1 ;;
+  exec)
+    case "$*" in
+      *printenv*) echo a75926e ;;
+      *grep*) [ "$MOCK_HAS_BACKUP" = 1 ] ;;
+      *bun*) exit "$MOCK_BACKUP_EXIT" ;;
+    esac ;;
+esac`;
+    writeFileSync(join(dir, "docker"), `#!/bin/sh${docker}\n`);
+    writeFileSync(join(dir, "git"), "#!/bin/sh\necho b1c2d3e\n");
+    for (const name of ["docker", "git"]) chmodSync(join(dir, name), 0o755);
+    const script = join(dir, "update.sh");
+    writeFileSync(script, readFileSync(join(import.meta.dir, "../../../docker/update.sh")));
+    if (opts.database) {
+      mkdirSync(join(dir, "data"));
+      writeFileSync(join(dir, "data/finance.db"), "existing database");
+    }
+    const result = Bun.spawnSync(["/bin/sh", script], {
+      env: {
+        PATH: `${dir}:/usr/bin:/bin`, MOCK_LOG: log,
+        MOCK_RUNNING: opts.running === false ? "0" : "1",
+        MOCK_HAS_BACKUP: opts.hasBackupCommand === false ? "0" : "1",
+        MOCK_BACKUP_EXIT: opts.backupFails ? "1" : "0",
+        ...opts.env,
+      },
+    });
+    return { exitCode: result.exitCode, calls: readFileSync(log, "utf8").trim().split("\n") };
+  }
+
+  test("backs up with the old version's name before rebuilding", () => {
+    const { exitCode, calls } = update();
+    expect(exitCode).toBe(0);
+    const backup = calls.findIndex((c) => c.includes("cli.ts backup before-update-from-a75926e"));
+    const build = calls.findIndex((c) => c.startsWith("compose up -d --build finance"));
+    expect(backup).toBeGreaterThan(-1);
+    expect(calls[backup]).toStartWith("exec -u bun family-finance");
+    expect(build).toBeGreaterThan(backup);
+  });
+
+  test("does not rebuild when the backup fails", () => {
+    const { exitCode, calls } = update({ backupFails: true });
+    expect(exitCode).not.toBe(0);
+    expect(calls.some((c) => c.startsWith("compose"))).toBe(false);
+  });
+
+  test("backs up a version from before the backup command directly", () => {
+    const { exitCode, calls } = update({ hasBackupCommand: false });
+    expect(exitCode).toBe(0);
+    expect(calls.some((c) => c.includes("cli.ts backup"))).toBe(false);
+    const log = calls.join("\n");
+    expect(log).toContain("exec -u bun -e LABEL=before-update-from-a75926e family-finance bun -e");
+    expect(log).toContain("VACUUM INTO");
+  });
+
+  test("the legacy fallback produces a usable SQLite copy", () => {
+    const dir = tempDir();
+    const source = new Database(join(dir, "finance.db"));
+    source.exec("CREATE TABLE marker (name TEXT); INSERT INTO marker VALUES ('Savings');");
+    source.close();
+    const script = readFileSync(join(import.meta.dir, "../../../docker/update.sh"), "utf8");
+    const inline = script.match(/bun -e '\n([\s\S]*?)\n    '/)![1]!;
+    const result = Bun.spawnSync(["bun", "-e", inline], {
+      env: { ...process.env, DATA_DIR: dir, LABEL: "before-update-from-legacy" },
+    });
+    expect(result.exitCode).toBe(0);
+    const [name] = readdirSync(join(dir, "backups"));
+    const copy = new Database(join(dir, "backups", name!), { readonly: true });
+    expect(copy.query("SELECT name FROM marker").all()).toEqual([{ name: "Savings" }]);
+    copy.close();
+  });
+
+  test("a stopped app with an existing database blocks the update", () => {
+    const { exitCode, calls } = update({ running: false, database: true });
+    expect(exitCode).not.toBe(0);
+    expect(calls.some((c) => c.startsWith("compose"))).toBe(false);
+  });
+
+  test("a fresh installation without a database can build", () => {
+    const { exitCode, calls } = update({ running: false });
+    expect(exitCode).toBe(0);
+    expect(calls.some((c) => c.startsWith("compose up"))).toBe(true);
+  });
+
+  test("SKIP_BACKUP=1 goes straight to the rebuild", () => {
+    const { exitCode, calls } = update({ env: { SKIP_BACKUP: "1" } });
+    expect(exitCode).toBe(0);
+    expect(calls).toEqual(["compose up -d --build finance"]);
+  });
 });
