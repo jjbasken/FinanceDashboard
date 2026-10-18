@@ -179,7 +179,7 @@ Investments live in **Investment** accounts. An account's register holds its cas
   - **Spending by category:** totals for any period.
   - Transfers between your accounts aren't counted in either, even with a category. So for a mortgage payment split into principal (a transfer to the loan) and interest, only the interest is spending. The budget still counts the whole payment.
 - **Live updates:** when one of you changes something, the other's open window refreshes on its own.
-- **Backups:** each night the server saves a copy of the database to `backups/` in the data folder and keeps the newest 14. The household owner can also download a fresh copy from **Settings → Backups**. To restore, stop the app, delete `finance.db-wal` and `finance.db-shm` if they exist, and replace `finance.db` with the backup file.
+- **Backups:** each night the server saves a copy of the database to `backups/` in the data folder and keeps the newest 14. The household owner can also download a fresh copy from **Settings → Backups**. To make one on the server at any time (it's safe while the app is running), run `docker exec -u bun family-finance bun apps/server/src/cli.ts backup [label]` (without Docker: `bun apps/server/src/cli.ts backup [label]`); these are kept until you delete them. `docker/update.sh` does this before every update. To restore, stop the app, delete `finance.db-wal` and `finance.db-shm` if they exist, and replace `finance.db` with the backup file.
 
 ## Activity and logs (owner only)
 
@@ -241,6 +241,19 @@ To update an existing installation after pulling the latest code, run this from 
 ```
 
 The script sets `GIT_COMMIT` automatically and rebuilds and replaces just the app container. It preserves `docker/data/` and leaves the Cloudflare tunnel running. It builds the current checkout; it does not pull code. You can also run `./update.sh` from the `docker/` directory. Refresh the browser or reopen the mobile app afterward.
+
+Before rebuilding, the script backs up the database to `docker/data/backups/`, named after the version you're updating from (for example `finance-2026-10-18-093012-before-update-from-a75926e.db`). If the backup fails, nothing is rebuilt. If the app isn't running, the script stops rather than update without a backup; start it first, or run `SKIP_BACKUP=1 ./docker/update.sh` to skip the backup. These copies are never deleted automatically, so clear out old ones now and then.
+
+If an update goes wrong, put the copy back and rebuild the version in its name. Changes made since the update are lost, so keep a copy of the current state too:
+
+```sh
+docker exec -u bun family-finance bun apps/server/src/cli.ts backup broken-update
+docker compose -f docker/docker-compose.yml stop finance
+cp docker/data/backups/finance-2026-10-18-093012-before-update-from-a75926e.db docker/data/finance.db
+rm -f docker/data/finance.db-wal docker/data/finance.db-shm
+git checkout a75926e
+SKIP_BACKUP=1 ./docker/update.sh
+```
 
 The Compose project is named `financedashboard`, which is how it appears in `docker compose ls` and in tools such as Dockhand or Portainer. If you started the app before the project had a name, it is running as `docker`: stop it with `docker compose -p docker down` (your data in `docker/data/` is kept), then start it again with the command above.
 
