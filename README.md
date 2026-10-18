@@ -150,7 +150,7 @@ The household owner can download everything as a GnuCash file from **Settings â†
 - Categories become `Income:<group>:<category>` and `Expenses:<group>:<category>` (a group called "Income" is left out of the path), and Starting Balances becomes `Equity:Opening Balances`.
 - Uncategorized transactions go to `Imbalance-USD` (in your currency), the way GnuCash shows them.
 - A transfer is one GnuCash transaction between the two accounts. If it had a category (money moving off budget), the category isn't kept, since GnuCash has no budget to count it in.
-- `:` separates account names in GnuCash, so it's replaced with `-` in names.
+- `:` separates account names in GnuCash, so it's replaced with `-` in names. Names that would otherwise collide get numbered suffixes.
 - Budgets, recurring bills and sidebar folders aren't included. Other members' private accounts aren't either; a transfer to one goes to Imbalance.
 
 ## Importing bank statements

@@ -35,11 +35,13 @@ import { canSee, type Actor } from "../services/ledger";
 
 const guid = () => randomUUID().replaceAll("-", "");
 
+// XML 1.0 cannot encode control characters or lone UTF-16 surrogates, even as entities.
+const xmlText = (s: string) => s.replace(/[^\u0009\u000A\u000D\u0020-\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}]/gu, "�");
 const esc = (s: string) =>
-  s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+  xmlText(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 /** GnuCash separates account paths with ":", so it can't appear in a name. */
-const accountName = (s: string) => s.replaceAll(":", "-").trim() || "Unnamed";
+const accountName = (s: string) => xmlText(s).replaceAll(":", "-").trim() || "Unnamed";
 
 /** A posted date the way GnuCash writes it: 10:59 UTC, which is the same day in every time zone. */
 const posted = (date: string) => `${date} 10:59:00 +0000`;
@@ -152,7 +154,8 @@ export function exportGnucash(db: DbOrTx, actor: Actor): GnucashExport {
 
   const imbalance = () => ensure([`Imbalance-${currency.id}`], "BANK");
   const opening = () => ensure(["Equity", "Opening Balances"], "EQUITY");
-  const dividends = () => ensure(["Income", "Dividends"], "INCOME");
+  let dividendAccount: GncAccount | undefined;
+  const dividends = () => dividendAccount ??= ensure(["Income", unique(["Income"], "Dividends")], "INCOME");
 
   // The member's accounts.
   const accountRows = db
@@ -185,6 +188,7 @@ export function exportGnucash(db: DbOrTx, actor: Actor): GnucashExport {
       id: categories.id,
       name: categories.name,
       hidden: categories.hidden,
+      groupId: categoryGroups.id,
       groupName: categoryGroups.name,
       groupHidden: categoryGroups.hidden,
       isIncome: categoryGroups.isIncome,
@@ -194,16 +198,27 @@ export function exportGnucash(db: DbOrTx, actor: Actor): GnucashExport {
     .where(eq(categories.householdId, householdId))
     .orderBy(asc(categoryGroups.sortOrder), asc(categories.sortOrder), asc(categories.id))
     .all();
+  // Reserve group paths before adding leaves: a category can have the same name as a group.
+  const groupPaths = new Map<number, string[]>();
+  for (const c of categoryRows) {
+    if (groupPaths.has(c.groupId)) continue;
+    const top = c.isIncome ? "Income" : "Expenses";
+    ensure([top], c.isIncome ? "INCOME" : "EXPENSE", { placeholder: true });
+    const group = accountName(c.groupName);
+    const path = group.toLowerCase() === top.toLowerCase()
+      ? [top]
+      : [top, unique([top], group)];
+    ensure(path, c.isIncome ? "INCOME" : "EXPENSE", { placeholder: true });
+    groupPaths.set(c.groupId, path);
+  }
   const categoryAccount = new Map<number, () => GncAccount>();
   for (const c of categoryRows) {
     if (c.isIncome && c.name === STARTING_BALANCES) {
       categoryAccount.set(c.id, opening);
       continue;
     }
-    const top = c.isIncome ? "Income" : "Expenses";
-    const group = accountName(c.groupName);
-    const path = group.toLowerCase() === top.toLowerCase() ? [top] : [top, group];
-    const account = ensure([...path, accountName(c.name)], c.isIncome ? "INCOME" : "EXPENSE", {
+    const path = groupPaths.get(c.groupId)!;
+    const account = ensure([...path, unique(path, accountName(c.name))], c.isIncome ? "INCOME" : "EXPENSE", {
       hidden: c.hidden || c.groupHidden,
     });
     categoryAccount.set(c.id, () => account);

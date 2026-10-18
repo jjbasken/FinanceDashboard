@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { gunzipSync } from "node:zlib";
 import type { Account, CategoryGroup, GnucashUpload, HoldingsSummary } from "@fd/shared";
 import { readGnucashXml } from "../src/importers/gnucash/xml";
 import type { GncBook } from "../src/importers/gnucash/read";
@@ -148,6 +149,63 @@ describe("exporting to GnuCash", () => {
       [expect.stringMatching(/^Expenses:.*Housing$/), 50_000, "Interest"],
     ]);
     expect(book.prices).toEqual([{ commodity: "VTI", currency: "USD", date: "2026-06-30", value: $(112.5) }]);
+  });
+
+  test("keeps categories and groups distinct when exported names collide", async () => {
+    const { c } = await newHousehold();
+    const account = (await c.post("/api/accounts", { name: "Checking", type: "checking" })).json;
+    const groupIds = [];
+    for (const name of ["Food:Home", "Food-Home", "Expenses"]) {
+      groupIds.push((await c.post("/api/categories/groups", { name })).json.id);
+    }
+    const ids = [];
+    for (const [groupId, name] of [[groupIds[0], "Meals:Out"], [groupIds[0], "Meals-Out"],
+      [groupIds[1], "Meals-Out"], [groupIds[2], "Food-Home"]] as const) {
+      const category = await c.post("/api/categories", { groupId, name });
+      expect(category.status).toBe(201);
+      ids.push(category.json.id);
+    }
+    for (const [i, categoryId] of ids.entries()) {
+      expect((await c.post("/api/transactions", {
+        accountId: account.id, date: "2026-01-01", amount: -(i + 1) * 100,
+        payeeName: `Purchase ${i}`, categoryId,
+      })).status).toBe(201);
+    }
+    const { book } = await exportBook(c);
+    const destination = book.transactions.map((t) => t.splits.find((s) => s.value > 0)!.accountGuid);
+    expect(new Set(destination).size).toBe(ids.length);
+    expect(new Set(book.accounts.map((a) => a.path)).size).toBe(book.accounts.length);
+    for (const id of destination) expect(book.accounts.find((a) => a.guid === id)!.placeholder).toBe(false);
+  });
+
+  test("exports XML-safe text while preserving Unicode and ordinary whitespace", async () => {
+    const { c } = await newHousehold();
+    const account = (await c.post("/api/accounts", { name: "Cash", type: "cash" })).json;
+    expect((await c.post("/api/transactions", {
+      accountId: account.id, date: "2026-01-01", amount: -100,
+      payeeName: "Café 😀 & shop", notes: "first\u0001second\tthird\nfourth",
+    })).status).toBe(201);
+    const { bytes, book } = await exportBook(c);
+    const xml = gunzipSync(bytes).toString("utf8");
+    expect(xml).not.toContain("\u0001");
+    expect(book.transactions[0]!.description).toBe("Café 😀 & shop");
+    expect(book.transactions[0]!.splits[0]!.memo).toBe("first�second\tthird\nfourth");
+  });
+
+  test("keeps investment dividends separate from an existing Dividends category", async () => {
+    const { c, brokerage } = await household();
+    const groups = (await c.get("/api/categories")).json as CategoryGroup[];
+    const income = groups.find((g) => g.isIncome)!;
+    const category = (await c.post("/api/categories", { groupId: income.id, name: "Dividends" })).json;
+    expect((await c.post("/api/transactions", {
+      accountId: brokerage.id, date: "2026-07-01", amount: 100,
+      categoryId: category.id, payeeName: "Other income",
+    })).status).toBe(201);
+    const { book } = await exportBook(c);
+    const categoryIncome = book.transactions.find((t) => t.description === "Other income")!;
+    const investmentIncome = book.transactions.find((t) => t.date === "2026-04-01")!;
+    expect(categoryIncome.splits.find((s) => s.value < 0)!.accountGuid)
+      .not.toBe(investmentIncome.splits.find((s) => s.value < 0)!.accountGuid);
   });
 
   test("imports back with the same accounts, balances and holdings", async () => {
