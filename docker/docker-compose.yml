@@ -1,6 +1,8 @@
 # Family Finance behind a Cloudflare Tunnel. Run from docker/:
-#   GIT_COMMIT=$(git rev-parse --short HEAD) docker compose up -d --build
-# For subsequent app updates, run ./update.sh to set the version and rebuild finance.
+#   docker compose pull && docker compose up -d
+# The app image is built by GitHub Actions and published to GitHub Container Registry.
+# For subsequent app updates, run ./update.sh to back up, pull the new image and restart finance.
+# To build from this checkout instead: GIT_COMMIT=$(git rev-parse --short HEAD) docker compose up -d --build
 # (GIT_COMMIT is optional; it labels the version in the owner's Logs.)
 # Setup (tunnel token, Cloudflare route and Access policy) is described in the README.
 # Without a name, Compose would call the project "docker" after this folder.
@@ -8,6 +10,8 @@ name: financedashboard
 
 services:
   finance:
+    # FINANCE_TAG picks a version: "latest" (default) or a short commit such as a75926e.
+    image: ghcr.io/jjbasken/financedashboard:${FINANCE_TAG:-latest}
     build:
       context: ..
       dockerfile: docker/Dockerfile
