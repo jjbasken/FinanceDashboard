@@ -238,33 +238,37 @@ If you use Cloudflare Access and the install option doesn't appear, add an Acces
 
 `docker/docker-compose.yml` runs the app behind a [Cloudflare Tunnel](https://developers.cloudflare.com/tunnel/get-started/), so you can reach it from anywhere without opening ports on your router. Setup is described under [Remote access with Cloudflare Tunnel](#remote-access-with-cloudflare-tunnel).
 
+The app image is built by GitHub Actions on every push to `main` and published to GitHub Container Registry as `ghcr.io/jjbasken/financedashboard`, tagged `latest` and with the short commit (for example `a75926e`). The server only needs the `docker/` folder and, optionally, the root `.env`; it doesn't have to build anything. To start it the first time:
+
 ```sh
 cd docker
-GIT_COMMIT=$(git rev-parse --short HEAD) docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
-`GIT_COMMIT` is optional: it labels the version in the owner's Logs (otherwise "unknown").
-
-To update an existing installation after pulling the latest code, run this from the repository root:
+To update an existing installation, run this from the repository root:
 
 ```sh
 ./docker/update.sh
 ```
 
-The script sets `GIT_COMMIT` automatically and rebuilds and replaces just the app container. It preserves `docker/data/` and leaves the Cloudflare tunnel running. It builds the current checkout; it does not pull code. You can also run `./update.sh` from the `docker/` directory. Refresh the browser or reopen the mobile app afterward.
+The script pulls the newest image, backs up the database, and replaces just the app container. It preserves `docker/data/` and leaves the Cloudflare tunnel running. If you're already on the newest image it says so and does nothing. You don't need to `git pull` first, except to pick up changes to the `docker/` files themselves. You can also run `./update.sh` from the `docker/` directory. Refresh the browser or reopen the mobile app afterward.
 
-Before rebuilding, the script backs up the database to `docker/data/backups/`, named after the version you're updating from (for example `finance-2026-10-18-093012-before-update-from-a75926e.db`). If the backup fails, nothing is rebuilt. If the app isn't running, the script stops rather than update without a backup; start it first, or run `SKIP_BACKUP=1 ./docker/update.sh` to skip the backup. These copies are never deleted automatically, so clear out old ones now and then.
+To run a particular version instead of the newest, set `FINANCE_TAG` to its short commit, for one update (`FINANCE_TAG=a75926e ./docker/update.sh`) or permanently in `docker/.env` (see `docker/.env.example`). To build the current checkout on the server instead of pulling, run `BUILD=1 ./docker/update.sh`; it labels the version in the owner's Logs with the checkout's commit.
 
-If an update goes wrong, put the copy back and rebuild the version in its name. Changes made since the pre-update backup (including while the image was building) are lost, so keep a copy of the current state too. Run these commands from the repository root, substituting your actual backup filename and commit:
+Before restarting the app, the script backs up the database to `docker/data/backups/`, named after the version you're updating from (for example `finance-2026-10-18-093012-before-update-from-a75926e.db`). The new image is downloaded first, so the app keeps running until the backup is taken. If the backup fails, nothing is replaced. If the app isn't running, the script stops rather than update without a backup; start it first, or run `SKIP_BACKUP=1 ./docker/update.sh` to skip the backup. These copies are never deleted automatically, so clear out old ones now and then.
+
+If an update goes wrong, put the copy back and switch to the version in its name. Changes made since the pre-update backup are lost, so keep a copy of the current state too. Run these commands from the repository root, substituting your actual backup filename and commit:
 
 ```sh
 docker exec -u bun family-finance bun apps/server/src/cli.ts backup broken-update
 docker compose -f docker/docker-compose.yml stop finance
 cp docker/data/backups/finance-2026-10-18-093012-before-update-from-a75926e.db docker/data/finance.db
 rm -f docker/data/finance.db-wal docker/data/finance.db-shm
-git checkout a75926e
-SKIP_BACKUP=1 ./docker/update.sh
+FINANCE_TAG=a75926e SKIP_BACKUP=1 ./docker/update.sh
 ```
+
+Add `FINANCE_TAG=a75926e` to `docker/.env` too if you want to stay on that version; otherwise the next `docker compose up` goes back to `latest`. Versions from before the images were published aren't in the registry: for those, `git checkout` the commit and run `BUILD=1 SKIP_BACKUP=1 ./docker/update.sh`.
 
 The Compose project is named `financedashboard`, which is how it appears in `docker compose ls` and in tools such as Dockhand or Portainer. If you started the app before the project had a name, it is running as `docker`: stop it with `docker compose -p docker down` (your data in `docker/data/` is kept), then start it again with the command above.
 
@@ -311,14 +315,14 @@ There are no signing secrets to configure, `JWT_SECRET` included. Sessions use r
 
 The compose file starts two containers: the app, and Cloudflare's connector (`cloudflared`), which starts once the app is healthy. The app's port is published only on the server itself (http://localhost:8082), secure cookies are on, and forwarded headers are ignored. Use the HTTPS hostname from every other device, even at home.
 
-1. **Create the owner first.** Either set all the required `SEED_*` settings in the root `.env`, or start just the app with `docker compose up -d --build finance` and finish setup at http://localhost:8082 in a browser on the server (or through an SSH port forward). Use a long, unique owner password.
+1. **Create the owner first.** Either set all the required `SEED_*` settings in the root `.env`, or start just the app with `docker compose pull && docker compose up -d finance` and finish setup at http://localhost:8082 in a browser on the server (or through an SSH port forward). Use a long, unique owner password.
 2. In Cloudflare, create a remotely managed tunnel and a published application route for your hostname (for example `finance.example.com`). Set the service type to **HTTP** and its URL to **`finance:8080`** (`http://finance:8080` as a full URL). Here `finance` is the Docker service name; `localhost` would refer to the connector container.
 3. Create a Cloudflare Access self-hosted application for that exact hostname, with an Allow policy restricted to your household's email addresses or identity provider. Complete this before starting the tunnel. Keep the app's own household login as well.
 4. From the `docker/` directory, create `secrets/` and save **only the tunnel token** into `secrets/cloudflare-tunnel-token`. This file is ignored by Git and excluded from Docker builds. Docker Compose mounts it as a secret into the connector only. Ensure the container can read the file; keep the containing directory accessible only to your server administrator. Never paste the token into a committed file.
 5. Start everything from the `docker/` directory and check the connector:
 
    ```sh
-   docker compose up -d --build
+   docker compose up -d
    docker compose logs --tail=50 cloudflared
    ```
 
