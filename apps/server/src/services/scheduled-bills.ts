@@ -84,10 +84,13 @@ function checkBill(
   input: { accountId: number; payeeId?: number | null; payeeName?: string; categoryId?: number | null },
 ) {
   const account = visibleAccount(db, actor, input.accountId);
+  if (account.budgetOnly) throw badRequest("A recurring bill needs a real account");
   const payee = resolvePayee(db, actor.householdId, input);
   if (payee?.transferAccountId) {
     if (payee.transferAccountId === account.id) throw badRequest("An account can't transfer to itself");
-    visibleAccount(db, actor, payee.transferAccountId);
+    if (visibleAccount(db, actor, payee.transferAccountId).budgetOnly) {
+      throw badRequest("Purchases without an account can't be transfers");
+    }
   }
   assertCategory(db, actor.householdId, input.categoryId);
   return { payeeId: payee?.id ?? null };

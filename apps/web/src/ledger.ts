@@ -35,6 +35,10 @@ export const ledgerKeys = {
 export const useAccounts = () =>
   useQuery({ queryKey: ledgerKeys.accounts, queryFn: () => api.get<Account[]>("/accounts") });
 
+/** The built-in "No account" for purchases recorded for the budget only. Left out of useAccounts. */
+export const useBudgetOnlyAccount = () =>
+  useQuery({ queryKey: [...ledgerKeys.accounts, "budget-only"], queryFn: () => api.get<Account>("/accounts/budget-only") });
+
 export const useFolders = () =>
   useQuery({ queryKey: ledgerKeys.folders, queryFn: () => api.get<AccountFolder[]>("/account-folders") });
 

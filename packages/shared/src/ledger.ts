@@ -86,6 +86,11 @@ export interface Account {
   folderId: number | null;
   /** Only its owner (you) can see a private account; the family's accounts are shared. */
   private: boolean;
+  /**
+   * The built-in "No account": spending recorded for the budget only, from money the app doesn't
+   * track. It's left out of account lists and its balance means nothing.
+   */
+  budgetOnly: boolean;
   /** Sum of all transactions, in cents. */
   balance: number;
   /** Sum of transactions dated today or earlier (leaves out scheduled ones still to come), in cents. */

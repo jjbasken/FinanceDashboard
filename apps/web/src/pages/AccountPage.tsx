@@ -22,6 +22,7 @@ import { Register } from "../components/Register";
 import { PHONE_QUERY, useMediaQuery, useContentWidth } from "../components/useMediaQuery";
 import {
   useAccounts,
+  useBudgetOnlyAccount,
   useCategories,
   useFolders,
   useHoldings,
@@ -296,6 +297,7 @@ function AccountInvestments(props: { account: Account; accounts: Account[] }) {
 export function AccountPage() {
   const id = Number(useParams().id);
   const accounts = useAccounts();
+  const budgetOnly = useBudgetOnlyAccount();
   const payees = usePayees();
   const categories = useCategories();
   const register = useRegister(id);
@@ -310,8 +312,8 @@ export function AccountPage() {
   useEffect(() => setQuickEntry(false), [id]);
   const [params, setParams] = useSearchParams();
 
-  const account = accounts.data?.find((a) => a.id === id);
-  if (accounts.data && !account) return <Navigate to="/budget" replace />;
+  const account = accounts.data?.find((a) => a.id === id) ?? (budgetOnly.data?.id === id ? budgetOnly.data : undefined);
+  if (accounts.data && !budgetOnly.isPending && !account) return <Navigate to="/budget" replace />;
 
   // Investment accounts open on their holdings; the cash register is a click away.
   const invests = !!account && (account.type === "investment" || account.holdingsValue !== 0);
@@ -327,7 +329,7 @@ export function AccountPage() {
       <header ref={content.ref} className="page-header account-header">
         <div className="account-title">
           <h1>{account?.name ?? "…"}</h1>
-          {account && (
+          {account && !account.budgetOnly && (
             <span className="badge">
               {ACCOUNT_TYPE_LABELS[account.type]} · {account.onBudget ? "On budget" : "Off budget"}
               {account.private ? " · Private" : ""}
@@ -336,7 +338,10 @@ export function AccountPage() {
             </span>
           )}
         </div>
-        {account && (
+        {account?.budgetOnly && (
+          <p className="muted">Purchases recorded without an account. They count in the budget only.</p>
+        )}
+        {account && !account.budgetOnly && (
           <div className="account-stats">
             {account.type === "investment" || account.holdingsValue !== 0 ? (
               <>
@@ -384,13 +389,13 @@ export function AccountPage() {
             Keyboard entry
           </button>
         )}
-        {account && !showHoldings && !reconciling && (
+        {account && !account.budgetOnly && !showHoldings && !reconciling && (
           <button className="btn" onClick={async () => setReconciling(true)}>
             Reconcile
           </button>
         )}
         {account && !showHoldings && <button className="btn btn-primary" onClick={async () => setQuickEntry(true)}>+ Add purchase</button>}
-        {account && <AccountMenu account={account} />}
+        {account && !account.budgetOnly && <AccountMenu account={account} />}
       </div>
       {account && reconciling && !showHoldings && (
         <ReconcileBar account={account} onDone={() => setReconciling(false)} />

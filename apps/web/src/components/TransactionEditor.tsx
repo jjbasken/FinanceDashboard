@@ -150,7 +150,7 @@ export function TransactionEditor(props: {
             <span>Amount</span>
             <div className="txn-amount">
               <div className="segmented" role="group" aria-label="Direction">
-                {(["expense", "income", "transfer"] as const).map(kind => <button key={kind} type="button"
+                {(["expense", "income", "transfer"] as const).filter(kind => kind !== "transfer" || !l.account.budgetOnly).map(kind => <button key={kind} type="button"
                   aria-pressed={kind === "transfer" ? transferMode : !transferMode && side === (kind === "income" ? "deposit" : "payment")}
                   className={(kind === "transfer" ? transferMode : !transferMode && side === (kind === "income" ? "deposit" : "payment")) ? "active" : undefined}
                   onClick={async () => { setTransferMode(kind === "transfer"); flip(kind === "income" ? "deposit" : "payment"); if (kind !== "transfer" && transferMode) set({ payeeId: null, payeeName: "" }); }}>
@@ -305,10 +305,11 @@ export function TransactionEditor(props: {
         )}
 
         {props.accountOptions && <label className="field"><span>{transferMode ? "Transfer from" : side === "deposit" ? "Paid into" : "Paid from"}</span><select value={l.account.id} onChange={e => { if (e.target.value === "all") return props.onShowAllAccounts?.(); props.onAccountChange?.(Number(e.target.value)); set({ payeeId: null, payeeName: "" }); }}>
-          {props.accountOptions.map(a => <option key={a.id} value={a.id}>{a.name}{a.private ? " · Private" : ""}</option>)}
+          {props.accountOptions.filter(a => !transferMode || !a.budgetOnly).map(a => <option key={a.id} value={a.id}>{a.budgetOnly ? "No account (budget only)" : a.name}{a.private ? " · Private" : ""}</option>)}
           {props.onShowAllAccounts && <option value="all">More accounts…</option>}
         </select></label>}
         <label className="field"><span>Date</span><input type="date" value={d.date} onChange={e => set({ date: e.target.value })} required /></label>
+        {l.account.budgetOnly && <p className="muted">Recorded for the budget only. It isn't taken from any of your accounts.</p>}
         {transferMode && <p className="muted">This records money moved between your accounts. It does not move money at your bank. Transfers within the budget are not spending; transfers out of the budget need a category.</p>}
         <details className="entry-details" open={d.split || undefined}><summary>More details: notes, splits & bank status</summary>
         <label className="field">
@@ -321,10 +322,12 @@ export function TransactionEditor(props: {
           />
         </label>
 
-        <label className="checkbox">
-          <input type="checkbox" checked={d.cleared} onChange={(e) => set({ cleared: e.target.checked })} />
-          <span>Confirmed by bank <small className="muted">(cleared)</small></span>
-        </label>
+        {!l.account.budgetOnly && (
+          <label className="checkbox">
+            <input type="checkbox" checked={d.cleared} onChange={(e) => set({ cleared: e.target.checked })} />
+            <span>Confirmed by bank <small className="muted">(cleared)</small></span>
+          </label>
+        )}
         </details>
         {choosesBudget(l.account) && (
           <label className="checkbox">
@@ -338,7 +341,7 @@ export function TransactionEditor(props: {
 
         {t && (
           <div className="txn-editor-actions">
-            {props.onMakeRecurring && (
+            {props.onMakeRecurring && !l.account.budgetOnly && (
               <button type="button" className="btn" onClick={makeRecurring} disabled={pending}>
                 Make recurring
               </button>

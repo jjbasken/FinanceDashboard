@@ -236,7 +236,9 @@ export function createImportRoutes() {
       const { householdId } = actorOf(c);
       const accountId = Number(c.req.query("accountId"));
       if (!Number.isInteger(accountId) || accountId <= 0) throw new HTTPException(400, { message: "Pick an account" });
-      visibleAccount(c.var.db, actorOf(c), accountId);
+      if (visibleAccount(c.var.db, actorOf(c), accountId).budgetOnly) {
+        throw new HTTPException(400, { message: "Pick a real account to import into" });
+      }
       const body = await readUpload(c.req.raw, 20 * 1024 * 1024);
 
       const text = new TextDecoder().decode(body);

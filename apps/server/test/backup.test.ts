@@ -26,7 +26,7 @@ describe("nightly backups", () => {
     expect(runNightlyBackup(db, dir, "2026-10-01").created).toBe(false);
 
     const copy = new Database(join(dir, first.name), { readonly: true });
-    expect(copy.query("select name from accounts").all()).toEqual([{ name: "Checking" }]);
+    expect(copy.query("select name from accounts where budget_only = 0").all()).toEqual([{ name: "Checking" }]);
     copy.close();
 
     // Unrelated files in the folder are left alone.

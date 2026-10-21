@@ -29,3 +29,11 @@ test("empty or ineligible preferences list every eligible account", () => {
   expect(entryAccounts(open, [99], 2, false)).toEqual({ account: card, shown: open });
   expect(entryAccounts([], [1], 1, false, 1)).toEqual({ account: undefined, shown: [] });
 });
+
+test("No account is offered last but only selected when chosen or when nothing else is open", () => {
+  const noAccount = { id: 9, onBudget: true, type: "cash", budgetOnly: true } as Account;
+  expect(entryAccounts(open, [], null, false, undefined, noAccount)).toEqual({ account: checking, shown: [...open, noAccount] });
+  expect(entryAccounts(open, [2], 2, false, undefined, noAccount)).toEqual({ account: card, shown: [card, noAccount] });
+  expect(entryAccounts(open, [2], 9, false, undefined, noAccount).account).toBe(noAccount);
+  expect(entryAccounts([], [], null, false, undefined, noAccount)).toEqual({ account: noAccount, shown: [noAccount] });
+});

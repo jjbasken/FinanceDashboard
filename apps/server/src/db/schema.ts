@@ -117,6 +117,11 @@ export const accounts = sqliteTable(
     folderId: integer("folder_id").references(() => accountFolders.id, { onDelete: "set null" }),
     /** Set for a private account: only this member sees it. Null for the family's shared accounts. */
     ownerId: integer("owner_id").references(() => users.id),
+    /**
+     * The household's one built-in "No account": spending recorded for the budget only, paid from
+     * money the app doesn't track. Hidden from account lists, and its balance means nothing.
+     */
+    budgetOnly: flag("budget_only"),
     gnucashGuid: text("gnucash_guid"),
     /** Set when an import created this row, so the import can be undone. */
     importBatchId: integer("import_batch_id").references((): AnySQLiteColumn => importBatches.id, {

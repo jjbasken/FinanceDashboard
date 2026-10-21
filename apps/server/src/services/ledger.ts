@@ -55,6 +55,17 @@ export function visibleAccount(db: DbOrTx, actor: Actor, id: number) {
   return account;
 }
 
+const budgetOnlyMessage = "This is the built-in No account for budget-only spending; it can't be changed";
+
+function assertNotBudgetOnly(account: { budgetOnly: boolean }) {
+  if (account.budgetOnly) throw badRequest(budgetOnlyMessage);
+}
+
+/** Money can't move into or out of the budget-only account; it has no real balance. */
+function assertTransferable(from: { budgetOnly: boolean }, to: { budgetOnly: boolean }) {
+  if (from.budgetOnly || to.budgetOnly) throw badRequest("Purchases without an account can't be transfers");
+}
+
 /** Raw lookup by household only. Anything acting for a member uses visibleAccount instead. */
 export function getAccount(db: DbOrTx, householdId: number, id: number) {
   return found(
@@ -138,8 +149,11 @@ function findStartingBalancesCategory(db: DbOrTx, householdId: number) {
 
 // --- Accounts ---
 
-/** The accounts a member can see. */
-export function listAccounts(db: DbOrTx, viewer: Actor, today = localDate()): Account[] {
+/**
+ * The accounts a member can see. The built-in budget-only account is left out unless asked for:
+ * it isn't one of the family's accounts, only somewhere to record spending for the budget.
+ */
+export function listAccounts(db: DbOrTx, viewer: Actor, today = localDate(), includeBudgetOnly = false): Account[] {
   const { householdId } = viewer;
   const rows = db
     .select({
@@ -152,6 +166,7 @@ export function listAccounts(db: DbOrTx, viewer: Actor, today = localDate()): Ac
       sortOrder: accounts.sortOrder,
       folderId: accounts.folderId,
       ownerId: accounts.ownerId,
+      budgetOnly: accounts.budgetOnly,
       transferPayeeId: payees.id,
     })
     .from(accounts)
@@ -160,6 +175,7 @@ export function listAccounts(db: DbOrTx, viewer: Actor, today = localDate()): Ac
       and(
         eq(accounts.householdId, householdId),
         or(isNull(accounts.ownerId), eq(accounts.ownerId, viewer.userId)),
+        includeBudgetOnly ? undefined : eq(accounts.budgetOnly, false),
       ),
     )
     .orderBy(asc(accounts.sortOrder), asc(accounts.id))
@@ -191,9 +207,22 @@ export function listAccounts(db: DbOrTx, viewer: Actor, today = localDate()): Ac
 
 export function accountSummary(db: DbOrTx, viewer: Actor, id: number) {
   return found(
-    listAccounts(db, viewer).find((a) => a.id === id),
+    listAccounts(db, viewer, localDate(), true).find((a) => a.id === id),
     "Account",
   );
+}
+
+/** The household's built-in account for spending recorded for the budget only. */
+export function budgetOnlyAccount(db: DbOrTx, viewer: Actor) {
+  const row = found(
+    db
+      .select({ id: accounts.id })
+      .from(accounts)
+      .where(and(eq(accounts.householdId, viewer.householdId), eq(accounts.budgetOnly, true)))
+      .get(),
+    "Account",
+  );
+  return accountSummary(db, viewer, row.id);
 }
 
 export function createAccount(db: DbOrTx, actor: Actor, input: CreateAccountInput, today: string) {
@@ -238,6 +267,7 @@ export function createAccount(db: DbOrTx, actor: Actor, input: CreateAccountInpu
 export function updateAccount(db: DbOrTx, actor: Actor, id: number, input: UpdateAccountInput) {
   const { private: makePrivate, ...changes } = input;
   const account = visibleAccount(db, actor, id);
+  assertNotBudgetOnly(account);
   let ownerId = account.ownerId;
   if (makePrivate === true && account.ownerId === null) {
     // Hiding a family account from everyone else is only for the member who added it.
@@ -284,12 +314,13 @@ export function updateAccount(db: DbOrTx, actor: Actor, id: number, input: Updat
  * ordinary transaction (its transfer link and payee are cleared by the foreign keys).
  */
 export function deleteAccount(db: DbOrTx, actor: Actor, id: number) {
-  visibleAccount(db, actor, id);
+  assertNotBudgetOnly(visibleAccount(db, actor, id));
   db.delete(accounts).where(eq(accounts.id, id)).run();
 }
 
 /** Lock in every cleared transaction once the cleared balance matches the bank statement. */
 export function reconcileAccount(db: DbOrTx, actor: Actor, id: number, statementBalance: number) {
+  assertNotBudgetOnly(visibleAccount(db, actor, id));
   const { clearedBalance } = accountSummary(db, actor, id);
   if (clearedBalance !== statementBalance) {
     throw badRequest("The cleared balance doesn't match the statement balance yet");
@@ -426,7 +457,7 @@ function checkSplits(db: DbOrTx, actor: Actor, account: AccountRow, amount: numb
   for (const s of splits) {
     assertCategory(db, actor.householdId, s.categoryId);
     if (s.transferAccountId == null) continue;
-    visibleAccount(db, actor, s.transferAccountId);
+    assertTransferable(account, visibleAccount(db, actor, s.transferAccountId));
     if (s.transferAccountId === account.id) throw badRequest("An account can't transfer to itself");
   }
 }
@@ -535,6 +566,7 @@ export function createTransaction(db: DbOrTx, actor: Actor, input: CreateTransac
 
   const target = transferTarget(db, actor, payee);
   if (target) {
+    assertTransferable(account, target);
     if (target.id === account.id) throw badRequest("An account can't transfer to itself");
     if (splits.length) throw badRequest("A transfer can't be split");
   }
@@ -609,6 +641,7 @@ export function updateTransaction(db: DbOrTx, actor: Actor, id: number, input: U
 
   const target = transferTarget(db, actor, payee);
   if (target) {
+    assertTransferable(account, target);
     if (target.id === account.id) throw badRequest("An account can't transfer to itself");
     if (willBeSplit) throw badRequest("A transfer can't be split");
     categoryId = transferCategory(account, target, categoryId);

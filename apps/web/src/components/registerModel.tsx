@@ -203,9 +203,10 @@ export function useLookups(account: Account, accounts: Account[], payees: Payee[
     const payeeById = new Map(payees.map((p) => [p.id, p]));
     const open = new Set(accounts.filter((a) => !a.closed).map((a) => a.id));
     const regular = payees.filter((p) => !p.transferAccountId);
-    const transfers = payees.filter(
-      (p) => p.transferAccountId && p.transferAccountId !== account.id && open.has(p.transferAccountId),
-    );
+    // Purchases without an account can't be transfers.
+    const transfers = account.budgetOnly
+      ? []
+      : payees.filter((p) => p.transferAccountId && p.transferAccountId !== account.id && open.has(p.transferAccountId));
     const payeeOptions: Option<PayeeValue>[] = [
       ...regular.map((p) => ({ key: `p${p.id}`, label: p.name, value: { id: p.id, name: p.name }, group: "Payees" })),
       ...transfers.map((p) => ({

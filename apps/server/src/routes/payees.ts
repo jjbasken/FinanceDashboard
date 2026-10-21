@@ -33,7 +33,8 @@ export const payeeRoutes = new Hono<AppEnv>()
   .get("/", (c) => {
     const { householdId, userId } = actorOf(c);
     // Another member's private account appears only as "Private account", and the category
-    // carried forward comes only from accounts this member can see.
+    // carried forward comes only from accounts this member can see. The budget-only account
+    // can't take transfers, so its transfer payee isn't offered.
     const list: Payee[] = c.var.db.all<Payee>(sql`
       select * from (
         select p.id as id,
@@ -46,7 +47,7 @@ export const payeeRoutes = new Hono<AppEnv>()
                 order by t.date desc, t.id desc limit 1) as lastCategoryId
         from payees p
         left join accounts ta on ta.id = p.transfer_account_id
-        where p.household_id = ${householdId}
+        where p.household_id = ${householdId} and coalesce(ta.budget_only, 0) = 0
       ) order by lower(name)
     `);
     return c.json(list);
