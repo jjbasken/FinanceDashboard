@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Account } from "@fd/shared";
-import { entryAccounts } from "../src/components/entryAccounts";
+import { entryAccounts, needsNoAccount } from "../src/components/entryAccounts";
 
 const checking = { id: 1, onBudget: true, type: "checking" } as Account;
 const card = { id: 2, onBudget: true, type: "credit" } as Account;
@@ -36,4 +36,11 @@ test("No account is offered last but only selected when chosen or when nothing e
   expect(entryAccounts(open, [2], 2, false, undefined, noAccount)).toEqual({ account: card, shown: [card, noAccount] });
   expect(entryAccounts(open, [2], 9, false, undefined, noAccount).account).toBe(noAccount);
   expect(entryAccounts([], [], null, false, undefined, noAccount)).toEqual({ account: noAccount, shown: [noAccount] });
+});
+
+test("No account is only needed when it was asked for or nothing else is open", () => {
+  expect(needsNoAccount(open)).toBe(false);
+  expect(needsNoAccount(open, 2)).toBe(false);
+  expect(needsNoAccount(open, 9)).toBe(true);
+  expect(needsNoAccount([])).toBe(true);
 });

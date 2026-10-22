@@ -14,3 +14,11 @@ export function entryAccounts(open: Account[], preferred: number[], chosen: numb
   const shown = !shortlist.length ? open : initialAccount && !shortlist.includes(initialAccount) ? [initialAccount, ...shortlist] : shortlist;
   return { account, shown: noAccount ? [...shown, noAccount] : shown };
 }
+
+/**
+ * Whether entry can't go ahead without the budget-only "No account": it was asked for (entry
+ * started from its page), or there's no other account to record with.
+ */
+export function needsNoAccount(open: Account[], initialAccountId?: number) {
+  return !open.length || (initialAccountId !== undefined && !open.some(a => a.id === initialAccountId));
+}

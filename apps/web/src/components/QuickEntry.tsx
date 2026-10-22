@@ -6,8 +6,7 @@ import { today, useAccounts, useBudgetOnlyAccount, useCategories, usePayees } fr
 import { useLookups } from "./registerModel";
 import { TransactionEditor } from "./TransactionEditor";
 import { Dialog } from "./Dialog";
-import { Link } from "react-router";
-import { entryAccounts } from "./entryAccounts";
+import { entryAccounts, needsNoAccount } from "./entryAccounts";
 
 export function QuickEntry(props: { onClose: () => void; category?: BudgetCategory; isIncome?: boolean; month?: string; accountId?: number }) {
   const accounts = useAccounts(); const payees = usePayees(); const categories = useCategories();
@@ -20,9 +19,10 @@ export function QuickEntry(props: { onClose: () => void; category?: BudgetCatego
   const budgetOnly = useBudgetOnlyAccount();
   const { account, shown } = entryAccounts(open, preferences.entryAccounts, chosen, showAll, props.accountId, budgetOnly.data);
   const lookups = useLookups(account ?? { id: 0 } as never, accounts.data ?? [], payees.data ?? [], categories.data ?? []);
-  const error = accounts.error ?? budgetOnly.error ?? payees.error ?? categories.error;
-  if (error || !accounts.data || !budgetOnly.data || !account || !payees.data || !categories.data) return <Dialog title="Add purchase" submitLabel="Close" noCancel onClose={props.onClose} onSubmit={props.onClose} error={error?.message}>
-    {!accounts.isPending && !budgetOnly.isPending && !account ? <p>Add an account first to record a purchase. <Link to="/accounts" onClick={props.onClose}>Open accounts</Link></p> : !error && <p>Loading accounts…</p>}
+  // If "No account" can't be loaded, entry still works with the real accounts.
+  const error = accounts.error ?? (needsNoAccount(open, props.accountId) ? budgetOnly.error : null) ?? payees.error ?? categories.error;
+  if (error || !accounts.data || budgetOnly.isPending || !account || !payees.data || !categories.data) return <Dialog title="Add purchase" submitLabel="Close" noCancel onClose={props.onClose} onSubmit={props.onClose} error={error?.message}>
+    {!error && <p>Loading accounts…</p>}
   </Dialog>;
   return <TransactionEditor lookups={lookups} onClose={props.onClose} initialCategory={props.category?.id} initialIncome={props.isIncome}
     initialDate={props.month && props.month !== today().slice(0,7) ? `${props.month}-01` : today()}

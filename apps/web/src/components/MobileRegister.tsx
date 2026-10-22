@@ -67,6 +67,7 @@ export function MobileRegister(props: {
   }
 
   async function toggleCleared(t: Transaction) {
+    if (account.budgetOnly) return;
     if (t.reconciled && !(await askConfirm("This transaction is reconciled. Unlock it?"))) return;
     setSaveError(null);
     update.mutate({ id: t.id, body: { cleared: !t.cleared } }, { onError: (err) => setSaveError(err.message) });
@@ -137,20 +138,22 @@ export function MobileRegister(props: {
                           ) : null}
                           {choosesBudget(account) && t.inBudget && " · Family"}
                         </span>
-                        {preferences.showRunningBalance && <span className={t.runningBalance < 0 ? "amount negative" : "amount"}>After: {formatCents(t.runningBalance)}</span>}
+                        {preferences.showRunningBalance && !account.budgetOnly && <span className={t.runningBalance < 0 ? "amount negative" : "amount"}>After: {formatCents(t.runningBalance)}</span>}
                       </span>
                     </button>
-                    <button
-                      type="button"
-                      className={
-                        t.reconciled ? "cleared-toggle reconciled" : t.cleared ? "cleared-toggle on" : "cleared-toggle"
-                      }
-                      aria-label={`${payee || "Transaction"} on ${formatDate(t.date)}: ${t.reconciled ? "Reconciled" : t.cleared ? "Confirmed by bank; mark unconfirmed" : "Not confirmed; mark confirmed by bank"}`}
-                      title={t.reconciled ? "Reconciled" : t.cleared ? "Cleared" : "Not cleared"}
-                      onClick={async () => toggleCleared(t)}
-                    >
-                      {t.reconciled ? "🔒" : t.cleared ? "✓" : "○"}
-                    </button>
+                    {!account.budgetOnly && (
+                      <button
+                        type="button"
+                        className={
+                          t.reconciled ? "cleared-toggle reconciled" : t.cleared ? "cleared-toggle on" : "cleared-toggle"
+                        }
+                        aria-label={`${payee || "Transaction"} on ${formatDate(t.date)}: ${t.reconciled ? "Reconciled" : t.cleared ? "Confirmed by bank; mark unconfirmed" : "Not confirmed; mark confirmed by bank"}`}
+                        title={t.reconciled ? "Reconciled" : t.cleared ? "Cleared" : "Not cleared"}
+                        onClick={async () => toggleCleared(t)}
+                      >
+                        {t.reconciled ? "🔒" : t.cleared ? "✓" : "○"}
+                      </button>
+                    )}
                   </div>
                 </div>
               );

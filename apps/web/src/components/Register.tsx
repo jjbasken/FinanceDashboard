@@ -191,12 +191,14 @@ function EditRow(props: {
         </div>
         <div className="cell amount muted">{!l.account.budgetOnly && props.balance !== undefined ? formatCents(props.balance) : ""}</div>
         <div className="cell center">
-          {!l.account.budgetOnly && <input
-            type="checkbox"
-            aria-label="Cleared"
-            checked={d.cleared}
-            onChange={(e) => set({ cleared: e.target.checked })}
-          />}
+          {!l.account.budgetOnly && (
+            <input
+              type="checkbox"
+              aria-label="Cleared"
+              checked={d.cleared}
+              onChange={(e) => set({ cleared: e.target.checked })}
+            />
+          )}
         </div>
       </div>
 
@@ -413,15 +415,17 @@ function DisplayRow(props: {
           {!l.account.budgetOnly && formatCents(t.runningBalance)}
         </div>
         <div className="cell center">
-          {!l.account.budgetOnly && <button
-            type="button"
-            className={t.reconciled ? "cleared-toggle reconciled" : t.cleared ? "cleared-toggle on" : "cleared-toggle"}
-            aria-label={t.reconciled ? "Reconciled" : t.cleared ? "Cleared" : "Not cleared"}
-            title={t.reconciled ? "Reconciled" : t.cleared ? "Cleared" : "Not cleared"}
-            onClick={props.onToggleCleared}
-          >
-            {t.reconciled ? "🔒" : "✓"}
-          </button>}
+          {!l.account.budgetOnly && (
+            <button
+              type="button"
+              className={t.reconciled ? "cleared-toggle reconciled" : t.cleared ? "cleared-toggle on" : "cleared-toggle"}
+              aria-label={t.reconciled ? "Reconciled" : t.cleared ? "Cleared" : "Not cleared"}
+              title={t.reconciled ? "Reconciled" : t.cleared ? "Cleared" : "Not cleared"}
+              onClick={props.onToggleCleared}
+            >
+              {t.reconciled ? "🔒" : "✓"}
+            </button>
+          )}
         </div>
       </div>
       {t.splits.map((s) => (

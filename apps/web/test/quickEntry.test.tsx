@@ -44,3 +44,20 @@ test("editing a budget-only purchase reports lookup errors", () => {
   expect(html).toContain("Cannot load budget-only account");
   expect(html).not.toContain("Loading transaction");
 });
+
+function failBudgetOnly(qc: QueryClient) {
+  const query = qc.getQueryCache().build(qc, { queryKey: [...ledgerKeys.accounts, "budget-only"] });
+  query.setState({ status: "error", error: new Error("Cannot load budget-only account") });
+}
+
+test("entry that needs No account reports when it can't be loaded", () => {
+  const fromNoAccount = client();
+  fromNoAccount.setQueryData(ledgerKeys.accounts, [checking]);
+  failBudgetOnly(fromNoAccount);
+  expect(entry(fromNoAccount, noAccount.id)).toContain("Cannot load budget-only account");
+
+  const nothingElse = client();
+  nothingElse.setQueryData(ledgerKeys.accounts, []);
+  failBudgetOnly(nothingElse);
+  expect(entry(nothingElse)).toContain("Cannot load budget-only account");
+});

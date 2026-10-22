@@ -97,6 +97,8 @@ describe("the budget-only account", () => {
     const fund = await jeremy.upload(`/api/import/fund?accountId=${noAccount.id}`, new TextEncoder().encode(""));
     expect(fund.status).toBe(400);
     expect(fund.json.error).toContain("real account");
-    expect((await jeremy.upload(`/api/import/bank?accountId=${noAccount.id}`, new TextEncoder().encode(""))).status).toBe(400);
+    const bank = await jeremy.upload(`/api/import/bank?accountId=${noAccount.id}`, new TextEncoder().encode(""));
+    expect(bank.status).toBe(400);
+    expect(bank.json.error).toContain("real account");
   });
 });
