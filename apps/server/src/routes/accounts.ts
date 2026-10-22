@@ -4,6 +4,7 @@ import type { AppEnv } from "../app";
 import { actorOf, idParam, parseBody, requireAuth } from "../middleware";
 import {
   accountSummary,
+  budgetOnlyAccount,
   createAccount,
   deleteAccount,
   listAccounts,
@@ -17,6 +18,9 @@ export const accountRoutes = new Hono<AppEnv>()
   .use(requireAuth)
 
   .get("/", (c) => c.json(listAccounts(c.var.db, actorOf(c))))
+
+  /** The built-in "No account", for purchases recorded for the budget only. */
+  .get("/budget-only", (c) => c.json(budgetOnlyAccount(c.var.db, actorOf(c))))
 
   .post("/", async (c) => {
     const input = await parseBody(c, createAccountInput);
