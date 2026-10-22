@@ -235,7 +235,7 @@ esac`;
   });
 
   test("failed image preparation stops before backup or restart in either mode", () => {
-    for (const env of [{}, { BUILD: "1" }]) {
+    for (const env of [{}, { BUILD: "1" }] as Record<string, string>[]) {
       const { exitCode, calls } = update({ prepareFails: true, env });
       expect(exitCode).not.toBe(0);
       expect(calls.some((c) => c.startsWith("exec"))).toBe(false);
