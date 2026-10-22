@@ -189,14 +189,14 @@ function EditRow(props: {
             onChange={(e) => set({ deposit: e.target.value, payment: e.target.value ? "" : d.payment })}
           />
         </div>
-        <div className="cell amount muted">{props.balance !== undefined ? formatCents(props.balance) : ""}</div>
+        <div className="cell amount muted">{!l.account.budgetOnly && props.balance !== undefined ? formatCents(props.balance) : ""}</div>
         <div className="cell center">
-          <input
+          {!l.account.budgetOnly && <input
             type="checkbox"
             aria-label="Cleared"
             checked={d.cleared}
             onChange={(e) => set({ cleared: e.target.checked })}
-          />
+          />}
         </div>
       </div>
 
@@ -309,7 +309,7 @@ function EditRow(props: {
           </span>
         )}
         <span className="muted hint">Enter to save · Esc to cancel</span>
-        {props.onMakeRecurring && (
+        {props.onMakeRecurring && !l.account.budgetOnly && (
           <button
             type="button"
             className="btn btn-small"
@@ -410,10 +410,10 @@ function DisplayRow(props: {
         {cell("payment", t.amount < 0 ? formatCents(-t.amount) : "", "cell amount")}
         {cell("deposit", t.amount > 0 ? formatCents(t.amount) : "", "cell amount positive")}
         <div className={t.runningBalance < 0 ? "cell amount negative" : "cell amount"}>
-          {formatCents(t.runningBalance)}
+          {!l.account.budgetOnly && formatCents(t.runningBalance)}
         </div>
         <div className="cell center">
-          <button
+          {!l.account.budgetOnly && <button
             type="button"
             className={t.reconciled ? "cleared-toggle reconciled" : t.cleared ? "cleared-toggle on" : "cleared-toggle"}
             aria-label={t.reconciled ? "Reconciled" : t.cleared ? "Cleared" : "Not cleared"}
@@ -421,7 +421,7 @@ function DisplayRow(props: {
             onClick={props.onToggleCleared}
           >
             {t.reconciled ? "🔒" : "✓"}
-          </button>
+          </button>}
         </div>
       </div>
       {t.splits.map((s) => (
@@ -599,6 +599,7 @@ export function Register(props: {
   }
 
   async function toggleCleared(t: Transaction) {
+    if (props.account.budgetOnly) return;
     if (t.reconciled && !(await askConfirm("This transaction is reconciled. Unlock it?"))) return;
     update.mutate({ id: t.id, body: { cleared: !t.cleared } }, onSaveError);
   }
@@ -639,9 +640,9 @@ export function Register(props: {
         {showCategory && <div className="cell">Category</div>}
         <div className="cell amount">Payment</div>
         <div className="cell amount">Deposit</div>
-        <div className="cell amount">Balance</div>
-        <div className="cell center" title="Cleared">
-          ✓
+        <div className="cell amount">{!props.account.budgetOnly && "Balance"}</div>
+        <div className="cell center" title={props.account.budgetOnly ? undefined : "Cleared"}>
+          {!props.account.budgetOnly && "✓"}
         </div>
       </div>
 

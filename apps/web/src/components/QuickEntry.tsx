@@ -21,7 +21,7 @@ export function QuickEntry(props: { onClose: () => void; category?: BudgetCatego
   const { account, shown } = entryAccounts(open, preferences.entryAccounts, chosen, showAll, props.accountId, budgetOnly.data);
   const lookups = useLookups(account ?? { id: 0 } as never, accounts.data ?? [], payees.data ?? [], categories.data ?? []);
   const error = accounts.error ?? budgetOnly.error ?? payees.error ?? categories.error;
-  if (!account || !payees.data || !categories.data) return <Dialog title="Add purchase" submitLabel="Close" noCancel onClose={props.onClose} onSubmit={props.onClose} error={error?.message}>
+  if (error || !accounts.data || !budgetOnly.data || !account || !payees.data || !categories.data) return <Dialog title="Add purchase" submitLabel="Close" noCancel onClose={props.onClose} onSubmit={props.onClose} error={error?.message}>
     {!accounts.isPending && !budgetOnly.isPending && !account ? <p>Add an account first to record a purchase. <Link to="/accounts" onClick={props.onClose}>Open accounts</Link></p> : !error && <p>Loading accounts…</p>}
   </Dialog>;
   return <TransactionEditor lookups={lookups} onClose={props.onClose} initialCategory={props.category?.id} initialIncome={props.isIncome}

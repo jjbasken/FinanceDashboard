@@ -313,7 +313,7 @@ export function createInvestmentTxn(
   input: InvestmentTxnInput,
   extra: { importedId?: string; importBatchId?: number } = {},
 ) {
-  visibleAccount(db, actor, input.accountId);
+  if (visibleAccount(db, actor, input.accountId).budgetOnly) throw bad("Investments need a real account");
   const security = getSecurity(db, actor.householdId, input.securityId);
   const n = normalise(input, positionOn(db, input.accountId, input.securityId, input.date));
   const transactionId = syncCash(db, actor, null, { ...input, symbol: security.symbol, ...n });
@@ -353,7 +353,7 @@ export function createInvestmentTxn(
 export function updateInvestmentTxn(db: DbOrTx, actor: Actor, id: number, input: InvestmentTxnInput) {
   const existing = getRow(db, actor.householdId, id);
   visibleAccount(db, actor, existing.accountId);
-  visibleAccount(db, actor, input.accountId);
+  if (visibleAccount(db, actor, input.accountId).budgetOnly) throw bad("Investments need a real account");
   const security = getSecurity(db, actor.householdId, input.securityId);
   const n = normalise(input, positionOn(db, input.accountId, input.securityId, input.date, id));
   const transactionId = syncCash(db, actor, existing.transactionId, { ...input, symbol: security.symbol, ...n });

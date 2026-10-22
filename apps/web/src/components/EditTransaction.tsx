@@ -11,7 +11,7 @@ export function EditTransaction({ id, onClose }: { id: number; onClose: () => vo
   const budgetOnly = useBudgetOnlyAccount();
   const account = [...(accounts.data ?? []), ...(budgetOnly.data ? [budgetOnly.data] : [])].find(a => a.id === query.data?.accountId);
   const lookups = useLookups(account ?? { id: 0 } as Account, accounts.data ?? [], payees.data ?? [], categories.data ?? []);
-  const error = query.error ?? accounts.error ?? categories.error ?? payees.error;
+  const error = query.error ?? accounts.error ?? budgetOnly.error ?? categories.error ?? payees.error;
   const kind = query.data && linkedKind(query.data);
   if (kind || error || !query.data || !account || !categories.data || !payees.data) return <Dialog title="Review transaction" submitLabel="Close" noCancel onClose={onClose} onSubmit={onClose} error={error?.message}>
     {kind ? <LinkedNotice kind={kind} onDismiss={onClose} /> : !error && <p>Loading transaction…</p>}

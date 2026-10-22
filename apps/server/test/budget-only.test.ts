@@ -77,4 +77,26 @@ describe("the budget-only account", () => {
     const bill = { amount: -1_000, payeeName: "Gym", frequency: "monthly", startDate: "2026-11-01" };
     expect((await jeremy.post("/api/scheduled-bills", { ...bill, accountId: noAccount.id })).status).toBe(400);
   });
+
+  test("investment writes and statement imports require a real account", async () => {
+    const { jeremy, noAccount, checking } = await setUp();
+    const security = await jeremy.post("/api/investments/securities", { symbol: "VTI", name: "Total Market", type: "etf" });
+    expect(security.status).toBe(201);
+    const investment = {
+      securityId: security.json.id, date: "2026-10-05", action: "buy", shares: 1_000_000, price: 100_000_000,
+    };
+    expect((await jeremy.post("/api/investments/transactions", { ...investment, accountId: noAccount.id })).status).toBe(400);
+    const real = await jeremy.post("/api/investments/transactions", { ...investment, accountId: checking.id });
+    expect(real.status).toBe(201);
+    const moved = await jeremy.request("PUT", `/api/investments/transactions/${real.json.id}`, {
+      ...investment, accountId: noAccount.id,
+    });
+    expect(moved.status).toBe(400);
+    expect((await jeremy.get(`/api/accounts/${checking.id}/transactions`)).json).toHaveLength(1);
+    expect((await jeremy.get(`/api/accounts/${noAccount.id}/transactions`)).json).toEqual([]);
+    const fund = await jeremy.upload(`/api/import/fund?accountId=${noAccount.id}`, new TextEncoder().encode(""));
+    expect(fund.status).toBe(400);
+    expect(fund.json.error).toContain("real account");
+    expect((await jeremy.upload(`/api/import/bank?accountId=${noAccount.id}`, new TextEncoder().encode(""))).status).toBe(400);
+  });
 });

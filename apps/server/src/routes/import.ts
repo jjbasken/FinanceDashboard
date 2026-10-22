@@ -306,6 +306,7 @@ export function createImportRoutes() {
       const accountId = Number(c.req.query("accountId"));
       if (!Number.isInteger(accountId) || accountId <= 0) throw new HTTPException(400, { message: "Pick an account" });
       const account = visibleAccount(c.var.db, actorOf(c), accountId);
+      if (account.budgetOnly) throw new HTTPException(400, { message: "Pick a real account to import into" });
       if (account.closed) throw new HTTPException(400, { message: "That account is closed" });
       const body = await readUpload(c.req.raw, 5 * 1024 * 1024);
       let statement: Statement;
