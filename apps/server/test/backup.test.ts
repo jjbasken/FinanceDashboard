@@ -154,20 +154,32 @@ describe("backing up from the command line", () => {
 
 describe("docker/update.sh", () => {
   // Fake docker and git: record what the script asks for without touching a real container.
-  function update(opts: { running?: boolean; hasBackupCommand?: boolean; backupFails?: boolean; database?: boolean; env?: Record<string, string> } = {}) {
+  function update(opts: {
+    running?: boolean; hasBackupCommand?: boolean; backupFails?: boolean; database?: boolean;
+    sameImage?: boolean; prepareFails?: boolean; env?: Record<string, string>;
+  } = {}) {
     const dir = tempDir();
     const log = join(dir, "calls");
     writeFileSync(log, "");
     const docker = `
 printf '%s\\n' "$*" >> "$MOCK_LOG"
-case "$1" in
-  inspect) [ "$MOCK_RUNNING" = 1 ] && echo true || exit 1 ;;
-  exec)
+case "$*" in
+  "compose config --images finance") echo ghcr.io/jjbasken/financedashboard:latest ;;
+  "compose pull finance"|"compose build finance") exit "$MOCK_PREPARE_EXIT" ;;
+  "compose up -d --no-build finance") ;;
+  "image inspect -f {{.Id}} "*) echo new-image ;;
+  "image inspect -f {{range .Config.Env}}{{println .}}{{end}} "*) echo GIT_COMMIT=b1c2d3e ;;
+  "inspect -f {{.Image}} family-finance")
+    [ "$MOCK_SAME_IMAGE" = 1 ] && echo new-image || echo old-image ;;
+  "inspect -f {{.State.Running}} family-finance")
+    [ "$MOCK_RUNNING" = 1 ] && echo true || exit 1 ;;
+  "exec "*)
     case "$*" in
       *printenv*) echo a75926e ;;
       *grep*) [ "$MOCK_HAS_BACKUP" = 1 ] ;;
       *bun*) exit "$MOCK_BACKUP_EXIT" ;;
     esac ;;
+  *) echo "Unexpected docker command: $*" >&2; exit 64 ;;
 esac`;
     writeFileSync(join(dir, "docker"), `#!/bin/sh${docker}\n`);
     writeFileSync(join(dir, "git"), "#!/bin/sh\necho b1c2d3e\n");
@@ -184,26 +196,72 @@ esac`;
         MOCK_RUNNING: opts.running === false ? "0" : "1",
         MOCK_HAS_BACKUP: opts.hasBackupCommand === false ? "0" : "1",
         MOCK_BACKUP_EXIT: opts.backupFails ? "1" : "0",
+        MOCK_SAME_IMAGE: opts.sameImage ? "1" : "0",
+        MOCK_PREPARE_EXIT: opts.prepareFails ? "1" : "0",
         ...opts.env,
       },
     });
     return { exitCode: result.exitCode, calls: readFileSync(log, "utf8").trim().split("\n") };
   }
 
-  test("backs up with the old version's name before rebuilding", () => {
+  test("pulls the image, backs up with the old version's name, then restarts", () => {
     const { exitCode, calls } = update();
     expect(exitCode).toBe(0);
     const backup = calls.findIndex((c) => c.includes("cli.ts backup before-update-from-a75926e"));
-    const build = calls.findIndex((c) => c.startsWith("compose up -d --build finance"));
+    const pull = calls.indexOf("compose pull finance");
+    const restart = calls.indexOf("compose up -d --no-build finance");
     expect(backup).toBeGreaterThan(-1);
     expect(calls[backup]).toStartWith("exec -u bun family-finance");
-    expect(build).toBeGreaterThan(backup);
+    expect(pull).toBeGreaterThan(-1);
+    expect(backup).toBeGreaterThan(pull);
+    expect(restart).toBeGreaterThan(backup);
   });
 
-  test("does not rebuild when the backup fails", () => {
+  test("does not restart when the backup fails", () => {
     const { exitCode, calls } = update({ backupFails: true });
     expect(exitCode).not.toBe(0);
-    expect(calls.some((c) => c.startsWith("compose"))).toBe(false);
+    expect(calls).toContain("compose pull finance");
+    expect(calls.some((c) => c.startsWith("compose up"))).toBe(false);
+  });
+
+  test("BUILD=1 builds the checkout before backup and restart", () => {
+    const { exitCode, calls } = update({ env: { BUILD: "1" } });
+    expect(exitCode).toBe(0);
+    expect(calls[0]).toBe("compose build finance");
+    expect(calls).not.toContain("compose pull finance");
+    const backup = calls.findIndex((c) => c.includes("cli.ts backup before-update-from-a75926e"));
+    expect(backup).toBeGreaterThan(0);
+    expect(calls.indexOf("compose up -d --no-build finance")).toBeGreaterThan(backup);
+  });
+
+  test("failed image preparation stops before backup or restart in either mode", () => {
+    for (const env of [{}, { BUILD: "1" }]) {
+      const { exitCode, calls } = update({ prepareFails: true, env });
+      expect(exitCode).not.toBe(0);
+      expect(calls.some((c) => c.startsWith("exec"))).toBe(false);
+      expect(calls.some((c) => c.startsWith("compose up"))).toBe(false);
+    }
+  });
+
+  test("an already-current running container needs no backup or restart", () => {
+    const { exitCode, calls } = update({ sameImage: true });
+    expect(exitCode).toBe(0);
+    expect(calls).toContain("compose pull finance");
+    expect(calls.some((c) => c.startsWith("exec"))).toBe(false);
+    expect(calls.some((c) => c.startsWith("compose up"))).toBe(false);
+  });
+
+  test("a stopped container on the same image still requires a backup for existing data", () => {
+    const { exitCode, calls } = update({ sameImage: true, running: false, database: true });
+    expect(exitCode).not.toBe(0);
+    expect(calls.some((c) => c.startsWith("compose up"))).toBe(false);
+  });
+
+  test("a failed backup also prevents restart after a local build", () => {
+    const { exitCode, calls } = update({ backupFails: true, env: { BUILD: "1" } });
+    expect(exitCode).not.toBe(0);
+    expect(calls[0]).toBe("compose build finance");
+    expect(calls.some((c) => c.startsWith("compose up"))).toBe(false);
   });
 
   test("backs up a version from before the backup command directly", () => {
@@ -235,18 +293,21 @@ esac`;
   test("a stopped app with an existing database blocks the update", () => {
     const { exitCode, calls } = update({ running: false, database: true });
     expect(exitCode).not.toBe(0);
-    expect(calls.some((c) => c.startsWith("compose"))).toBe(false);
+    expect(calls).toContain("compose pull finance");
+    expect(calls.some((c) => c.startsWith("compose up"))).toBe(false);
   });
 
-  test("a fresh installation without a database can build", () => {
+  test("a fresh installation without a database can start", () => {
     const { exitCode, calls } = update({ running: false });
     expect(exitCode).toBe(0);
     expect(calls.some((c) => c.startsWith("compose up"))).toBe(true);
   });
 
-  test("SKIP_BACKUP=1 goes straight to the rebuild", () => {
+  test("SKIP_BACKUP=1 pulls and restarts without a backup", () => {
     const { exitCode, calls } = update({ env: { SKIP_BACKUP: "1" } });
     expect(exitCode).toBe(0);
-    expect(calls).toEqual(["compose up -d --build finance"]);
+    expect(calls).toContain("compose pull finance");
+    expect(calls.at(-1)).toBe("compose up -d --no-build finance");
+    expect(calls.some((c) => c.startsWith("exec"))).toBe(false);
   });
 });
