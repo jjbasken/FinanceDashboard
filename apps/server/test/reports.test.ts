@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { Account, BudgetMonth, CashFlowMonth, CategoryGroup, NetWorthPoint, SpendingRow } from "@fd/shared";
+import type { Account, BudgetMonth, BudgetVsActualMonth, CashFlowMonth, CategoryGroup, NetWorthPoint, SpendingRow } from "@fd/shared";
 import { Client, fakePrices, owner, testApp } from "./helpers";
 
 async function setUp() {
@@ -144,6 +144,25 @@ describe("reports", () => {
     // The budget still counts the whole payment against Housing.
     const budget = (await c.get("/api/budget/2026-03")).json as BudgetMonth;
     expect(budget.groups.flatMap((g) => g.categories).find((x) => x.name === "Housing")!.activity).toBe(-200_000);
+  });
+
+  test("budget vs. actual matches the budget page's totals per month", async () => {
+    const { c, cat } = await setUp();
+    const budget = (month: string, name: string, amount: number) =>
+      c.request("PUT", `/api/budget/${month}/categories/${cat(name)}`, { amount });
+    await budget("2026-01", "Groceries", 15_000);
+    await budget("2026-02", "Dining Out", 15_000);
+    await budget("2026-02", "Emergency Fund", 100_000);
+    const months = (await c.get("/api/reports/budget?from=2025-12&to=2026-03")).json as BudgetVsActualMonth[];
+    expect(months).toEqual([
+      { month: "2025-12", budgeted: 0, spent: 0, remaining: 0 },
+      { month: "2026-01", budgeted: 15_000, spent: 12_000, remaining: 3_000 },
+      // Dining $180 after the refund, plus the categorised $1,000 to the brokerage, as on the budget page.
+      { month: "2026-02", budgeted: 115_000, spent: 118_000, remaining: -3_000 },
+      { month: "2026-03", budgeted: 0, spent: 0, remaining: 0 },
+    ]);
+    const feb = (await c.get("/api/budget/2026-02")).json as BudgetMonth;
+    expect([feb.budgeted, -feb.spent]).toEqual([115_000, 118_000]);
   });
 
   test("validates ranges and defaults to the last twelve months", async () => {

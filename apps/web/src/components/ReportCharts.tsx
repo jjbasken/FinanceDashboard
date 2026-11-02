@@ -1,10 +1,17 @@
-import { formatCents, formatMonth, type CashFlowMonth, type NetWorthPoint, type SpendingRow } from "@fd/shared";
+import {
+  formatCents,
+  formatMonth,
+  type BudgetVsActualMonth,
+  type CashFlowMonth, type NetWorthPoint,
+  type SpendingRow,
+} from "@fd/shared";
 import { useState } from "react";
 import {
   Area,
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   ComposedChart,
   ReferenceLine,
   ResponsiveContainer,
@@ -139,6 +146,61 @@ export function CashFlowChart(props: { months: CashFlowMonth[] }) {
         </ResponsiveContainer>
       </div>
     </figure>
+  );
+}
+
+function BudgetTooltip(props: { active?: boolean; payload?: { payload: BudgetVsActualMonth }[] }) {
+  const p = props.payload?.[0]?.payload;
+  if (!props.active || !p) return null;
+  return (
+    <div className="viz-tooltip">
+      <div className="viz-tooltip-title">{formatMonth(p.month)}</div>
+      <div className="viz-tooltip-row">
+        <span />
+        <span>Budgeted</span>
+        <strong>{formatCents(p.budgeted)}</strong>
+      </div>
+      <div className="viz-tooltip-row">
+        <span />
+        <span>Spent</span>
+        <strong>{formatCents(p.spent)}</strong>
+      </div>
+      <div className="viz-tooltip-row">
+        <span className="swatch" style={{ background: p.remaining >= 0 ? "var(--positive)" : "var(--danger)" }} />
+        <span>{p.remaining >= 0 ? "Under budget" : "Over budget"}</span>
+        <strong>{formatCents(Math.abs(p.remaining))}</strong>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * How far under (above the line) or over (below it) the expense budget each month came in. The
+ * `current` month, still under way, is faded.
+ */
+export function BudgetVsActualChart(props: { months: BudgetVsActualMonth[]; current: string }) {
+  const data = props.months.map((m) => ({ ...m, remainingD: m.remaining / 100 }));
+  return (
+    <div className="viz-plot">
+      <ResponsiveContainer width="100%" height={280}>
+        <BarChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 0 }} barCategoryGap="22%">
+          <CartesianGrid vertical={false} stroke="var(--viz-grid)" />
+          <XAxis dataKey="month" tickFormatter={monthLabel} {...axisProps} />
+          <YAxis tickFormatter={(v: number) => compact.format(v)} axisLine={false} width={64} {...axisProps} />
+          <ReferenceLine y={0} stroke="var(--viz-axis)" />
+          <Tooltip content={<BudgetTooltip />} cursor={{ fill: "var(--viz-grid)", opacity: 0.5 }} isAnimationActive={false} />
+          <Bar dataKey="remainingD" maxBarSize={28} isAnimationActive={false}>
+            {data.map((m) => (
+              <Cell
+                key={m.month}
+                fill={m.remaining >= 0 ? "var(--positive)" : "var(--danger)"}
+                fillOpacity={m.month === props.current ? 0.35 : 1}
+              />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
 

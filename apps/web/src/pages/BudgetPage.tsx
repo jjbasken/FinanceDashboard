@@ -113,6 +113,28 @@ function ToBudget(props: { budget: BudgetMonth }) {
   );
 }
 
+/** How far under or over the plan this month's spending is; for the current month, so far. */
+function BudgetStatus(props: { budget: BudgetMonth }) {
+  const b = props.budget;
+  const remaining = b.budgeted + b.spent;
+  const over = remaining < 0;
+  const soFar = b.month === thisMonth() ? ", so far" : "";
+  return (
+    <div className={over ? "to-budget over" : remaining === 0 ? "to-budget zero" : "to-budget"}>
+      <div className="to-budget-amount">
+        <span>{over ? "Over budget" : "Under budget"}{soFar}</span>
+        <strong>{formatCents(Math.abs(remaining))}</strong>
+      </div>
+      <dl className="to-budget-breakdown">
+        <dt>Planned this month</dt>
+        <dd>{formatCents(b.budgeted)}</dd>
+        <dt>Spent{soFar}</dt>
+        <dd>{formatCents(-b.spent)}</dd>
+      </dl>
+    </div>
+  );
+}
+
 function ActivityDialog(props: { month: string; category: BudgetCategory; onClose: () => void; onAdd: () => void }) {
   const items = useQuery({
     queryKey: ["budget", props.month, "activity", props.category.id],
@@ -460,7 +482,12 @@ export function BudgetPage() {
             </button>
           )}
         </div>
-        {data && <ToBudget budget={data} />}
+        {data && (
+          <div className="budget-summary">
+            <ToBudget budget={data} />
+            <BudgetStatus budget={data} />
+          </div>
+        )}
         <button className="btn btn-primary" onClick={async () => setAdding(true)}>+ Add purchase</button>
       </header>
 

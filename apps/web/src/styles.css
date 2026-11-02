@@ -1003,6 +1003,17 @@ select {
   justify-content: space-between;
   gap: 16px;
 }
+/* Below the month and the Add button, which stay on the first line. */
+.budget-summary {
+  order: 1;
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.budget-summary > .to-budget {
+  flex: 0 1 auto;
+}
 .month-nav {
   display: flex;
   align-items: center;

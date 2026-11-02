@@ -22,3 +22,14 @@ export interface SpendingRow {
   /** Spending as a positive number. */
   amount: number;
 }
+
+/** A month's expense budget against what was spent, as on the budget page. */
+export interface BudgetVsActualMonth {
+  month: string;
+  /** Total assigned to expense categories. */
+  budgeted: number;
+  /** Expense activity as a positive number (refunds reduce it). */
+  spent: number;
+  /** budgeted - spent: positive when under budget, negative when over. */
+  remaining: number;
+}
