@@ -2,6 +2,7 @@ import {
   addMonths,
   formatCents,
   formatMonth,
+  type BudgetVsActualMonth,
   type CashFlowMonth,
   type NetWorthPoint,
   type SpendingRow,
@@ -10,14 +11,15 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useSearchParams } from "react-router";
 import { api } from "../api";
-import { CashFlowChart, NetWorthChart, SpendingBars } from "../components/ReportCharts";
+import { BudgetVsActualChart, CashFlowChart, NetWorthChart, SpendingBars } from "../components/ReportCharts";
 import { thisMonth } from "../ledger";
 
-type Tab = "net-worth" | "cash-flow" | "spending";
+type Tab = "net-worth" | "cash-flow" | "spending" | "budget";
 const TABS: [Tab, string][] = [
   ["net-worth", "Net worth"],
   ["cash-flow", "Cash flow"],
   ["spending", "Spending"],
+  ["budget", "Budget"],
 ];
 
 /** Month ranges, inclusive, relative to the current month. */
@@ -233,6 +235,87 @@ function SpendingReport() {
   );
 }
 
+/** "$12.00 under" or "$12.00 over" the budget. */
+const underOver = (cents: number) => `${formatCents(Math.abs(cents))} ${cents >= 0 ? "under" : "over"}`;
+
+function BudgetReport() {
+  const r = useMonthRange();
+  const q = useQuery({
+    queryKey: ["reports", "budget", r.from, r.to],
+    queryFn: () => api.get<BudgetVsActualMonth[]>(`/reports/budget?from=${r.from}&to=${r.to}`),
+    placeholderData: keepPreviousData,
+  });
+  const months = q.data ?? [];
+  const now = thisMonth();
+  // A month still under way is mostly unspent, so it would skew the total; it gets its own tile.
+  const current = months.length > 1 ? months.find((m) => m.month === now) : undefined;
+  const done = months.filter((m) => m !== current);
+  const budgeted = done.reduce((s, m) => s + m.budgeted, 0);
+  const spent = done.reduce((s, m) => s + m.spent, 0);
+  const remaining = budgeted - spent;
+  const over = done.filter((m) => m.remaining < 0).length;
+  return (
+    <>
+      {q.error && <p className="error-text">{q.error.message}</p>}
+      <div className="kpi-row">
+        <Tile
+          hero
+          label={`${remaining >= 0 ? "Under budget" : "Over budget"}${current ? ", past months" : ""}`}
+          value={formatCents(Math.abs(remaining))}
+          tone={remaining >= 0 ? "positive" : "negative"}
+          detail={budgeted ? `${((spent / budgeted) * 100).toFixed(0)}% of the budget spent` : undefined}
+        />
+        {current && (
+          <Tile
+            label={`${current.remaining >= 0 ? "Under budget" : "Over budget"}, this month so far`}
+            value={formatCents(Math.abs(current.remaining))}
+            tone={current.remaining >= 0 ? "positive" : "negative"}
+            detail={`${formatCents(current.spent)} of ${formatCents(current.budgeted)} spent`}
+          />
+        )}
+        <Tile label="Budgeted" value={formatCents(budgeted)} />
+        <Tile label="Spent" value={formatCents(spent)} />
+        {done.length > 1 && <Tile label="Months over budget" value={`${over} of ${done.length}`} />}
+      </div>
+      <section className="card wide">
+        <div className="card-head">
+          <h2>Budget vs. actual</h2>
+          <RangePicker value={r.preset} options={r.options} onChange={r.setPreset} />
+        </div>
+        {months.length > 1 && <BudgetVsActualChart months={months} current={now} />}
+        <p className="muted small">
+          Expense categories, as on the budget page. Each month stands alone. The month under way is shown faded and left out of the totals above.
+        </p>
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Month</th>
+                <th className="amount">Budgeted</th>
+                <th className="amount">Spent</th>
+                <th className="amount">Under / over</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...months].reverse().map((m) => (
+                <tr key={m.month}>
+                  <td>
+                    {formatMonth(m.month)}
+                    {m.month === now && <span className="muted small"> · so far</span>}
+                  </td>
+                  <td className="amount">{formatCents(m.budgeted)}</td>
+                  <td className="amount">{formatCents(m.spent)}</td>
+                  <td className={m.remaining >= 0 ? "amount positive" : "amount negative"}>{underOver(m.remaining)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </>
+  );
+}
+
 export function ReportsPage() {
   const [params, setParams] = useSearchParams();
   const tab = (TABS.find(([k]) => k === params.get("tab"))?.[0] ?? "net-worth") as Tab;
@@ -251,6 +334,7 @@ export function ReportsPage() {
         {tab === "net-worth" && <NetWorthReport />}
         {tab === "cash-flow" && <CashFlowReport />}
         {tab === "spending" && <SpendingReport />}
+        {tab === "budget" && <BudgetReport />}
       </div>
     </>
   );

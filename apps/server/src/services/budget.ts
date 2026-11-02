@@ -3,6 +3,7 @@ import {
   monthInMask,
   type BudgetGroup,
   type BudgetMonth,
+  type BudgetVsActualMonth,
   type CategoryActivityItem,
   type CategoryGroup,
 } from "@fd/shared";
@@ -156,6 +157,20 @@ export function getBudgetMonth(db: DbOrTx, householdId: number, month: string): 
     countUncategorized(db, householdId, month),
     loadActivity(db, householdId, addMonths(month, -1)),
   );
+}
+
+/**
+ * Each month's expense budget against its spending, from `from` to `to` inclusive, with the same
+ * totals as the budget page: categorised transfers count, excluded categories don't.
+ */
+export function budgetVsActual(db: DbOrTx, householdId: number, from: string, to: string): BudgetVsActualMonth[] {
+  const groups = listCategories(db, householdId);
+  const out: BudgetVsActualMonth[] = [];
+  for (let m = from; m <= to; m = addMonths(m, 1)) {
+    const b = computeBudgetMonth(groups, loadBudgets(db, householdId, m), loadActivity(db, householdId, m), m);
+    out.push({ month: m, budgeted: b.budgeted, spent: -b.spent, remaining: b.budgeted + b.spent });
+  }
+  return out;
 }
 
 /**

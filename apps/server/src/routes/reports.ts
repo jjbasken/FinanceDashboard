@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { AppEnv } from "../app";
 import { actorOf, requireAuth } from "../middleware";
+import { budgetVsActual } from "../services/budget";
 import { HISTORY_RANGES, type HistoryRange } from "../services/holdings";
 import { cashFlow, netWorthHistory, spendingByCategory } from "../services/reports";
 import { localDate } from "../util";
@@ -40,6 +41,11 @@ export const reportRoutes = new Hono<AppEnv>()
   .get("/cash-flow", (c) => {
     const { from, to } = monthRange(c);
     return c.json(cashFlow(c.var.db, actorOf(c).householdId, from, to));
+  })
+
+  .get("/budget", (c) => {
+    const { from, to } = monthRange(c);
+    return c.json(budgetVsActual(c.var.db, actorOf(c).householdId, from, to));
   })
 
   .get("/spending", (c) => {
