@@ -2259,6 +2259,16 @@ select {
   margin: 0;
   overflow-wrap: anywhere;
 }
+.audit-summary .count {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.audit-summary th {
+  white-space: normal;
+}
+.audit-summary .link-button {
+  font: inherit;
+}
 .log-details {
   margin: 0 0 8px;
   padding: 8px 10px;

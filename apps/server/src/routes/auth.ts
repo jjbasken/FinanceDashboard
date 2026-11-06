@@ -6,6 +6,7 @@ import type { AppEnv } from "../app";
 import { households, invites, users } from "../db/schema";
 import { createSession, deleteSession, deleteUserSessions } from "../auth/sessions";
 import { hashToken } from "../auth/tokens";
+import { recordAudit } from "../services/audit";
 import { createHousehold } from "../services/household";
 import { clearSessionCookie, clientAddress, parseBody, requireAuth, sessionOf, setSessionCookie } from "../middleware";
 
@@ -43,7 +44,7 @@ export const authRoutes = new Hono<AppEnv>()
       const [row] = tx.select({ n: count() }).from(users).all();
       if ((row?.n ?? 0) > 0) throw new HTTPException(409, { message: "Setup has already been completed" });
       const household = createHousehold(tx, input.householdName);
-      return tx
+      const id = tx
         .insert(users)
         .values({
           householdId: household.id,
@@ -54,6 +55,16 @@ export const authRoutes = new Hono<AppEnv>()
         })
         .returning({ id: users.id })
         .get().id;
+      recordAudit(tx, {
+        householdId: household.id,
+        userId: id,
+        action: "create",
+        entity: "household",
+        entityId: household.id,
+        summary: `Set up the household ${input.householdName}`,
+        details: { after: { name: input.householdName, owner: input.username } },
+      });
+      return id;
     });
 
     const { token, expiresAt } = createSession(db, userId);
@@ -134,6 +145,14 @@ export const authRoutes = new Hono<AppEnv>()
     });
     c.var.db.update(users).set({ passwordHash }).where(eq(users.id, user.id)).run();
     const signedOut = deleteUserSessions(c.var.db, user.id, sessionId);
+    recordAudit(c.var.db, {
+      householdId: sessionOf(c).household.id,
+      userId: user.id,
+      action: "change-password",
+      entity: "member",
+      entityId: user.id,
+      summary: "Changed their password",
+    });
     c.var.log.info("auth", `${user.username} changed their password`, {
       householdId: sessionOf(c).household.id,
       details: { username: user.username, ip: clientAddress(c), otherSessionsSignedOut: signedOut },
@@ -210,6 +229,15 @@ export const authRoutes = new Hono<AppEnv>()
           .returning({ id: users.id })
           .get().id;
         tx.update(invites).set({ usedBy: id }).where(eq(invites.id, inviteId)).run();
+        recordAudit(tx, {
+          householdId: invite.householdId,
+          userId: id,
+          action: "join",
+          entity: "member",
+          entityId: id,
+          summary: "Joined the household with an invite",
+          details: { after: { username: input.username, displayName: input.displayName, role: "member" } },
+        });
         return id;
       });
     } catch (err) {

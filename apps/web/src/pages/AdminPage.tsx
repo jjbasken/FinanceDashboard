@@ -1,10 +1,13 @@
 import {
   AUDIT_ENTITIES,
+  AUDIT_SUMMARY_COLUMNS,
   formatCents,
   LOG_LEVELS,
   LOG_SOURCES,
+  type AuditAction,
   type AuditDetails,
   type AuditEntity,
+  type AuditFilters,
   type AuditEntry,
   type LogEntry,
   type LogLevel,
@@ -12,7 +15,7 @@ import {
 } from "@fd/shared";
 import { Fragment, useState } from "react";
 import { useAuthStatus } from "../auth";
-import { useAppLogs, useAuditLog, useMembers } from "../ledger";
+import { today, useAppLogs, useAuditLog, useAuditSummary, useMembers } from "../ledger";
 
 const when = (at: string) =>
   new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
@@ -89,27 +92,69 @@ function AuditDetailsView(props: { entry: AuditEntry }) {
   );
 }
 
-function ActivityTab() {
-  const members = useMembers();
-  const [userId, setUserId] = useState("");
-  const [entity, setEntity] = useState<AuditEntity | "">("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [q, setQ] = useState("");
+/** Activity entries, newest first; click one to see what it recorded. */
+function EntryTable(props: { items: AuditEntry[] }) {
   const [open, setOpen] = useState<number | null>(null);
-  const audit = useAuditLog({
-    userId: userId ? Number(userId) : undefined,
-    entity: entity || undefined,
-    from: from || undefined,
-    to: to || undefined,
-    q: q.trim() || undefined,
-  });
+  return (
+    <table className="data-table report-table">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th className="report-detail">Who</th>
+          <th>What</th>
+        </tr>
+      </thead>
+      <tbody>
+        {props.items.map((e) => (
+          <Fragment key={e.id}>
+            <tr
+              className={open === e.id ? "report-row selected" : "report-row"}
+              onClick={() => setOpen(open === e.id ? null : e.id)}
+              aria-expanded={open === e.id}
+            >
+              <td className="report-when">{when(e.at)}</td>
+              <td className="report-detail">{e.userName ?? <span className="muted">System</span>}</td>
+              <td className="report-what">
+                <span className="report-who">{e.userName ?? "System"} · </span>
+                {e.summary}
+                {e.private && <span className="badge report-badge">private</span>}
+              </td>
+            </tr>
+            {open === e.id && (
+              <tr className="report-expanded">
+                <td colSpan={3}>
+                  <AuditDetailsView entry={e} />
+                </td>
+              </tr>
+            )}
+          </Fragment>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+const ACTION_LABELS: [AuditAction, string][] = [
+  ["create", "Added"],
+  ["update", "Changed"],
+  ["delete", "Deleted"],
+];
+
+function ActivityTab(props: { filters: AuditFilters; onChange: (filters: AuditFilters) => void }) {
+  const members = useMembers();
+  const f = props.filters;
+  const set = (change: Partial<AuditFilters>) => props.onChange({ ...f, ...change });
+  const audit = useAuditLog({ ...f, q: f.q?.trim() || undefined });
   const items = audit.data?.pages.flatMap((p) => p.items) ?? [];
 
   return (
     <section className="card wide">
       <div className="report-filters">
-        <select aria-label="Member" value={userId} onChange={(e) => setUserId(e.target.value)}>
+        <select
+          aria-label="Member"
+          value={f.userId ?? ""}
+          onChange={(e) => set({ userId: e.target.value ? Number(e.target.value) : undefined })}
+        >
           <option value="">Everyone</option>
           {members.data?.map((m) => (
             <option key={m.id} value={m.id}>
@@ -117,7 +162,11 @@ function ActivityTab() {
             </option>
           ))}
         </select>
-        <select aria-label="Kind" value={entity} onChange={(e) => setEntity(e.target.value as AuditEntity | "")}>
+        <select
+          aria-label="Kind"
+          value={f.entity ?? ""}
+          onChange={(e) => set({ entity: (e.target.value || undefined) as AuditEntity | undefined })}
+        >
           <option value="">All kinds</option>
           {AUDIT_ENTITIES.map((x) => (
             <option key={x} value={x}>
@@ -125,47 +174,31 @@ function ActivityTab() {
             </option>
           ))}
         </select>
-        <input type="date" aria-label="From" value={from} onChange={(e) => setFrom(e.target.value)} />
-        <input type="date" aria-label="To" value={to} onChange={(e) => setTo(e.target.value)} />
-        <input type="search" placeholder="Search" aria-label="Search" value={q} onChange={(e) => setQ(e.target.value)} />
+        <select
+          aria-label="Action"
+          value={f.action ?? ""}
+          onChange={(e) => set({ action: (e.target.value || undefined) as AuditAction | undefined })}
+        >
+          <option value="">All actions</option>
+          {ACTION_LABELS.map(([value, text]) => (
+            <option key={value} value={value}>
+              {text}
+            </option>
+          ))}
+          {f.action && !ACTION_LABELS.some(([value]) => value === f.action) && <option value={f.action}>{f.action}</option>}
+        </select>
+        <input type="date" aria-label="From" value={f.from ?? ""} onChange={(e) => set({ from: e.target.value || undefined })} />
+        <input type="date" aria-label="To" value={f.to ?? ""} onChange={(e) => set({ to: e.target.value || undefined })} />
+        <input type="search" placeholder="Search" aria-label="Search" value={f.q ?? ""} onChange={(e) => set({ q: e.target.value })} />
+        {f.group && (
+          <button type="button" className="btn" onClick={() => set({ group: undefined })} aria-label="Show all changes">
+            {f.group === "major" ? "Major changes" : "Other changes"} only ×
+          </button>
+        )}
       </div>
       {audit.error && <p className="error-text">{audit.error.message}</p>}
       <div className="table-scroll">
-        <table className="data-table report-table">
-          <thead>
-            <tr>
-              <th>When</th>
-              <th className="report-detail">Who</th>
-              <th>What</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((e) => (
-              <Fragment key={e.id}>
-                <tr
-                  className={open === e.id ? "report-row selected" : "report-row"}
-                  onClick={() => setOpen(open === e.id ? null : e.id)}
-                  aria-expanded={open === e.id}
-                >
-                  <td className="report-when">{when(e.at)}</td>
-                  <td className="report-detail">{e.userName ?? <span className="muted">System</span>}</td>
-                  <td className="report-what">
-                    <span className="report-who">{e.userName ?? "System"} · </span>
-                    {e.summary}
-                    {e.private && <span className="badge report-badge">private</span>}
-                  </td>
-                </tr>
-                {open === e.id && (
-                  <tr className="report-expanded">
-                    <td colSpan={3}>
-                      <AuditDetailsView entry={e} />
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
+        <EntryTable items={items} />
         {audit.data && items.length === 0 && <p className="muted">No activity matches.</p>}
         {audit.isPending && <p className="muted">Loading…</p>}
       </div>
@@ -175,6 +208,101 @@ function ActivityTab() {
         </button>
       )}
     </section>
+  );
+}
+
+function SummaryTab(props: { onShow: (filters: AuditFilters) => void }) {
+  const [from, setFrom] = useState(() => `${today().slice(0, 7)}-01`);
+  const [to, setTo] = useState(today);
+  const summary = useAuditSummary({ from: from || undefined, to: to || undefined });
+  const major = useAuditLog({ group: "major", from: from || undefined, to: to || undefined });
+  const majorItems = major.data?.pages.flatMap((p) => p.items) ?? [];
+  const counts = summary.data?.counts ?? [];
+
+  // One row per member (and the app itself), with what isn't in a column counted as other.
+  const people = [...new Map(counts.map((c) => [c.userId, c.userName])).entries()].sort(([a], [b]) =>
+    a === null ? 1 : b === null ? -1 : 0,
+  );
+  const total = (userId: number | null, match: (entity: string, action: string) => boolean) =>
+    counts.filter((c) => c.userId === userId && match(c.entity, c.action)).reduce((n, c) => n + c.count, 0);
+  const inColumn = (entity: string, action: string) =>
+    AUDIT_SUMMARY_COLUMNS.some((col) => col.entity === entity && col.action === action);
+  const range = { from: from || undefined, to: to || undefined };
+
+  const cell = (userId: number | null, n: number, filters: AuditFilters) => (
+    <td className="count">
+      {n === 0 ? (
+        <span className="muted">0</span>
+      ) : userId === null ? (
+        n
+      ) : (
+        <button type="button" className="link-button" onClick={() => props.onShow({ userId, ...range, ...filters })}>
+          {n}
+        </button>
+      )}
+    </td>
+  );
+
+  return (
+    <>
+      <section className="card wide">
+        <div className="report-filters">
+          <input type="date" aria-label="From" value={from} onChange={(e) => setFrom(e.target.value)} />
+          <input type="date" aria-label="To" value={to} onChange={(e) => setTo(e.target.value)} />
+        </div>
+        {summary.error && <p className="error-text">{summary.error.message}</p>}
+        <h2>Changes by member</h2>
+        <div className="table-scroll">
+          <table className="data-table audit-summary">
+            <thead>
+              <tr>
+                <th>Member</th>
+                {AUDIT_SUMMARY_COLUMNS.map((col) => (
+                  <th key={col.label} className="count">
+                    {col.label}
+                  </th>
+                ))}
+                <th className="count">Other changes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {people.map(([userId, userName]) => (
+                <tr key={userId ?? "system"}>
+                  <td>{userName ?? <span className="muted">System</span>}</td>
+                  {AUDIT_SUMMARY_COLUMNS.map((col) => (
+                    <Fragment key={col.label}>
+                      {cell(
+                        userId,
+                        total(userId, (e, a) => e === col.entity && a === col.action),
+                        { entity: col.entity, action: col.action },
+                      )}
+                    </Fragment>
+                  ))}
+                  {cell(userId, total(userId, (e, a) => !inColumn(e, a)), { group: "other" })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {summary.data && people.length === 0 && <p className="muted">No changes in these dates.</p>}
+          {summary.isPending && <p className="muted">Loading…</p>}
+        </div>
+      </section>
+      <section className="card wide">
+        <h2>Major changes</h2>
+        <p className="muted">Accounts, imports, members and the household, and deleted categories, bills and securities.</p>
+        <div className="table-scroll">
+          <EntryTable items={majorItems} />
+          {major.error && <p className="error-text">{major.error.message}</p>}
+          {major.data && majorItems.length === 0 && <p className="muted">None in these dates.</p>}
+          {major.isPending && <p className="muted">Loading…</p>}
+        </div>
+        {major.hasNextPage && (
+          <button className="btn" onClick={() => major.fetchNextPage()} disabled={major.isFetchingNextPage}>
+            {major.isFetchingNextPage ? "Loading…" : "Load more"}
+          </button>
+        )}
+      </section>
+    </>
   );
 }
 
@@ -284,7 +412,8 @@ function LogsTab() {
 /** The owner's reports: who changed what, and what the server has been doing. */
 export function AdminPage() {
   const { data: status } = useAuthStatus();
-  const [tab, setTab] = useState<"activity" | "logs">("activity");
+  const [tab, setTab] = useState<"summary" | "activity" | "logs">("summary");
+  const [filters, setFilters] = useState<AuditFilters>({});
 
   if (status?.user?.role !== "owner") {
     return (
@@ -304,6 +433,9 @@ export function AdminPage() {
       <header className="page-header budget-header">
         <h1>Activity & logs</h1>
         <div className="segmented" role="group" aria-label="Report">
+          <button className={tab === "summary" ? "active" : undefined} onClick={() => setTab("summary")}>
+            Summary
+          </button>
           <button className={tab === "activity" ? "active" : undefined} onClick={() => setTab("activity")}>
             Activity
           </button>
@@ -312,7 +444,18 @@ export function AdminPage() {
           </button>
         </div>
       </header>
-      <div className="page-body investments">{tab === "activity" ? <ActivityTab /> : <LogsTab />}</div>
+      <div className="page-body investments">
+        {tab === "summary" && (
+          <SummaryTab
+            onShow={(f) => {
+              setFilters(f);
+              setTab("activity");
+            }}
+          />
+        )}
+        {tab === "activity" && <ActivityTab filters={filters} onChange={setFilters} />}
+        {tab === "logs" && <LogsTab />}
+      </div>
     </>
   );
 }

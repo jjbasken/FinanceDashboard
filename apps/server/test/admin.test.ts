@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import type { Account, AuditEntry, BankUpload, LogEntry, Page, Transaction } from "@fd/shared";
+import type { Account, AuditEntry, AuditSummary, BankUpload, LogEntry, Page, Transaction } from "@fd/shared";
 import { appLog, auditLog } from "../src/db/schema";
 import { createLogger, pruneLogs } from "../src/services/log";
 import { postScheduledBills } from "../src/services/scheduled-bills";
+import { AUDIT_SUMMARY_COLUMNS } from "@fd/shared";
 import { Client, fakePrices, owner, testApp } from "./helpers";
 
 /** The owner (Jeremy) and a member (Sam), with a shared checking account. */
@@ -183,16 +184,133 @@ describe("activity and logs", () => {
     const samId = ((await jeremy.get("/api/household/users")).json as { id: number; username: string }[]).find(
       (m) => m.username === "sam",
     )!.id;
-    const first = (await jeremy.get(`/api/admin/audit?userId=${samId}&limit=2`)).json as Page<AuditEntry>;
+    const first = (await jeremy.get(`/api/admin/audit?userId=${samId}&entity=transaction&limit=2`)).json as Page<AuditEntry>;
     expect(first.items.map((e) => e.summary)).toEqual([
       "Added transaction: Shop -$3.00 on 10/05/2026 in Checking",
       "Added transaction: Shop -$2.00 on 10/05/2026 in Checking",
     ]);
-    const rest = (await jeremy.get(`/api/admin/audit?userId=${samId}&limit=2&before=${first.next}`)).json as Page<AuditEntry>;
+    const rest = (await jeremy.get(`/api/admin/audit?userId=${samId}&entity=transaction&limit=2&before=${first.next}`)).json as Page<AuditEntry>;
     expect(rest.items.map((e) => e.summary)).toEqual(["Added transaction: Shop -$1.00 on 10/05/2026 in Checking"]);
     expect(rest.next).toBeNull();
     expect((await audit("?q=-$2.00")).length).toBe(1);
     expect((await audit("?entity=account")).map((e) => e.summary)).toEqual(["Added account: Checking"]);
     expect((await jeremy.get("/api/admin/audit?limit=999")).status).toBe(400);
+  });
+
+  test("filtering by action", async () => {
+    const { jeremy, sam, checking, audit } = await setUp();
+    const t = (await sam.post("/api/transactions", { accountId: checking.id, date: "2026-10-05", amount: -100, payeeName: "Shop" }))
+      .json as Transaction;
+    await sam.delete(`/api/transactions/${t.id}`);
+    expect((await audit("?action=delete")).map((e) => e.summary)).toEqual([
+      "Deleted transaction: Shop -$1.00 on 10/05/2026 in Checking",
+    ]);
+    expect((await jeremy.get("/api/admin/audit?action=nonsense")).status).toBe(400);
+  });
+
+  test("deleting an account records each transaction that went with it", async () => {
+    const { sam, audit } = await setUp();
+    const cash = (await sam.post("/api/accounts", { name: "Cash", type: "cash" })).json as Account;
+    for (const amount of [-100, -200]) {
+      await sam.post("/api/transactions", { accountId: cash.id, date: "2026-10-05", amount, payeeName: "Shop" });
+    }
+    await sam.delete(`/api/accounts/${cash.id}`);
+    const deletes = await audit("?action=delete");
+    expect(deletes.map((e) => [e.userName, e.summary])).toEqual([
+      ["Sam", "Deleted transaction (with its account): Shop -$2.00 on 10/05/2026 in Cash"],
+      ["Sam", "Deleted transaction (with its account): Shop -$1.00 on 10/05/2026 in Cash"],
+      ["Sam", "Deleted account: Cash"],
+    ]);
+    expect((deletes[0]!.details!.before as Record<string, unknown>).amount).toBe(-200);
+  });
+
+  test("imports record each transaction they add, and undos each one they remove", async () => {
+    const { jeremy, checking, audit } = await setUp();
+    const existing = (
+      await jeremy.post("/api/transactions", { accountId: checking.id, date: "2026-10-02", amount: -1000, payeeName: "Gas" })
+    ).json as Transaction;
+    const csv = "Date,Payee,Amount\n2026-10-01,Coffee,-4.50\n2026-10-02,Gas,-10.00\n";
+    const up = (await jeremy.upload(`/api/import/bank?accountId=${checking.id}&name=card.csv`, new TextEncoder().encode(csv)))
+      .json as BankUpload;
+    const commit = await jeremy.post(`/api/import/bank/${up.uploadId}/commit`, { csv: up.csv!.suggested, include: [0, 1] });
+    expect(commit.json).toMatchObject({ created: 1, matched: 1 });
+    await jeremy.post(`/api/import/batches/${commit.json.batchId}/undo`);
+
+    const txns = await audit("?entity=transaction");
+    expect(txns.map((e) => e.summary).slice(0, 2)).toEqual([
+      "Deleted transaction (undoing the import of card.csv (csv)): Coffee -$4.50 on 10/01/2026 in Checking",
+      "Added transaction (imported from card.csv (csv)): Coffee -$4.50 on 10/01/2026 in Checking",
+    ]);
+    // The matched transaction was only reverted, so it isn't logged as deleted.
+    expect(txns.filter((e) => e.entityId === existing.id).map((e) => e.action)).toEqual(["create"]);
+  });
+
+  test("joining, setting up and changing passwords are recorded", async () => {
+    const { sam, audit } = await setUp();
+    await sam.post("/api/auth/password", { currentPassword: "another good password", newPassword: "yet another password" });
+    const members = await audit("?entity=member");
+    expect(members.map((e) => [e.userName, e.action, e.summary])).toEqual([
+      ["Sam", "change-password", "Changed their password"],
+      ["Sam", "join", "Joined the household with an invite"],
+      ["Jeremy", "invite", "Created an invite link"],
+    ]);
+    expect(members[0]!.details).toBeNull();
+    expect((await audit("?entity=household"))[0]).toMatchObject({ userName: "Jeremy", action: "create" });
+  });
+
+  test("the summary counts changes by member and lists major ones", async () => {
+    const { jeremy, sam, checking } = await setUp();
+    const t = (await sam.post("/api/transactions", { accountId: checking.id, date: "2026-10-05", amount: -100, payeeName: "Shop" }))
+      .json as Transaction;
+    await sam.post("/api/transactions", { accountId: checking.id, date: "2026-10-05", amount: -200, payeeName: "Shop" });
+    await sam.delete(`/api/transactions/${t.id}`);
+    const today = new Date().toISOString().slice(0, 10);
+
+    expect((await sam.get("/api/admin/audit/summary")).status).toBe(403);
+    const summary = (await jeremy.get(`/api/admin/audit/summary?from=${today}&to=${today}`)).json as AuditSummary;
+    const n = (user: string, entity: string, action: string) =>
+      summary.counts.find((c) => c.userName === user && c.entity === entity && c.action === action)?.count ?? 0;
+    expect(n("Sam", "transaction", "create")).toBe(2);
+    expect(n("Sam", "transaction", "delete")).toBe(1);
+    expect(n("Jeremy", "account", "create")).toBe(1);
+
+    const before = (await jeremy.get("/api/admin/audit/summary?from=2000-01-01&to=2000-01-31")).json as AuditSummary;
+    expect(before).toEqual({ counts: [] });
+  });
+
+  test("the Other changes group lists exactly what the summary counts as other", async () => {
+    const { jeremy, sam, checking, audit } = await setUp();
+    for (const amount of [-100, -200, -300]) {
+      await sam.post("/api/transactions", { accountId: checking.id, date: "2026-10-05", amount, payeeName: "Shop" });
+    }
+    const summary = (await jeremy.get("/api/admin/audit/summary")).json as AuditSummary;
+    const counted = (c: { entity: string; action: string }) =>
+      AUDIT_SUMMARY_COLUMNS.some((col) => col.entity === c.entity && col.action === c.action);
+    const otherCount = summary.counts.filter((c) => !counted(c)).reduce((n, c) => n + c.count, 0);
+    const other = await audit("?group=other&limit=200");
+    expect(other.length).toBe(otherCount);
+    expect(other.map((e) => e.summary).sort()).toEqual(
+      ["Created an invite link", "Joined the household with an invite", `Set up the household ${owner.householdName}`].sort(),
+    );
+  });
+
+  test("major changes page through every match, not just the newest", async () => {
+    const { jeremy, sam, checking, audit } = await setUp();
+    await sam.post("/api/transactions", { accountId: checking.id, date: "2026-10-05", amount: -100, payeeName: "Shop" });
+    for (const name of ["A", "B", "C"]) await jeremy.post("/api/accounts", { name, type: "cash" });
+    const all = await audit("?group=major&limit=200");
+    expect(all.some((e) => e.entity === "transaction")).toBe(false);
+    expect(all.map((e) => e.summary)).toContain("Added account: Checking");
+
+    const seen: string[] = [];
+    let before: number | null | undefined;
+    do {
+      const page = (await jeremy.get(`/api/admin/audit?group=major&limit=2${before ? `&before=${before}` : ""}`))
+        .json as Page<AuditEntry>;
+      seen.push(...page.items.map((e) => e.summary));
+      before = page.next;
+    } while (before);
+    expect(seen).toEqual(all.map((e) => e.summary));
+    expect(seen.at(-1)).toBe(`Set up the household ${owner.householdName}`);
   });
 });
