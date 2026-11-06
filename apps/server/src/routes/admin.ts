@@ -1,14 +1,16 @@
 import {
+  AUDIT_SUMMARY_COLUMNS,
   auditQuery,
   auditSummaryQuery,
   logQuery,
   type AuditCount,
   type AuditEntry,
+  type AuditGroup,
   type AuditSummary,
   type LogEntry,
   type Page,
 } from "@fd/shared";
-import { and, count, desc, eq, gte, inArray, isNull, like, lt, or, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull, like, lt, not, or, type SQL } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { AppEnv } from "../app";
@@ -46,6 +48,17 @@ const entryColumns = {
   private: auditLog.private,
 };
 
+/** Entries in a group: major changes, or changes none of the Summary's columns count. */
+function inGroup(group: AuditGroup): SQL | undefined {
+  if (group === "major") {
+    return or(
+      inArray(auditLog.entity, ["account", "import", "member", "household"]),
+      and(inArray(auditLog.entity, ["category", "category group", "bill", "security"]), eq(auditLog.action, "delete")),
+    );
+  }
+  return not(or(...AUDIT_SUMMARY_COLUMNS.map((col) => and(eq(auditLog.entity, col.entity), eq(auditLog.action, col.action))))!);
+}
+
 /** The owner's reports: who changed what (Activity), and system events and errors (Logs). */
 export const adminRoutes = new Hono<AppEnv>()
   .use(requireAuth, requireOwner)
@@ -57,6 +70,7 @@ export const adminRoutes = new Hono<AppEnv>()
     if (q.userId) where.push(eq(auditLog.userId, q.userId));
     if (q.entity) where.push(eq(auditLog.entity, q.entity));
     if (q.action) where.push(eq(auditLog.action, q.action));
+    if (q.group) where.push(inGroup(q.group));
     if (q.from) where.push(gte(auditLog.at, q.from));
     if (q.to) where.push(lt(auditLog.at, nextDay(q.to)));
     if (q.q) where.push(like(auditLog.summary, `%${q.q}%`));
@@ -80,8 +94,7 @@ export const adminRoutes = new Hono<AppEnv>()
     const where: (SQL | undefined)[] = [eq(auditLog.householdId, household.id)];
     if (q.from) where.push(gte(auditLog.at, q.from));
     if (q.to) where.push(lt(auditLog.at, nextDay(q.to)));
-    const db = c.var.db;
-    const counts: AuditCount[] = db
+    const counts: AuditCount[] = c.var.db
       .select({
         userId: auditLog.userId,
         userName: users.displayName,
@@ -94,27 +107,7 @@ export const adminRoutes = new Hono<AppEnv>()
       .where(and(...where))
       .groupBy(auditLog.userId, auditLog.entity, auditLog.action)
       .all();
-    // Major: accounts, imports, members and the household, plus deleting categories, bills or securities.
-    const major = db
-      .select(entryColumns)
-      .from(auditLog)
-      .leftJoin(users, eq(users.id, auditLog.userId))
-      .where(
-        and(
-          ...where,
-          or(
-            inArray(auditLog.entity, ["account", "import", "member", "household"]),
-            and(
-              inArray(auditLog.entity, ["category", "category group", "bill", "security"]),
-              eq(auditLog.action, "delete"),
-            ),
-          ),
-        ),
-      )
-      .orderBy(desc(auditLog.id))
-      .limit(100)
-      .all() as AuditEntry[];
-    const summary: AuditSummary = { counts, major };
+    const summary: AuditSummary = { counts };
     return c.json(summary);
   })
 

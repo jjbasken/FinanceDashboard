@@ -46,6 +46,22 @@ export const AUDIT_ACTIONS = [
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
+/** The Summary's columns: the changes it counts one by one, per member. */
+export const AUDIT_SUMMARY_COLUMNS: { label: string; entity: AuditEntity; action: AuditAction }[] = [
+  { label: "Transactions added", entity: "transaction", action: "create" },
+  { label: "Transactions changed", entity: "transaction", action: "update" },
+  { label: "Transactions deleted", entity: "transaction", action: "delete" },
+  { label: "Accounts added", entity: "account", action: "create" },
+  { label: "Accounts deleted", entity: "account", action: "delete" },
+];
+
+/**
+ * Groups of Activity entries: major changes (accounts, imports, members, the household, and
+ * deleted categories, bills or securities), and other changes (none of the Summary's columns).
+ */
+export const AUDIT_GROUPS = ["major", "other"] as const;
+export type AuditGroup = (typeof AUDIT_GROUPS)[number];
+
 /** One page of a report: newest first; pass `next` as `before` to get the following page. */
 export interface Page<T> {
   items: T[];
@@ -85,10 +101,9 @@ export interface AuditCount {
   count: number;
 }
 
-/** The Summary report: counts by member, and the major changes (accounts, imports, members). */
+/** The Summary report: changes counted by member. Major changes are listed with `group: "major"`. */
 export interface AuditSummary {
   counts: AuditCount[];
-  major: AuditEntry[];
 }
 
 export interface LogEntry {
@@ -107,6 +122,7 @@ export const auditQuery = z.object({
   userId: id.optional(),
   entity: z.enum(AUDIT_ENTITIES).optional(),
   action: z.enum(AUDIT_ACTIONS).optional(),
+  group: z.enum(AUDIT_GROUPS).optional(),
   from: day.optional(),
   to: day.optional(),
   q: z.string().trim().max(100).optional(),
@@ -118,6 +134,7 @@ export interface AuditFilters {
   userId?: number;
   entity?: AuditEntity;
   action?: AuditAction;
+  group?: AuditGroup;
   from?: string;
   to?: string;
   q?: string;

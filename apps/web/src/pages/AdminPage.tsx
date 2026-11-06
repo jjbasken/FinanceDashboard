@@ -1,5 +1,6 @@
 import {
   AUDIT_ENTITIES,
+  AUDIT_SUMMARY_COLUMNS,
   formatCents,
   LOG_LEVELS,
   LOG_SOURCES,
@@ -189,6 +190,11 @@ function ActivityTab(props: { filters: AuditFilters; onChange: (filters: AuditFi
         <input type="date" aria-label="From" value={f.from ?? ""} onChange={(e) => set({ from: e.target.value || undefined })} />
         <input type="date" aria-label="To" value={f.to ?? ""} onChange={(e) => set({ to: e.target.value || undefined })} />
         <input type="search" placeholder="Search" aria-label="Search" value={f.q ?? ""} onChange={(e) => set({ q: e.target.value })} />
+        {f.group && (
+          <button type="button" className="btn" onClick={() => set({ group: undefined })} aria-label="Show all changes">
+            {f.group === "major" ? "Major changes" : "Other changes"} only ×
+          </button>
+        )}
       </div>
       {audit.error && <p className="error-text">{audit.error.message}</p>}
       <div className="table-scroll">
@@ -205,19 +211,12 @@ function ActivityTab(props: { filters: AuditFilters; onChange: (filters: AuditFi
   );
 }
 
-/** The Summary's columns: a kind of change, and the Activity filter that lists them. */
-const SUMMARY_COLUMNS: { label: string; entity: AuditEntity; action: AuditAction }[] = [
-  { label: "Transactions added", entity: "transaction", action: "create" },
-  { label: "Transactions changed", entity: "transaction", action: "update" },
-  { label: "Transactions deleted", entity: "transaction", action: "delete" },
-  { label: "Accounts added", entity: "account", action: "create" },
-  { label: "Accounts deleted", entity: "account", action: "delete" },
-];
-
 function SummaryTab(props: { onShow: (filters: AuditFilters) => void }) {
   const [from, setFrom] = useState(() => `${today().slice(0, 7)}-01`);
   const [to, setTo] = useState(today);
   const summary = useAuditSummary({ from: from || undefined, to: to || undefined });
+  const major = useAuditLog({ group: "major", from: from || undefined, to: to || undefined });
+  const majorItems = major.data?.pages.flatMap((p) => p.items) ?? [];
   const counts = summary.data?.counts ?? [];
 
   // One row per member (and the app itself), with what isn't in a column counted as other.
@@ -227,7 +226,7 @@ function SummaryTab(props: { onShow: (filters: AuditFilters) => void }) {
   const total = (userId: number | null, match: (entity: string, action: string) => boolean) =>
     counts.filter((c) => c.userId === userId && match(c.entity, c.action)).reduce((n, c) => n + c.count, 0);
   const inColumn = (entity: string, action: string) =>
-    SUMMARY_COLUMNS.some((col) => col.entity === entity && col.action === action);
+    AUDIT_SUMMARY_COLUMNS.some((col) => col.entity === entity && col.action === action);
   const range = { from: from || undefined, to: to || undefined };
 
   const cell = (userId: number | null, n: number, filters: AuditFilters) => (
@@ -258,7 +257,7 @@ function SummaryTab(props: { onShow: (filters: AuditFilters) => void }) {
             <thead>
               <tr>
                 <th>Member</th>
-                {SUMMARY_COLUMNS.map((col) => (
+                {AUDIT_SUMMARY_COLUMNS.map((col) => (
                   <th key={col.label} className="count">
                     {col.label}
                   </th>
@@ -270,7 +269,7 @@ function SummaryTab(props: { onShow: (filters: AuditFilters) => void }) {
               {people.map(([userId, userName]) => (
                 <tr key={userId ?? "system"}>
                   <td>{userName ?? <span className="muted">System</span>}</td>
-                  {SUMMARY_COLUMNS.map((col) => (
+                  {AUDIT_SUMMARY_COLUMNS.map((col) => (
                     <Fragment key={col.label}>
                       {cell(
                         userId,
@@ -279,7 +278,7 @@ function SummaryTab(props: { onShow: (filters: AuditFilters) => void }) {
                       )}
                     </Fragment>
                   ))}
-                  {cell(userId, total(userId, (e, a) => !inColumn(e, a)), {})}
+                  {cell(userId, total(userId, (e, a) => !inColumn(e, a)), { group: "other" })}
                 </tr>
               ))}
             </tbody>
@@ -292,9 +291,16 @@ function SummaryTab(props: { onShow: (filters: AuditFilters) => void }) {
         <h2>Major changes</h2>
         <p className="muted">Accounts, imports, members and the household, and deleted categories, bills and securities.</p>
         <div className="table-scroll">
-          <EntryTable items={summary.data?.major ?? []} />
-          {summary.data && summary.data.major.length === 0 && <p className="muted">None in these dates.</p>}
+          <EntryTable items={majorItems} />
+          {major.error && <p className="error-text">{major.error.message}</p>}
+          {major.data && majorItems.length === 0 && <p className="muted">None in these dates.</p>}
+          {major.isPending && <p className="muted">Loading…</p>}
         </div>
+        {major.hasNextPage && (
+          <button className="btn" onClick={() => major.fetchNextPage()} disabled={major.isFetchingNextPage}>
+            {major.isFetchingNextPage ? "Loading…" : "Load more"}
+          </button>
+        )}
       </section>
     </>
   );

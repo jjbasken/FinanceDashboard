@@ -3,6 +3,7 @@ import type { Account, AuditEntry, AuditSummary, BankUpload, LogEntry, Page, Tra
 import { appLog, auditLog } from "../src/db/schema";
 import { createLogger, pruneLogs } from "../src/services/log";
 import { postScheduledBills } from "../src/services/scheduled-bills";
+import { AUDIT_SUMMARY_COLUMNS } from "@fd/shared";
 import { Client, fakePrices, owner, testApp } from "./helpers";
 
 /** The owner (Jeremy) and a member (Sam), with a shared checking account. */
@@ -272,10 +273,44 @@ describe("activity and logs", () => {
     expect(n("Sam", "transaction", "create")).toBe(2);
     expect(n("Sam", "transaction", "delete")).toBe(1);
     expect(n("Jeremy", "account", "create")).toBe(1);
-    expect(summary.major.map((e) => e.summary)).toContain("Added account: Checking");
-    expect(summary.major.some((e) => e.entity === "transaction")).toBe(false);
 
     const before = (await jeremy.get("/api/admin/audit/summary?from=2000-01-01&to=2000-01-31")).json as AuditSummary;
-    expect(before).toEqual({ counts: [], major: [] });
+    expect(before).toEqual({ counts: [] });
+  });
+
+  test("the Other changes group lists exactly what the summary counts as other", async () => {
+    const { jeremy, sam, checking, audit } = await setUp();
+    for (const amount of [-100, -200, -300]) {
+      await sam.post("/api/transactions", { accountId: checking.id, date: "2026-10-05", amount, payeeName: "Shop" });
+    }
+    const summary = (await jeremy.get("/api/admin/audit/summary")).json as AuditSummary;
+    const counted = (c: { entity: string; action: string }) =>
+      AUDIT_SUMMARY_COLUMNS.some((col) => col.entity === c.entity && col.action === c.action);
+    const otherCount = summary.counts.filter((c) => !counted(c)).reduce((n, c) => n + c.count, 0);
+    const other = await audit("?group=other&limit=200");
+    expect(other.length).toBe(otherCount);
+    expect(other.map((e) => e.summary).sort()).toEqual(
+      ["Created an invite link", "Joined the household with an invite", `Set up the household ${owner.householdName}`].sort(),
+    );
+  });
+
+  test("major changes page through every match, not just the newest", async () => {
+    const { jeremy, sam, checking, audit } = await setUp();
+    await sam.post("/api/transactions", { accountId: checking.id, date: "2026-10-05", amount: -100, payeeName: "Shop" });
+    for (const name of ["A", "B", "C"]) await jeremy.post("/api/accounts", { name, type: "cash" });
+    const all = await audit("?group=major&limit=200");
+    expect(all.some((e) => e.entity === "transaction")).toBe(false);
+    expect(all.map((e) => e.summary)).toContain("Added account: Checking");
+
+    const seen: string[] = [];
+    let before: number | null | undefined;
+    do {
+      const page = (await jeremy.get(`/api/admin/audit?group=major&limit=2${before ? `&before=${before}` : ""}`))
+        .json as Page<AuditEntry>;
+      seen.push(...page.items.map((e) => e.summary));
+      before = page.next;
+    } while (before);
+    expect(seen).toEqual(all.map((e) => e.summary));
+    expect(seen.at(-1)).toBe(`Set up the household ${owner.householdName}`);
   });
 });
