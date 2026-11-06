@@ -304,7 +304,7 @@ export function TransactionEditor(props: {
           </div>
         )}
 
-        {props.accountOptions && <label className="field"><span>{transferMode ? "Transfer from" : side === "deposit" ? "Paid into" : "Paid from"}</span><select value={l.account.id} onChange={e => { if (e.target.value === "all") return props.onShowAllAccounts?.(); props.onAccountChange?.(Number(e.target.value)); set({ payeeId: null, payeeName: "" }); }}>
+        {props.accountOptions && <label className="field"><span>{transferMode ? "Transfer from" : side === "deposit" ? "Paid into" : "Paid from"}</span><select value={l.account.id} onChange={e => { if (e.target.value === "all") return props.onShowAllAccounts?.(); const next = Number(e.target.value); props.onAccountChange?.(next); /* a payee works from any account, but not a transfer to itself */ if (l.payeeById.get(d.payeeId ?? -1)?.transferAccountId === next) set({ payeeId: null, payeeName: "" }); }}>
           {props.accountOptions.filter(a => !transferMode || !a.budgetOnly).map(a => <option key={a.id} value={a.id}>{a.budgetOnly ? "No account (budget only)" : a.name}{a.private ? " · Private" : ""}</option>)}
           {props.onShowAllAccounts && <option value="all">More accounts…</option>}
         </select></label>}
