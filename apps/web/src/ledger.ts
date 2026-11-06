@@ -3,6 +3,8 @@ import type {
   Account,
   AuditEntry,
   AuditFilters,
+  AuditSummary,
+  AuditSummaryFilters,
   LogEntry,
   LogFilters,
   Page,
@@ -73,6 +75,13 @@ function useReport<T>(path: string, filters: AuditFilters | LogFilters) {
 
 export const useAuditLog = (filters: AuditFilters) => useReport<AuditEntry>("audit", filters);
 export const useAppLogs = (filters: LogFilters) => useReport<LogEntry>("logs", filters);
+
+/** The owner's Summary: changes counted by member, and the major ones, for a date range. */
+export const useAuditSummary = (filters: AuditSummaryFilters) =>
+  useQuery({
+    queryKey: ["admin", "audit-summary", filters],
+    queryFn: () => api.get<AuditSummary>(`/admin/audit/summary?${queryString(filters)}`),
+  });
 
 export const useRegister = (accountId: number) =>
   useQuery({

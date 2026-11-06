@@ -25,6 +25,27 @@ export const AUDIT_ENTITIES = [
 ] as const;
 export type AuditEntity = (typeof AUDIT_ENTITIES)[number];
 
+/** What was done in an Activity entry. */
+export const AUDIT_ACTIONS = [
+  "create",
+  "update",
+  "delete",
+  "move",
+  "reconcile",
+  "copy",
+  "merge",
+  "delete-unused",
+  "import",
+  "undo",
+  "reset-password",
+  "disable",
+  "enable",
+  "invite",
+  "join",
+  "change-password",
+] as const;
+export type AuditAction = (typeof AUDIT_ACTIONS)[number];
+
 /** One page of a report: newest first; pass `next` as `before` to get the following page. */
 export interface Page<T> {
   items: T[];
@@ -55,6 +76,21 @@ export interface AuditDetails {
   after?: unknown;
 }
 
+/** How many changes of one kind one member made (userId null: the app on its own). */
+export interface AuditCount {
+  userId: number | null;
+  userName: string | null;
+  entity: string;
+  action: string;
+  count: number;
+}
+
+/** The Summary report: counts by member, and the major changes (accounts, imports, members). */
+export interface AuditSummary {
+  counts: AuditCount[];
+  major: AuditEntry[];
+}
+
 export interface LogEntry {
   id: number;
   at: string;
@@ -70,6 +106,7 @@ const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a YYYY-MM-DD date");
 export const auditQuery = z.object({
   userId: id.optional(),
   entity: z.enum(AUDIT_ENTITIES).optional(),
+  action: z.enum(AUDIT_ACTIONS).optional(),
   from: day.optional(),
   to: day.optional(),
   q: z.string().trim().max(100).optional(),
@@ -80,10 +117,14 @@ export const auditQuery = z.object({
 export interface AuditFilters {
   userId?: number;
   entity?: AuditEntity;
+  action?: AuditAction;
   from?: string;
   to?: string;
   q?: string;
 }
+
+export const auditSummaryQuery = z.object({ from: day.optional(), to: day.optional() });
+export type AuditSummaryFilters = z.infer<typeof auditSummaryQuery>;
 
 export const logQuery = z.object({
   level: z.enum(LOG_LEVELS).optional(),

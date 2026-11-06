@@ -1,5 +1,5 @@
 import { describeSchedule, formatCents, formatMonth, type AuditDetails, type AuditEntity } from "@fd/shared";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, type SQL } from "drizzle-orm";
 import type { SQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import { createMiddleware } from "hono/factory";
 import type { AppEnv } from "../app";
@@ -219,6 +219,85 @@ export function recordSystemCreate(db: DbOrTx, householdId: number, entity: Audi
   });
 }
 
+/** An import's file, e.g. "Bank.ofx (bank)". */
+function batchFile(db: DbOrTx, batchId: number | null) {
+  const batch =
+    batchId !== null && Number.isFinite(batchId)
+      ? db.select().from(importBatches).where(eq(importBatches.id, batchId)).get()
+      : undefined;
+  return batch ? `${batch.fileName} (${batch.source})` : "a file";
+}
+
+// --- Rows changed along with another change ---
+
+/** A row an import added, or one that went with a deleted account or undone import. */
+interface Affected {
+  entity: AuditEntity;
+  id: number;
+  row: Row;
+  label: string;
+  private: boolean;
+}
+
+/** This household's rows of one kind, described now (a deleted row can't be described later). */
+function affected(db: DbOrTx, householdId: number, entity: AuditEntity, where: SQL | undefined): Affected[] {
+  const table = TABLES[entity]!;
+  const cols = table as unknown as { householdId: SQLiteColumn };
+  const rows = db.select().from(table).where(and(eq(cols.householdId, householdId), where)).all() as Row[];
+  return rows.map((raw) => {
+    const row = clean(raw)!;
+    return {
+      entity,
+      id: Number(raw.id),
+      row,
+      label: label(db, householdId, entity, row),
+      private: isOthersPrivate(db, householdId, accountIdOf(entity, row)),
+    };
+  });
+}
+
+/** Everything an import added: accounts, categories, securities and transactions. */
+function importedRows(db: DbOrTx, householdId: number, batchId: number): Affected[] {
+  return [
+    ...affected(db, householdId, "account", eq(accounts.importBatchId, batchId)),
+    ...affected(db, householdId, "category group", eq(categoryGroups.importBatchId, batchId)),
+    ...affected(db, householdId, "category", eq(categories.importBatchId, batchId)),
+    ...affected(db, householdId, "security", eq(securities.importBatchId, batchId)),
+    ...affected(
+      db,
+      householdId,
+      "transaction",
+      and(eq(transactions.importBatchId, batchId), isNull(transactions.parentId)),
+    ),
+    ...affected(db, householdId, "investment", eq(investmentTxns.importBatchId, batchId)),
+  ];
+}
+
+/** One entry per row, e.g. "Deleted transaction (with account Checking): Grocer -$42.50 on …". */
+function recordAffected(
+  db: DbOrTx,
+  householdId: number,
+  userId: number,
+  action: "create" | "delete",
+  rows: Affected[],
+  why: string,
+) {
+  const values = rows.map((a) => ({
+    householdId,
+    userId,
+    action,
+    entity: a.entity,
+    entityId: a.id,
+    summary: a.private
+      ? `${VERBS[action]} ${PRIVATE_SUMMARY[a.entity] ?? a.entity}`
+      : `${VERBS[action]} ${a.entity} (${why})${a.label ? `: ${a.label}` : ""}`,
+    details: a.private ? null : action === "create" ? { after: a.row } : { before: a.row },
+    private: a.private,
+  }));
+  // A big import adds thousands; keep each insert well under SQLite's limit on parameters.
+  for (let i = 0; i < values.length; i += 500) db.insert(auditLog).values(values.slice(i, i + 500)).run();
+}
+
 // --- The middleware ---
 
 interface Target {
@@ -363,11 +442,7 @@ function summarize(
       return `Deleted ${Number(result?.deleted ?? 0)} unused payees`;
     case "import":
     case "undo": {
-      const batchId = t.action === "undo" ? t.id : Number(result?.batchId);
-      const batch = Number.isFinite(batchId)
-        ? db.select().from(importBatches).where(eq(importBatches.id, batchId!)).get()
-        : undefined;
-      const file = batch ? `${batch.fileName} (${batch.source})` : "a file";
+      const file = batchFile(db, t.action === "undo" ? t.id : Number(result?.batchId));
       return t.action === "undo" ? `Undid the import of ${file}` : `Imported ${file}`;
     }
     case "reset-password":
@@ -411,6 +486,17 @@ export const auditMiddleware = createMiddleware<AppEnv>(async (c, next) => {
   const before = t.action === "create" && t.entity !== "price" ? null : load(t.id);
   const wasPrivate = isOthersPrivate(db, householdId, accountIdOf(t.entity, before));
 
+  // What may go along with it: an account's transactions, or everything an import added.
+  let alongside: Affected[] = [];
+  let why = "";
+  if (t.entity === "account" && t.action === "delete" && t.id !== null) {
+    alongside = affected(db, householdId, "transaction", and(eq(transactions.accountId, t.id), isNull(transactions.parentId)));
+    why = "with its account";
+  } else if (t.action === "undo" && t.id !== null) {
+    alongside = importedRows(db, householdId, t.id);
+    why = `undoing the import of ${batchFile(db, t.id)}`;
+  }
+
   await next();
   if (c.res.status >= 400) return;
 
@@ -442,6 +528,14 @@ export const auditMiddleware = createMiddleware<AppEnv>(async (c, next) => {
       details,
       private: isPrivate,
     });
+
+    // An undo keeps imported accounts and categories that are still in use, so only log what's gone.
+    const gone = alongside.filter((a) => !loadRow(db, householdId, a.entity, a.id));
+    if (gone.length) recordAffected(db, householdId, s.user.id, "delete", gone, why);
+    if (t.action === "import" && typeof result?.batchId === "number") {
+      const added = importedRows(db, householdId, result.batchId);
+      recordAffected(db, householdId, s.user.id, "create", added, `imported from ${batchFile(db, result.batchId)}`);
+    }
   } catch (err) {
     c.var.log.error("http", `Couldn't record activity for ${c.req.method} ${c.req.path}`, {
       householdId,

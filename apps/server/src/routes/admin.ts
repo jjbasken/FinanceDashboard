@@ -1,5 +1,14 @@
-import { auditQuery, logQuery, type AuditEntry, type LogEntry, type Page } from "@fd/shared";
-import { and, desc, eq, gte, isNull, like, lt, or, type SQL } from "drizzle-orm";
+import {
+  auditQuery,
+  auditSummaryQuery,
+  logQuery,
+  type AuditCount,
+  type AuditEntry,
+  type AuditSummary,
+  type LogEntry,
+  type Page,
+} from "@fd/shared";
+import { and, count, desc, eq, gte, inArray, isNull, like, lt, or, type SQL } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { AppEnv } from "../app";
@@ -7,7 +16,7 @@ import { appLog, auditLog, users } from "../db/schema";
 import { requireAuth, requireOwner, sessionOf } from "../middleware";
 
 /** Parse query parameters with a zod schema, returning 400 on bad input. */
-function parseQuery<T extends typeof auditQuery | typeof logQuery>(query: Record<string, string>, schema: T) {
+function parseQuery<T extends typeof auditQuery | typeof auditSummaryQuery | typeof logQuery>(query: Record<string, string>, schema: T) {
   const result = schema.safeParse(query);
   if (!result.success) {
     const first = result.error.issues[0];
@@ -23,6 +32,20 @@ const nextDay = (day: string) => {
   return d.toISOString().slice(0, 10);
 };
 
+/** An Activity entry as the reports send it, with the member's name. */
+const entryColumns = {
+  id: auditLog.id,
+  at: auditLog.at,
+  userId: auditLog.userId,
+  userName: users.displayName,
+  action: auditLog.action,
+  entity: auditLog.entity,
+  entityId: auditLog.entityId,
+  summary: auditLog.summary,
+  details: auditLog.details,
+  private: auditLog.private,
+};
+
 /** The owner's reports: who changed what (Activity), and system events and errors (Logs). */
 export const adminRoutes = new Hono<AppEnv>()
   .use(requireAuth, requireOwner)
@@ -33,23 +56,13 @@ export const adminRoutes = new Hono<AppEnv>()
     const where: (SQL | undefined)[] = [eq(auditLog.householdId, household.id)];
     if (q.userId) where.push(eq(auditLog.userId, q.userId));
     if (q.entity) where.push(eq(auditLog.entity, q.entity));
+    if (q.action) where.push(eq(auditLog.action, q.action));
     if (q.from) where.push(gte(auditLog.at, q.from));
     if (q.to) where.push(lt(auditLog.at, nextDay(q.to)));
     if (q.q) where.push(like(auditLog.summary, `%${q.q}%`));
     if (q.before) where.push(lt(auditLog.id, q.before));
     const rows = c.var.db
-      .select({
-        id: auditLog.id,
-        at: auditLog.at,
-        userId: auditLog.userId,
-        userName: users.displayName,
-        action: auditLog.action,
-        entity: auditLog.entity,
-        entityId: auditLog.entityId,
-        summary: auditLog.summary,
-        details: auditLog.details,
-        private: auditLog.private,
-      })
+      .select(entryColumns)
       .from(auditLog)
       .leftJoin(users, eq(users.id, auditLog.userId))
       .where(and(...where))
@@ -59,6 +72,50 @@ export const adminRoutes = new Hono<AppEnv>()
     const items = rows.slice(0, q.limit) as AuditEntry[];
     const page: Page<AuditEntry> = { items, next: rows.length > q.limit ? items.at(-1)!.id : null };
     return c.json(page);
+  })
+
+  .get("/audit/summary", (c) => {
+    const q = parseQuery(c.req.query(), auditSummaryQuery);
+    const { household } = sessionOf(c);
+    const where: (SQL | undefined)[] = [eq(auditLog.householdId, household.id)];
+    if (q.from) where.push(gte(auditLog.at, q.from));
+    if (q.to) where.push(lt(auditLog.at, nextDay(q.to)));
+    const db = c.var.db;
+    const counts: AuditCount[] = db
+      .select({
+        userId: auditLog.userId,
+        userName: users.displayName,
+        entity: auditLog.entity,
+        action: auditLog.action,
+        count: count(),
+      })
+      .from(auditLog)
+      .leftJoin(users, eq(users.id, auditLog.userId))
+      .where(and(...where))
+      .groupBy(auditLog.userId, auditLog.entity, auditLog.action)
+      .all();
+    // Major: accounts, imports, members and the household, plus deleting categories, bills or securities.
+    const major = db
+      .select(entryColumns)
+      .from(auditLog)
+      .leftJoin(users, eq(users.id, auditLog.userId))
+      .where(
+        and(
+          ...where,
+          or(
+            inArray(auditLog.entity, ["account", "import", "member", "household"]),
+            and(
+              inArray(auditLog.entity, ["category", "category group", "bill", "security"]),
+              eq(auditLog.action, "delete"),
+            ),
+          ),
+        ),
+      )
+      .orderBy(desc(auditLog.id))
+      .limit(100)
+      .all() as AuditEntry[];
+    const summary: AuditSummary = { counts, major };
+    return c.json(summary);
   })
 
   .get("/logs", (c) => {
