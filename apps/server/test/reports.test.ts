@@ -1,10 +1,22 @@
 import { describe, expect, test } from "bun:test";
-import type { Account, BudgetMonth, BudgetVsActualMonth, CashFlowMonth, CategoryGroup, NetWorthPoint, SpendingRow } from "@fd/shared";
+import type {
+  Account,
+  BudgetMonth,
+  BudgetVsActualMonth,
+  CashFlowMonth,
+  CategoryBreakdown,
+  CategoryGroup,
+  NetWorthPoint,
+  SpendingRow,
+  YearComparison,
+} from "@fd/shared";
+import { yearComparison } from "../src/services/reports";
+import { localDate } from "../src/util";
 import { Client, fakePrices, owner, testApp } from "./helpers";
 
 async function setUp() {
   const prices = fakePrices({ VTI: [{ date: "2026-02-27", close: 220_000_000 }] });
-  const { app } = testApp({ priceProvider: prices.provider });
+  const { app, db } = testApp({ priceProvider: prices.provider });
   const c = new Client(app);
   await c.post("/api/auth/setup", owner);
   const account = async (body: Record<string, unknown>) => (await c.post("/api/accounts", body)).json as Account;
@@ -48,7 +60,7 @@ async function setUp() {
     price: 200_000_000,
   });
   await c.post("/api/investments/prices/refresh");
-  return { c, account, cat };
+  return { c, db, account, cat, txn, checking, visa };
 }
 
 describe("reports", () => {
@@ -182,5 +194,51 @@ describe("reports", () => {
     expect(feb).toEqual([{ month: "2026-02", income: 300_000, expenses: 0, net: 300_000 }]);
     const rows = (await c.get("/api/reports/spending?from=2026-01&to=2026-02")).json as SpendingRow[];
     expect(rows.map((r) => r.name)).not.toContain("Dining Out");
+  });
+
+  test("breakdown splits income and spending by category, without opening balances or transfers", async () => {
+    const { c } = await setUp();
+    const b = (await c.get("/api/reports/breakdown?from=2026-01&to=2026-02")).json as CategoryBreakdown;
+    expect(b.income.map((r) => [r.name, r.groupName, r.amount])).toEqual([["Income", "Income", 300_000]]);
+    const spending = (await c.get("/api/reports/spending?from=2026-01&to=2026-02")).json as SpendingRow[];
+    expect(b.expenses).toEqual(spending);
+    expect((await c.get("/api/reports/breakdown?from=2026-03&to=2026-01")).status).toBe(400);
+  });
+
+  test("a year compares with the same whole months of the year before", async () => {
+    const { db, cat, txn, checking, visa } = await setUp();
+    await txn({ accountId: checking.id, date: "2025-01-20", amount: -9_000, categoryId: cat("Groceries") });
+    await txn({ accountId: visa.id, date: "2025-02-10", amount: -4_000, categoryId: cat("Housing") });
+    await txn({ accountId: checking.id, date: "2025-02-15", amount: 250_000, categoryId: cat("Income") });
+    // After the comparison window: shown in last year's months, but not in its totals.
+    await txn({ accountId: checking.id, date: "2025-03-05", amount: -7_000, categoryId: cat("Groceries") });
+
+    // Mid-March 2026: January and February are whole months; March isn't yet.
+    const r = yearComparison(db, 1, 2026, "2026-03-14");
+    expect(r.through).toBe("2026-02");
+    expect(r.firstYear).toBe(2025);
+    expect(r.current.map((m) => m.month)).toEqual(["2026-01", "2026-02"]);
+    expect(r.previous).toHaveLength(12);
+    expect(r.previous[2]).toEqual({ month: "2025-03", income: 0, expenses: 7_000, net: -7_000 });
+    const row = (name: string) => r.categories.find((x) => x.name === name);
+    expect(row("Income")).toMatchObject({ isIncome: true, current: 300_000, previous: 250_000 });
+    expect(row("Groceries")).toMatchObject({ isIncome: false, current: 12_000, previous: 9_000 });
+    expect(row("Housing")).toMatchObject({ current: 0, previous: 4_000 });
+    expect(row("Uncategorized")).toMatchObject({ categoryId: null, current: 3_000, previous: 0 });
+
+    // A past year is compared in full.
+    const past = yearComparison(db, 1, 2025, "2026-03-14");
+    expect(past.through).toBe("2025-12");
+    expect(past.categories.find((x) => x.name === "Groceries")).toMatchObject({ current: 16_000, previous: 0 });
+  });
+
+  test("compare validates the year", async () => {
+    const { c } = await setUp();
+    const today = localDate();
+    const latest = today.slice(5, 7) === "01" ? Number(today.slice(0, 4)) - 1 : Number(today.slice(0, 4));
+    expect(((await c.get("/api/reports/compare")).json as YearComparison).year).toBe(latest);
+    expect((await c.get(`/api/reports/compare?year=${latest + 1}`)).status).toBe(400);
+    expect((await c.get("/api/reports/compare?year=26")).status).toBe(400);
+    expect((await c.get("/api/reports/compare?year=1990")).status).toBe(400);
   });
 });

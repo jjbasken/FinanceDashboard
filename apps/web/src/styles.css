@@ -1604,6 +1604,49 @@ select {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+.card-head.wrap {
+  flex-wrap: wrap;
+}
+.card-head > p {
+  margin: 0;
+}
+.card-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.report-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: 16px;
+}
+.report-pair .spending-bars li {
+  grid-template-columns: minmax(96px, 180px) 1fr 120px;
+}
+.data-table.statement td.indent {
+  padding-left: 24px;
+}
+.data-table.statement td.truncate {
+  max-width: 280px;
+}
+.data-table.statement .section-row td {
+  font-weight: 700;
+  font-size: 14px;
+  padding-top: 14px;
+  border-bottom: 2px solid var(--border);
+}
+.data-table.statement .total-row td {
+  border-top: 2px solid var(--border);
+}
+.page-header .segmented {
+  position: relative;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.page-header .segmented button {
+  white-space: nowrap;
+}
 
 /* Bank import */
 .csv-mapping {
@@ -1726,7 +1769,8 @@ select {
   .map-row {
     grid-template-columns: 1fr auto;
   }
-  .spending-bars li {
+  .spending-bars li,
+  .report-pair .spending-bars li {
     grid-template-columns: 1fr 96px;
   }
   .spending-track {

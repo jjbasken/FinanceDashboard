@@ -2,8 +2,9 @@ import {
   formatCents,
   formatMonth,
   type BudgetVsActualMonth,
-  type CashFlowMonth, type NetWorthPoint,
-  type SpendingRow,
+  type CashFlowMonth,
+  type CategoryTotal,
+  type NetWorthPoint,
 } from "@fd/shared";
 import { useState } from "react";
 import {
@@ -20,7 +21,7 @@ import {
   YAxis,
 } from "recharts";
 import { formatDate } from "../ledger";
-import { compact, SERIES } from "./InvestmentCharts";
+import { compact, NEUTRAL_LIGHT, SERIES } from "./InvestmentCharts";
 
 const monthLabel = (m: string) =>
   new Date(`${m}-01T00:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "2-digit", timeZone: "UTC" });
@@ -91,12 +92,16 @@ export function NetWorthChart(props: { points: NetWorthPoint[]; fineDates: boole
   );
 }
 
-function CashFlowTooltip(props: { active?: boolean; payload?: { payload: CashFlowMonth }[] }) {
+function CashFlowTooltip(props: {
+  active?: boolean;
+  payload?: { payload: CashFlowMonth }[];
+  title: (period: string) => string;
+}) {
   const p = props.payload?.[0]?.payload;
   if (!props.active || !p) return null;
   return (
     <div className="viz-tooltip">
-      <div className="viz-tooltip-title">{formatMonth(p.month)}</div>
+      <div className="viz-tooltip-title">{props.title(p.month)}</div>
       <div className="viz-tooltip-row">
         <span className="swatch" style={{ background: SERIES[0] }} />
         <span>Income</span>
@@ -116,8 +121,15 @@ function CashFlowTooltip(props: { active?: boolean; payload?: { payload: CashFlo
   );
 }
 
-/** Income against spending per month: two series, with a legend above the plot. */
-export function CashFlowChart(props: { months: CashFlowMonth[] }) {
+/**
+ * Income against spending per period: two series, with a legend above the plot. Periods are
+ * months by default; pass formatters for other periods such as years.
+ */
+export function CashFlowChart(props: {
+  months: CashFlowMonth[];
+  label?: (period: string) => string;
+  title?: (period: string) => string;
+}) {
   const data = props.months.map((m) => ({ ...m, incomeD: m.income / 100, expensesD: m.expenses / 100 }));
   return (
     <figure className="viz">
@@ -133,10 +145,10 @@ export function CashFlowChart(props: { months: CashFlowMonth[] }) {
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 0 }} barGap={2} barCategoryGap="22%">
             <CartesianGrid vertical={false} stroke="var(--viz-grid)" />
-            <XAxis dataKey="month" tickFormatter={monthLabel} {...axisProps} />
+            <XAxis dataKey="month" tickFormatter={props.label ?? monthLabel} {...axisProps} />
             <YAxis tickFormatter={(v: number) => compact.format(v)} axisLine={false} width={64} {...axisProps} />
             <Tooltip
-              content={<CashFlowTooltip />}
+              content={<CashFlowTooltip title={props.title ?? formatMonth} />}
               cursor={{ fill: "var(--viz-grid)", opacity: 0.5 }}
               isAnimationActive={false}
             />
@@ -204,8 +216,107 @@ export function BudgetVsActualChart(props: { months: BudgetVsActualMonth[]; curr
   );
 }
 
-/** Spending per category, sorted, as horizontal bars in one hue with direct value labels. */
-export function SpendingBars(props: { rows: SpendingRow[]; limit?: number }) {
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+interface CompareDatum {
+  label: string;
+  current: number | null;
+  previous: number;
+}
+
+function CompareTooltip(props: {
+  active?: boolean;
+  payload?: { payload: CompareDatum }[];
+  year: number;
+  metric: string;
+}) {
+  const p = props.payload?.[0]?.payload;
+  if (!props.active || !p) return null;
+  const change = p.current === null ? null : p.current - p.previous;
+  return (
+    <div className="viz-tooltip">
+      <div className="viz-tooltip-title">
+        {p.label} · {props.metric}
+      </div>
+      <div className="viz-tooltip-row">
+        <span className="swatch" style={{ background: NEUTRAL_LIGHT }} />
+        <span>{props.year - 1}</span>
+        <strong>{formatCents(p.previous)}</strong>
+      </div>
+      <div className="viz-tooltip-row">
+        <span className="swatch" style={{ background: SERIES[0] }} />
+        <span>{props.year}</span>
+        <strong>{p.current === null ? "—" : formatCents(p.current)}</strong>
+      </div>
+      {change !== null && (
+        <div className="viz-tooltip-row">
+          <span />
+          <span>Change</span>
+          <strong>
+            {change > 0 ? "+" : ""}
+            {formatCents(change)}
+          </strong>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * One measure per calendar month, this year against last year: this year in the accent hue,
+ * last year recessive in neutral, so the eye lands on the current period.
+ */
+export function YearCompareChart(props: {
+  year: number;
+  current: CashFlowMonth[];
+  previous: CashFlowMonth[];
+  metric: "income" | "expenses";
+}) {
+  const metricLabel = props.metric === "income" ? "Income" : "Spending";
+  const data = MONTHS.map((label, i) => {
+    const now = props.current[i];
+    const then = props.previous[i];
+    return {
+      label,
+      current: now ? now[props.metric] : null,
+      previous: then ? then[props.metric] : 0,
+      currentD: now ? now[props.metric] / 100 : null,
+      previousD: (then?.[props.metric] ?? 0) / 100,
+    };
+  });
+  return (
+    <figure className="viz">
+      <div className="viz-legend" aria-hidden>
+        <span>
+          <span className="swatch" style={{ background: NEUTRAL_LIGHT }} /> {props.year - 1}
+        </span>
+        <span>
+          <span className="swatch" style={{ background: SERIES[0] }} /> {props.year}
+        </span>
+      </div>
+      <div className="viz-plot">
+        <ResponsiveContainer width="100%" height={280}>
+          <BarChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 0 }} barGap={2} barCategoryGap="22%">
+            <CartesianGrid vertical={false} stroke="var(--viz-grid)" />
+            <XAxis dataKey="label" {...axisProps} />
+            <YAxis tickFormatter={(v: number) => compact.format(v)} axisLine={false} width={64} {...axisProps} />
+            <ReferenceLine y={0} stroke="var(--viz-axis)" />
+            <Tooltip
+              content={<CompareTooltip year={props.year} metric={metricLabel} />}
+              cursor={{ fill: "var(--viz-grid)", opacity: 0.5 }}
+              isAnimationActive={false}
+            />
+            <Bar dataKey="previousD" fill={NEUTRAL_LIGHT} radius={[4, 4, 0, 0]} maxBarSize={24} isAnimationActive={false} />
+            <Bar dataKey="currentD" fill={SERIES[0]} radius={[4, 4, 0, 0]} maxBarSize={24} isAnimationActive={false} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </figure>
+  );
+}
+
+/** Amounts per category, sorted, as horizontal bars in one hue with direct value labels. */
+export function CategoryBars(props: { rows: CategoryTotal[]; limit?: number; color?: string; emptyText?: string }) {
   const [hover, setHover] = useState<string | null>(null);
   const limit = props.limit ?? 15;
   const top = props.rows.slice(0, limit);
@@ -223,7 +334,7 @@ export function SpendingBars(props: { rows: SpendingRow[]; limit?: number }) {
     : top;
   const max = Math.max(...rows.map((r) => r.amount), 1);
   const total = props.rows.reduce((s, r) => s + r.amount, 0);
-  if (rows.length === 0) return <p className="muted">No spending in this period.</p>;
+  if (rows.length === 0) return <p className="muted">{props.emptyText ?? "Nothing in this period."}</p>;
   return (
     <ul className="spending-bars">
       {rows.map((r) => {
@@ -237,14 +348,14 @@ export function SpendingBars(props: { rows: SpendingRow[]; limit?: number }) {
           >
             <span className="spending-name truncate" title={r.groupName ? `${r.groupName}: ${r.name}` : r.name}>
               {r.name}
-              {r.groupName && <span className="muted"> · {r.groupName}</span>}
+              {r.groupName && r.groupName !== r.name && <span className="muted"> · {r.groupName}</span>}
             </span>
             <span className="spending-track">
               <span
                 className="spending-bar"
                 style={{
                   width: `${Math.max(0, (r.amount / max) * 100)}%`,
-                  background: r.categoryId === -1 ? "var(--viz-neutral)" : SERIES[0],
+                  background: r.categoryId === -1 ? "var(--viz-neutral)" : (props.color ?? SERIES[0]),
                 }}
               />
             </span>

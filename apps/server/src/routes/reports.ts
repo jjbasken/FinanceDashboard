@@ -6,7 +6,14 @@ import type { AppEnv } from "../app";
 import { actorOf, requireAuth } from "../middleware";
 import { budgetVsActual } from "../services/budget";
 import { HISTORY_RANGES, type HistoryRange } from "../services/holdings";
-import { cashFlow, netWorthHistory, spendingByCategory } from "../services/reports";
+import {
+  cashFlow,
+  categoryBreakdown,
+  latestComparableYear,
+  netWorthHistory,
+  spendingByCategory,
+  yearComparison,
+} from "../services/reports";
 import { localDate } from "../util";
 
 /** ?from=YYYY-MM&to=YYYY-MM, defaulting to the last 12 months; at most 20 years. */
@@ -51,4 +58,20 @@ export const reportRoutes = new Hono<AppEnv>()
   .get("/spending", (c) => {
     const { from, to } = monthRange(c);
     return c.json(spendingByCategory(c.var.db, actorOf(c).householdId, from, to));
+  })
+
+  .get("/breakdown", (c) => {
+    const { from, to } = monthRange(c);
+    return c.json(categoryBreakdown(c.var.db, actorOf(c).householdId, from, to));
+  })
+
+  .get("/compare", (c) => {
+    const today = localDate();
+    const latest = latestComparableYear(today);
+    const raw = c.req.query("year");
+    const year = raw === undefined ? latest : Number(raw);
+    if (!/^\d{4}$/.test(raw ?? String(year))) throw new HTTPException(400, { message: "Use a four-digit year" });
+    if (year > latest) throw new HTTPException(400, { message: "That year has no whole months yet" });
+    if (year < Number(today.slice(0, 4)) - 20) throw new HTTPException(400, { message: "Pick a year within the last 20" });
+    return c.json(yearComparison(c.var.db, actorOf(c).householdId, year, today));
   });
