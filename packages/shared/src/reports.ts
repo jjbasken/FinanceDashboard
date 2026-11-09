@@ -19,6 +19,8 @@ export interface CategoryTotal {
   /** Null for the "Uncategorized" row. */
   categoryId: number | null;
   name: string;
+  /** Null for the "Uncategorized" row. Group names needn't be unique, so group by this. */
+  groupId: number | null;
   groupName: string;
   /** Income received or money spent, as a positive number. */
   amount: number;
@@ -48,6 +50,7 @@ export interface CategoryBreakdown {
 export interface CategoryComparison {
   categoryId: number | null;
   name: string;
+  groupId: number | null;
   groupName: string;
   isIncome: boolean;
   /** This year, January through `through`. */
@@ -62,7 +65,7 @@ export interface YearComparison {
   through: string;
   /** The earliest year with any budget activity, for picking a year. */
   firstYear: number;
-  /** January through `through`. */
+  /** January through `through`. Unlike the cash flow report, uncategorized spending counts. */
   current: CashFlowMonth[];
   /** All twelve months of the year before, for context; totals use only the matching months. */
   previous: CashFlowMonth[];

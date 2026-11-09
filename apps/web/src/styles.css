@@ -2453,9 +2453,9 @@ fieldset .checkbox { margin: 6px 0; }
   .budget-total > :nth-child(3)::before { content: "Spent "; color: var(--text-muted); font-weight: 400; }
   .budget-total > :nth-child(4) { grid-column: 1 / -1; }
   .budget-total > :nth-child(4)::before { content: "Remaining "; font-weight: 400; }
-  .group-row { display: flex; flex-wrap: wrap; padding: 10px 0; border: 0; background: transparent; }
-  .group-row > .name { width: 100%; }
-  .group-row > .amount { display: none; }
+  .budget-row.group-row { display: flex; flex-wrap: wrap; padding: 10px 0; border: 0; background: transparent; }
+  .budget-row.group-row > .name { width: 100%; }
+  .budget-row.group-row > .amount { display: none; }
   .category-line { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "name name" "plan balance" "spent balance"; padding: 12px; margin-bottom: 10px; gap: 6px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
   .category-line .name { grid-area: name; flex-wrap: wrap; padding: 0; }
   .category-line .name-button { font-size: 16px; min-height: 44px; flex: 1 1 100%; }

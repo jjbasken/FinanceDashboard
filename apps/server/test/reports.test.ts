@@ -200,6 +200,10 @@ describe("reports", () => {
     const { c } = await setUp();
     const b = (await c.get("/api/reports/breakdown?from=2026-01&to=2026-02")).json as CategoryBreakdown;
     expect(b.income.map((r) => [r.name, r.groupName, r.amount])).toEqual([["Income", "Income", 300_000]]);
+    // Rows carry their group's id, since two groups can share a name.
+    const groups = (await c.get("/api/categories")).json as CategoryGroup[];
+    const everyday = groups.find((g) => g.name === "Everyday")!.id;
+    expect(b.expenses.find((r) => r.name === "Groceries")!.groupId).toBe(everyday);
     const spending = (await c.get("/api/reports/spending?from=2026-01&to=2026-02")).json as SpendingRow[];
     expect(b.expenses).toEqual(spending);
     expect((await c.get("/api/reports/breakdown?from=2026-03&to=2026-01")).status).toBe(400);
@@ -224,7 +228,15 @@ describe("reports", () => {
     expect(row("Income")).toMatchObject({ isIncome: true, current: 300_000, previous: 250_000 });
     expect(row("Groceries")).toMatchObject({ isIncome: false, current: 12_000, previous: 9_000 });
     expect(row("Housing")).toMatchObject({ current: 0, previous: 4_000 });
-    expect(row("Uncategorized")).toMatchObject({ categoryId: null, current: 3_000, previous: 0 });
+    expect(row("Uncategorized")).toMatchObject({ categoryId: null, groupId: null, current: 3_000, previous: 0 });
+    // The monthly totals count uncategorized spending too, so they add up to the category rows.
+    expect(r.current[1]).toEqual({ month: "2026-02", income: 300_000, expenses: 21_000, net: 279_000 });
+    for (const isIncome of [true, false]) {
+      const field = isIncome ? "income" : "expenses";
+      const rows = r.categories.filter((x) => x.isIncome === isIncome);
+      expect(rows.reduce((s, x) => s + x.current, 0)).toBe(r.current.reduce((s, m) => s + m[field], 0));
+      expect(rows.reduce((s, x) => s + x.previous, 0)).toBe(r.previous.slice(0, 2).reduce((s, m) => s + m[field], 0));
+    }
 
     // A past year is compared in full.
     const past = yearComparison(db, 1, 2025, "2026-03-14");

@@ -96,7 +96,13 @@ const monthStart = (m: string) => `${m}-01`;
  * to a brokerage doesn't change net worth, so it isn't spending. Opening balances aren't income
  * earned in their month, so they're left out too, as are categories excluded from the budget.
  */
-export function cashFlow(db: DbOrTx, householdId: number, from: string, to: string): CashFlowMonth[] {
+export function cashFlow(
+  db: DbOrTx,
+  householdId: number,
+  from: string,
+  to: string,
+  opts: { uncategorized?: boolean } = {},
+): CashFlowMonth[] {
   const rows = db.all<{ month: string; isIncome: number; amount: number }>(sql`
     select substr(t.date, 1, 7) as month, g.is_income as isIncome, sum(t.amount) as amount
     from transactions t
@@ -113,14 +119,30 @@ export function cashFlow(db: DbOrTx, householdId: number, from: string, to: stri
       and t.date < ${monthStart(addMonths(to, 1))}
     group by substr(t.date, 1, 7), g.is_income
   `);
+  const uncategorized = opts.uncategorized
+    ? db.all<{ month: string; amount: number }>(sql`
+        select substr(t.date, 1, 7) as month, -sum(t.amount) as amount
+        from transactions t
+        join accounts a on a.id = t.account_id
+        where t.household_id = ${householdId} and ${uncategorizedOutflow}
+          and t.date >= ${monthStart(from)} and t.date < ${monthStart(addMonths(to, 1))}
+        group by substr(t.date, 1, 7)
+      `)
+    : [];
   const out: CashFlowMonth[] = [];
   for (let m = from; m <= to; m = addMonths(m, 1)) {
     const income = rows.find((r) => r.month === m && r.isIncome)?.amount ?? 0;
-    const expenses = -(rows.find((r) => r.month === m && !r.isIncome)?.amount ?? 0);
+    const expenses =
+      -(rows.find((r) => r.month === m && !r.isIncome)?.amount ?? 0) +
+      (uncategorized.find((r) => r.month === m)?.amount ?? 0);
     out.push({ month: m, income, expenses, net: income - expenses });
   }
   return out;
 }
+
+/** Money leaving the budget without a category, which the category reports count as spending. */
+const uncategorizedOutflow = sql`${inFamilyBudget} and t.is_parent = 0 and t.category_id is null
+  and t.amount < 0 and t.transfer_id is null`;
 
 /**
  * Income and spending per category over a range of months, each largest first. Counts the same
@@ -129,7 +151,7 @@ export function cashFlow(db: DbOrTx, householdId: number, from: string, to: stri
 export function categoryBreakdown(db: DbOrTx, householdId: number, from: string, to: string): CategoryBreakdown {
   const range = sql`t.date >= ${monthStart(from)} and t.date < ${monthStart(addMonths(to, 1))}`;
   const rows = db.all<CategoryTotal & { isIncome: number }>(sql`
-    select c.id as categoryId, c.name as name, g.name as groupName, g.is_income as isIncome,
+    select c.id as categoryId, c.name as name, g.id as groupId, g.name as groupName, g.is_income as isIncome,
       sum(t.amount) as amount
     from transactions t
     join accounts a on a.id = t.account_id
@@ -151,11 +173,10 @@ export function categoryBreakdown(db: DbOrTx, householdId: number, from: string,
     select -sum(t.amount) as amount
     from transactions t
     join accounts a on a.id = t.account_id
-    where t.household_id = ${householdId} and ${inFamilyBudget} and t.is_parent = 0 and t.category_id is null
-      and t.amount < 0 and t.transfer_id is null and ${range}
+    where t.household_id = ${householdId} and ${uncategorizedOutflow} and ${range}
   `);
   if (uncategorized?.amount) {
-    expenses.push({ categoryId: null, name: "Uncategorized", groupName: "", amount: uncategorized.amount });
+    expenses.push({ categoryId: null, name: "Uncategorized", groupId: null, groupName: "", amount: uncategorized.amount });
   }
   const tidy = (list: CategoryTotal[]) => list.filter((r) => r.amount !== 0).sort((a, b) => b.amount - a.amount);
   return { income: tidy(income), expenses: tidy(expenses) };
@@ -198,9 +219,10 @@ export function yearComparison(db: DbOrTx, householdId: number, year: number, to
   add(then.income, true, "previous");
   add(then.expenses, false, "previous");
   const categories = [...merged.values()]
-    .map(({ categoryId, name, groupName, isIncome, current, previous }) => ({
+    .map(({ categoryId, name, groupId, groupName, isIncome, current, previous }) => ({
       categoryId,
       name,
+      groupId,
       groupName,
       isIncome,
       current,
@@ -220,8 +242,9 @@ export function yearComparison(db: DbOrTx, householdId: number, year: number, to
     year,
     through,
     firstYear,
-    current: cashFlow(db, householdId, `${year}-01`, through),
-    previous: cashFlow(db, householdId, `${prior}-01`, `${prior}-12`),
+    // Uncategorized spending counts, as in the category rows, so the totals agree with them.
+    current: cashFlow(db, householdId, `${year}-01`, through, { uncategorized: true }),
+    previous: cashFlow(db, householdId, `${prior}-01`, `${prior}-12`, { uncategorized: true }),
     categories,
   };
 }

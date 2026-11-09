@@ -74,6 +74,7 @@ function Segmented<T extends string>(props: {
           key={key}
           ref={props.value === key ? active : undefined}
           className={props.value === key ? "active" : undefined}
+          aria-pressed={props.value === key}
           onClick={() => props.onChange(key)}
         >
           {label}
@@ -296,10 +297,15 @@ function OverTimeReport() {
 
 /** Rows grouped by category group, groups largest first, each with its subtotal. */
 function grouped(rows: CategoryTotal[]) {
-  const groups = new Map<string, CategoryTotal[]>();
-  for (const r of rows) groups.set(r.groupName, [...(groups.get(r.groupName) ?? []), r]);
+  const groups = new Map<number | null, CategoryTotal[]>();
+  for (const r of rows) groups.set(r.groupId, [...(groups.get(r.groupId) ?? []), r]);
   return [...groups.entries()]
-    .map(([name, list]) => ({ name: name || "Uncategorized", rows: list, total: sum(list, (x) => x.amount) }))
+    .map(([id, list]) => ({
+      id,
+      name: list[0]!.groupName || "Uncategorized",
+      rows: list,
+      total: sum(list, (x) => x.amount),
+    }))
     .sort((a, b) => b.total - a.total);
 }
 
@@ -312,7 +318,7 @@ function StatementSection(props: { title: string; rows: CategoryTotal[]; total: 
         <td className="amount muted" />
       </tr>
       {grouped(props.rows).map((g) => (
-        <StatementGroup key={g.name} group={g} total={props.total} />
+        <StatementGroup key={g.id ?? "none"} group={g} total={props.total} />
       ))}
     </>
   );
@@ -344,7 +350,13 @@ function BreakdownReport() {
   const r = useMonthRange("ytd");
   const q = useQuery({
     queryKey: ["reports", "breakdown", r.from, r.to],
-    queryFn: () => api.get<CategoryBreakdown>(`/reports/breakdown?from=${r.from}&to=${r.to}`),
+    // The period travels with its figures: while a new period loads, the old figures stay up
+    // under their own heading rather than the new one's.
+    queryFn: async () => ({
+      from: r.from,
+      to: r.to,
+      ...(await api.get<CategoryBreakdown>(`/reports/breakdown?from=${r.from}&to=${r.to}`)),
+    }),
     placeholderData: keepPreviousData,
   });
   const income = q.data?.income ?? [];
@@ -352,13 +364,16 @@ function BreakdownReport() {
   const totalIncome = sum(income, (x) => x.amount);
   const totalSpending = sum(expenses, (x) => x.amount);
   const net = totalIncome - totalSpending;
-  const months = monthsBetween(r.from, r.to);
+  const from = q.data?.from ?? r.from;
+  const to = q.data?.to ?? r.to;
+  const months = monthsBetween(from, to);
   return (
     <>
       {q.error && <p className="error-text">{q.error.message}</p>}
       <div className="card-head wrap">
-        <p className="muted">
-          {r.from === r.to ? formatMonth(r.from) : `${formatMonth(r.from)} – ${formatMonth(r.to)}`}
+        <p className="muted" aria-live="polite">
+          {from === to ? formatMonth(from) : `${formatMonth(from)} – ${formatMonth(to)}`}
+          {q.isPlaceholderData && " · loading…"}
         </p>
         <RangePicker value={r.preset} options={r.options} onChange={r.setPreset} />
       </div>
@@ -484,8 +499,9 @@ function CompareReport() {
     placeholderData: keepPreviousData,
   });
   const data = q.data;
-  const firstYear = Math.min(data?.firstYear ?? latest, latest);
-  const years = Array.from({ length: Math.min(latest - firstYear, 20) + 1 }, (_, i) => latest - i);
+  // The same earliest year the server accepts: twenty before the calendar year.
+  const earliest = Math.max(data?.firstYear ?? latest, Number(now.slice(0, 4)) - 20);
+  const years = Array.from({ length: Math.max(latest - earliest, 0) + 1 }, (_, i) => latest - i);
   const throughMonth = data ? Number(data.through.slice(5)) : 12;
   const span = throughMonth === 12 ? "Full year" : `Jan–${SHORT_MONTHS[throughMonth - 1]}`;
   const prevMatching = data?.previous.slice(0, throughMonth) ?? [];
@@ -680,7 +696,7 @@ function BudgetReport() {
 export function ReportsPage() {
   const [params, setParams] = useSearchParams();
   const raw = params.get("tab") ?? "";
-  const tab = (TABS.find(([k]) => k === raw)?.[0] ?? TAB_ALIASES[raw] ?? "net-worth") as Tab;
+  const tab = (TABS.find(([k]) => k === raw)?.[0] ?? (Object.hasOwn(TAB_ALIASES, raw) ? TAB_ALIASES[raw] : undefined) ?? "net-worth") as Tab;
   return (
     <>
       <header className="page-header budget-header">

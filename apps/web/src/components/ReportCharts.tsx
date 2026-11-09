@@ -327,6 +327,7 @@ export function CategoryBars(props: { rows: CategoryTotal[]; limit?: number; col
         {
           categoryId: -1,
           name: `${rest.length} more categories`,
+          groupId: null,
           groupName: "",
           amount: rest.reduce((s, r) => s + r.amount, 0),
         },
