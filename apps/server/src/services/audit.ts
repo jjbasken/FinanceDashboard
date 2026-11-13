@@ -507,7 +507,11 @@ export const auditMiddleware = createMiddleware<AppEnv>(async (c, next) => {
   let alongside: Affected[] = [];
   let why = "";
   if (t.entity === "account" && t.action === "delete" && t.id !== null) {
-    alongside = affected(db, householdId, "transaction", and(eq(transactions.accountId, t.id), isNull(transactions.parentId)));
+    alongside = [
+      ...affected(db, householdId, "transaction", and(eq(transactions.accountId, t.id), isNull(transactions.parentId))),
+      // Its investment transactions (with any vesting schedules) go with it too.
+      ...affected(db, householdId, "investment", eq(investmentTxns.accountId, t.id)),
+    ];
     why = "with its account";
   } else if (t.action === "undo" && t.id !== null) {
     alongside = importedRows(db, householdId, t.id);

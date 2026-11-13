@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { Account, HoldingsSummary, InvestmentTxn, Security, Transaction, ValuePoint } from "@fd/shared";
+import type { Account, AuditEntry, HoldingsSummary, Page, InvestmentTxn, Security, Transaction, ValuePoint } from "@fd/shared";
 import { createSession } from "../src/auth/sessions";
 import { users } from "../src/db/schema";
 import { SESSION_COOKIE } from "../src/middleware";
@@ -396,6 +396,35 @@ describe("vesting", () => {
       nextVest: { date: "2090-02-01", shares: 99 * SH },
     });
     expect((await holdings()).vesting.map((v) => [v.date, v.shares])).toEqual([["2090-02-01", 99 * SH]]);
+  });
+
+  test("a future sellout ends the schedule, so a later buy can't bring it back", async () => {
+    const { txn, position, holdings } = await setUp();
+    const one = [{ date: "2090-02-01", shares: 100 * SH }];
+    await txn({ date: "2026-01-05", action: "buy", shares: 100 * SH, price: $(20), vesting: one });
+    await txn({ date: "2091-01-01", action: "sell", shares: 100 * SH, price: $(20) });
+    expect((await holdings()).vesting).toEqual([]);
+    await txn({ date: "2092-01-01", action: "buy", shares: 100 * SH, price: $(20) });
+    expect(await position()).toMatchObject({ shares: 100 * SH, unvestedShares: 0, nextVest: null });
+    expect((await holdings()).vesting).toEqual([]);
+  });
+
+  test("a future split is shown in the vests ahead of it, like in the share count", async () => {
+    const { txn, position } = await setUp();
+    const one = [{ date: "2090-02-01", shares: 100 * SH }];
+    await txn({ date: "2026-01-05", action: "buy", shares: 100 * SH, price: $(20), vesting: one });
+    await txn({ date: "2091-01-01", action: "split", splitNew: 2, splitOld: 1 });
+    expect(await position()).toMatchObject({ shares: 200 * SH, unvestedShares: 200 * SH });
+  });
+
+  test("deleting the account records each investment and its schedule in Activity", async () => {
+    const { c, brokerage, txn } = await setUp();
+    const grant = await txn({ date: "2026-01-05", action: "transfer_in", shares: 100 * SH, amount: 0, vesting: schedule });
+    expect((await c.delete(`/api/accounts/${brokerage.id}`)).status).toBe(200);
+    const entries = ((await c.get("/api/admin/audit?entity=investment")).json as Page<AuditEntry>).items;
+    const deleted = entries.find((e) => e.action === "delete" && e.entityId === grant.id);
+    expect(deleted?.summary).toMatch(/with its account/);
+    expect((deleted!.details?.before as { vesting?: unknown }).vesting).toEqual(schedule);
   });
 
   test("a vest that a reverse split rounds to nothing is dropped", async () => {

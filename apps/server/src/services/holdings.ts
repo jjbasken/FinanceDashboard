@@ -125,10 +125,9 @@ type PendingVest = VestingTranche & { investmentTxnId: number };
 const byDate = (x: { date: string }, y: { date: string }) => (x.date < y.date ? -1 : x.date > y.date ? 1 : 0);
 
 /**
- * Cut the vests after `date` (the shares still unvested then) down so they never add up to
- * more than the `held` shares, reducing the vests that would come last first. Vests on or
- * before `date` had already vested by then and are kept as they are: `date` may be later
- * than today. Empty vests are dropped. Returns the vests, oldest first.
+ * Cut the vests after `date` down so they never add up to more than the `held` shares,
+ * reducing the vests that would come last first. Vests on or before `date` are kept as they
+ * are. Empty vests are dropped. Returns the vests, oldest first.
  */
 function fitVests(list: PendingVest[], date: string, held: number): PendingVest[] {
   const sorted = [...list].sort(byDate);
@@ -149,8 +148,10 @@ export function getHoldings(db: DbOrTx, viewer: Actor, today: string): HoldingsS
     txns.filter((t) => VESTING_ACTIONS.includes(t.action as never)).map((t) => t.id),
   );
   const positions = new Map<string, Position>();
-  // Vest dates still to come for each holding, scaled by the splits that happen before them and
-  // reduced when shares are sold or moved out.
+  // Vest dates still to come for each holding, scaled by splits and reduced when shares are sold
+  // or moved out. Holdings include trades dated after today, so a trade affects the vests after
+  // its date or after today, whichever is earlier: a vest still ahead of today can't count more
+  // shares than the position the page shows, and a future sellout ends the schedule for good.
   const pending = new Map<string, PendingVest[]>();
   for (const t of txns) {
     const key = `${t.accountId}:${t.securityId}`;
@@ -166,13 +167,14 @@ export function getHoldings(db: DbOrTx, viewer: Actor, today: string): HoldingsS
     }
     const list = pending.get(key);
     if (!list?.length) continue;
+    const asOf = t.date < today ? t.date : today;
     if (t.action === "split" && before > 0) {
       for (const v of list) {
-        if (v.date > t.date) v.shares = Math.round((v.shares * p.shares) / before);
+        if (v.date > asOf) v.shares = Math.round((v.shares * p.shares) / before);
       }
     }
     if (t.action === "split" || t.action === "sell" || t.action === "transfer_out") {
-      pending.set(key, fitVests(list, t.date, p.shares));
+      pending.set(key, fitVests(list, asOf, p.shares));
     }
   }
   const series = loadPriceSeries(db, householdId, txns);
