@@ -506,6 +506,37 @@ describe("vesting", () => {
     });
   });
 
+  test("an imported stock split of shares already held doubles the vests too", async () => {
+    const { db, txn, position, holdings, brokerage, vti } = await setUp();
+    // GnuCash imports opening shares and stock splits alike: a zero-cost change with no ratio.
+    const imported = (date: string, shares: number) =>
+      db.insert(investmentTxns)
+        .values({
+          householdId: db.select().from(users).get()!.householdId,
+          accountId: brokerage.id,
+          securityId: vti.id,
+          date,
+          action: "split",
+          shares,
+        })
+        .run();
+    imported("2026-01-02", 100 * SH);
+    await txn({
+      date: "2026-01-05",
+      action: "buy",
+      shares: 100 * SH,
+      price: $(20),
+      vesting: [{ date: "2090-02-01", shares: 100 * SH }],
+    });
+    imported("2026-03-01", 200 * SH); // 2 for 1
+    expect(await position()).toMatchObject({
+      shares: 400 * SH,
+      unvestedShares: 200 * SH,
+      nextVest: { date: "2090-02-01", shares: 200 * SH },
+    });
+    expect((await holdings()).vesting.map((v) => v.shares)).toEqual([200 * SH]);
+  });
+
   test("a vest that a reverse split rounds to nothing is dropped", async () => {
     const { txn, position, holdings } = await setUp();
     await txn({

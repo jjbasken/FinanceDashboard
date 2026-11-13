@@ -15,8 +15,6 @@ import { listAccounts, type Actor } from "./ledger";
 
 type TxnRow = {
   id: number;
-  /** Set for splits entered here (with a ratio); null for imported ones. */
-  splitNew?: number | null;
   accountId: number;
   securityId: number;
   date: string;
@@ -31,7 +29,6 @@ export function loadTxns(db: DbOrTx, householdId: number, viewerId?: number): Tx
   return db
     .select({
       id: investmentTxns.id,
-      splitNew: investmentTxns.splitNew,
       accountId: investmentTxns.accountId,
       securityId: investmentTxns.securityId,
       date: investmentTxns.date,
@@ -199,12 +196,12 @@ export function getHoldings(db: DbOrTx, viewer: Actor, today: string): HoldingsS
     p.apply(t);
     positions.set(key, p);
     let list = lots.get(key) ?? [];
-    if (t.action === "split" && t.splitNew && before > 0) {
-      list = splitLots(list, before, p.shares);
-    } else if (t.action === "split") {
-      // An imported split has no ratio and can be any zero-cost share change (GnuCash records
-      // opening shares this way), so it adds vested shares or removes shares like a sale. The
-      // reconciliation below does exactly that.
+    if (t.action === "split") {
+      // A split of shares already held scales every lot, whether entered here or imported. An
+      // imported "split" (GnuCash's zero-cost share change) can also start a holding, as opening
+      // shares do: there's nothing to scale then, and the reconciliation below adds the shares as
+      // a lot vested on its date.
+      if (before > 0) list = splitLots(list, before, p.shares);
     } else if (t.shares > 0) {
       const schedule = schedules.get(t.id) ?? [];
       const scheduled = schedule.reduce((sum, v) => sum + v.shares, 0);
