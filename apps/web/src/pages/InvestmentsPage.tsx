@@ -9,7 +9,13 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { api } from "../api";
-import { HoldingsTable, InvestmentTxnTable, percent, useSecurityColors } from "../components/HoldingsTables";
+import {
+  HoldingsTable,
+  InvestmentTxnTable,
+  percent,
+  useSecurityColors,
+  VestingTable,
+} from "../components/HoldingsTables";
 import { AllocationBar, NEUTRAL, NEUTRAL_LIGHT, ValueChart, type Slice } from "../components/InvestmentCharts";
 import { InvestmentTxnDialog, SecurityDialog } from "../components/InvestmentDialogs";
 import { formatDate, useAccounts, useHoldings, useInvestmentTxns, useSecurities, useValueHistory } from "../ledger";
@@ -147,7 +153,15 @@ export function InvestmentsPage() {
                   tone={summary.totals.gain >= 0 ? "positive" : "negative"}
                 />
               )}
-              <Tile label="Holdings" value={formatCents(summary.totals.holdingsValue)} />
+              <Tile
+                label="Holdings"
+                value={formatCents(summary.totals.holdingsValue)}
+                detail={
+                  summary.totals.unvestedValue
+                    ? `Includes ${formatCents(summary.totals.unvestedValue)} not vested yet`
+                    : undefined
+                }
+              />
               <Tile label="Cash" value={formatCents(summary.totals.cash)} />
             </div>
 
@@ -184,6 +198,17 @@ export function InvestmentsPage() {
                 onFilter={setFilter}
               />
             </section>
+
+            {summary.vesting.length > 0 && (
+              <section className="card wide">
+                <h2>Upcoming vesting</h2>
+                <VestingTable
+                  vests={summary.vesting}
+                  accountName={(id) => accountName.get(id)}
+                  colorOf={colorOf}
+                />
+              </section>
+            )}
           </>
         )}
 

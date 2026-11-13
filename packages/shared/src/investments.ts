@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { addMonths } from "./budget";
 import { centsSchema, dateSchema } from "./ledger";
 import { getDisplayCurrency, SHARE_SCALE } from "./money";
 
@@ -110,6 +111,43 @@ export type UpdateSecurityInput = z.infer<typeof updateSecurityInput>;
 
 export const manualPriceInput = z.object({ date: dateSchema, price: micro.min(1, "Enter a price") });
 
+/** Actions whose shares can vest over time (a purchase or a grant moved in). */
+export const VESTING_ACTIONS: InvestmentAction[] = ["buy", "transfer_in"];
+
+/** One vest date: on `date`, `shares` (micro-shares) of the purchase become vested. */
+export const vestingTrancheInput = z.object({ date: dateSchema, shares: micro.min(1, "Enter the shares that vest") });
+export type VestingTranche = z.infer<typeof vestingTrancheInput>;
+
+/** A date `n` months later; a day past the end of a shorter month moves to its last day. */
+export function addMonthsToDate(date: string, n: number): string {
+  const month = addMonths(date.slice(0, 7), n);
+  const [y, m] = month.split("-").map(Number);
+  const last = new Date(Date.UTC(y!, m!, 0)).getUTCDate();
+  return `${month}-${String(Math.min(Number(date.slice(8, 10)), last)).padStart(2, "0")}`;
+}
+
+/**
+ * Split `total` micro-shares into `count` equal vests, `everyMonths` apart from `firstDate`.
+ * Days past the end of a shorter month move to its last day; the last vest takes any remainder.
+ */
+export function evenVestingSchedule(
+  total: number,
+  count: number,
+  firstDate: string,
+  everyMonths: number,
+): VestingTranche[] {
+  if (total <= 0 || count < 1) return [];
+  const each = Math.floor(total / count);
+  const out: VestingTranche[] = [];
+  for (let i = 0; i < count; i++) {
+    out.push({
+      date: addMonthsToDate(firstDate, i * everyMonths),
+      shares: i === count - 1 ? total - each * (count - 1) : each,
+    });
+  }
+  return out.filter((t) => t.shares > 0);
+}
+
 /**
  * One investment transaction. What's required depends on the action:
  * - buy/sell: shares, price; optional fees and an exact cash `amount` from the statement.
@@ -130,6 +168,11 @@ export const investmentTxnInput = z.object({
   splitNew: z.number().int().positive().max(1_000_000).optional(),
   splitOld: z.number().int().positive().max(1_000_000).optional(),
   notes: z.string().trim().max(1000).optional(),
+  /**
+   * For a buy or shares moved in: when the shares vest. Shares not listed vest on the
+   * transaction date. On an update, leaving it out keeps the existing schedule; [] clears it.
+   */
+  vesting: z.array(vestingTrancheInput).max(240, "That's too many vest dates").optional(),
 });
 export type InvestmentTxnInput = z.infer<typeof investmentTxnInput>;
 
@@ -171,6 +214,8 @@ export interface InvestmentTxn {
   /** For splits entered here, the ratio (e.g. 2 for 1). Null for imported splits. */
   splitNew: number | null;
   splitOld: number | null;
+  /** Vest dates, oldest first, in micro-shares as entered (before any later splits). Empty if none. */
+  vesting: VestingTranche[];
 }
 
 export interface Holding {
@@ -190,6 +235,22 @@ export interface Holding {
   gain: number;
   /** False when some shares came in with no cost basis (e.g. opening shares from a statement). */
   costKnown: boolean;
+  /** Micro-shares that haven't vested yet (included in `shares` and `value`). */
+  unvestedShares: number;
+  /** The next vest date and its micro-shares, or null when nothing is left to vest. */
+  nextVest: VestingTranche | null;
+}
+
+/** A vest date still to come, with shares adjusted for any splits since the purchase. */
+export interface UpcomingVest {
+  investmentTxnId: number;
+  accountId: number;
+  securityId: number;
+  symbol: string;
+  date: string;
+  shares: number;
+  /** At the latest price, in cents (0 without a price). */
+  value: number;
 }
 
 export interface AccountHoldings {
@@ -204,7 +265,18 @@ export interface AccountHoldings {
 export interface HoldingsSummary {
   accounts: AccountHoldings[];
   /** cost and gain cover only holdings whose cost is known; costUnknownValue is the value of the rest. */
-  totals: { cash: number; value: number; cost: number; gain: number; holdingsValue: number; costUnknownValue: number };
+  totals: {
+    cash: number;
+    value: number;
+    cost: number;
+    gain: number;
+    holdingsValue: number;
+    costUnknownValue: number;
+    /** Value of shares not vested yet (already counted in holdingsValue and value). */
+    unvestedValue: number;
+  };
+  /** Vest dates still to come, soonest first. */
+  vesting: UpcomingVest[];
 }
 
 export interface ValuePoint {

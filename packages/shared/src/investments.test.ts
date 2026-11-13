@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  evenVestingSchedule,
   parsePrice,
   parseShares,
   priceFromValue,
@@ -42,4 +43,20 @@ test("priceFromValue", () => {
   expect(priceFromValue(-65_000, -2_000_000)).toBe(325_000_000);
   expect(priceFromValue(100, 3_000_000)).toBe(333_333);
   expect(priceFromValue(100, 0)).toBe(0);
+});
+
+test("evenVestingSchedule splits shares into equal vests, months apart", () => {
+  expect(evenVestingSchedule(100_000_000, 4, "2027-12-31", 12)).toEqual([
+    { date: "2027-12-31", shares: 25_000_000 },
+    { date: "2028-12-31", shares: 25_000_000 },
+    { date: "2029-12-31", shares: 25_000_000 },
+    { date: "2030-12-31", shares: 25_000_000 },
+  ]);
+  // The last vest takes the remainder; a 31st falls back to a shorter month's last day.
+  expect(evenVestingSchedule(10_000_000, 3, "2027-01-31", 1)).toEqual([
+    { date: "2027-01-31", shares: 3_333_333 },
+    { date: "2027-02-28", shares: 3_333_333 },
+    { date: "2027-03-31", shares: 3_333_334 },
+  ]);
+  expect(evenVestingSchedule(0, 4, "2027-01-01", 12)).toEqual([]);
 });

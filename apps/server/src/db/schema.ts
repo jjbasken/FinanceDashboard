@@ -438,6 +438,21 @@ export const investmentTxns = sqliteTable(
   ],
 );
 
+/** When the shares of a buy (or shares moved in) vest; shares not listed vest on the purchase date. */
+export const vestingTranches = sqliteTable(
+  "vesting_tranches",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    investmentTxnId: integer("investment_txn_id")
+      .notNull()
+      .references(() => investmentTxns.id, { onDelete: "cascade" }),
+    date: text("date").notNull(),
+    /** Micro-shares, as entered (before any later splits). */
+    shares: integer("shares").notNull(),
+  },
+  (t) => [index("vesting_tranches_txn_idx").on(t.investmentTxnId, t.date)],
+);
+
 /** Daily closing prices in micro-dollars. */
 export const prices = sqliteTable(
   "prices",

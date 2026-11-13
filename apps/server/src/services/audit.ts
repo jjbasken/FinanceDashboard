@@ -19,6 +19,7 @@ import {
   securities,
   transactions,
   users,
+  vestingTranches,
 } from "../db/schema";
 
 type Row = Record<string, unknown>;
@@ -82,7 +83,18 @@ function loadRow(db: DbOrTx, householdId: number, entity: AuditEntity, id: numbe
   const cols = table as unknown as { id: SQLiteColumn; householdId: SQLiteColumn };
   const where =
     entity === "household" ? eq(cols.id, householdId) : and(eq(cols.id, id), eq(cols.householdId, householdId));
-  return clean(db.select().from(table).where(where).get() as Row | undefined);
+  const row = clean(db.select().from(table).where(where).get() as Row | undefined);
+  // A purchase's vest dates live in their own table; keep them with the row so changes show.
+  if (row && entity === "investment") {
+    const vesting = db
+      .select({ date: vestingTranches.date, shares: vestingTranches.shares })
+      .from(vestingTranches)
+      .where(eq(vestingTranches.investmentTxnId, id))
+      .orderBy(vestingTranches.date, vestingTranches.id)
+      .all();
+    if (vesting.length) row.vesting = vesting;
+  }
+  return row;
 }
 
 function loadBudget(db: DbOrTx, householdId: number, categoryId: number, month: string): Row {

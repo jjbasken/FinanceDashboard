@@ -1,10 +1,21 @@
-import { addMonths, sharesValueCents, type AccountHoldings, type HoldingsSummary, type ValuePoint } from "@fd/shared";
+import {
+  addMonths,
+  sharesValueCents,
+  VESTING_ACTIONS,
+  type AccountHoldings,
+  type HoldingsSummary,
+  type UpcomingVest,
+  type ValuePoint,
+  type VestingTranche,
+} from "@fd/shared";
 import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
 import type { DbOrTx } from "../db";
 import { accounts, investmentTxns, prices, securities, transactions } from "../db/schema";
+import { loadVesting } from "./investments";
 import { listAccounts, type Actor } from "./ledger";
 
 type TxnRow = {
+  id: number;
   accountId: number;
   securityId: number;
   date: string;
@@ -18,6 +29,7 @@ type TxnRow = {
 export function loadTxns(db: DbOrTx, householdId: number, viewerId?: number): TxnRow[] {
   return db
     .select({
+      id: investmentTxns.id,
       accountId: investmentTxns.accountId,
       securityId: investmentTxns.securityId,
       date: investmentTxns.date,
@@ -108,15 +120,35 @@ export function priceOn(series: { date: string; close: number }[] | undefined, d
   return found < 0 ? null : series[found]!;
 }
 
-export function getHoldings(db: DbOrTx, viewer: Actor): HoldingsSummary {
+type PendingVest = VestingTranche & { investmentTxnId: number };
+
+export function getHoldings(db: DbOrTx, viewer: Actor, today: string): HoldingsSummary {
   const { householdId } = viewer;
   const txns = loadTxns(db, householdId, viewer.userId);
+  const schedules = loadVesting(
+    db,
+    txns.filter((t) => VESTING_ACTIONS.includes(t.action as never)).map((t) => t.id),
+  );
   const positions = new Map<string, Position>();
+  // Vest dates still to come for each holding, scaled by the splits that happen before them.
+  const pending = new Map<string, PendingVest[]>();
   for (const t of txns) {
     const key = `${t.accountId}:${t.securityId}`;
     const p = positions.get(key) ?? new Position();
+    const before = p.shares;
     p.apply(t);
     positions.set(key, p);
+    const schedule = schedules.get(t.id);
+    if (schedule) {
+      const list = pending.get(key) ?? [];
+      list.push(...schedule.map((v) => ({ ...v, investmentTxnId: t.id })));
+      pending.set(key, list);
+    }
+    if (t.action === "split" && before > 0) {
+      for (const v of pending.get(key) ?? []) {
+        if (v.date > t.date) v.shares = Math.round((v.shares * p.shares) / before);
+      }
+    }
   }
   const series = loadPriceSeries(db, householdId, txns);
   const secs = new Map(
@@ -132,6 +164,8 @@ export function getHoldings(db: DbOrTx, viewer: Actor): HoldingsSummary {
   const accts = listAccounts(db, viewer).filter(
     (a) => !a.closed && (a.type === "investment" || withHoldings.has(a.id)),
   );
+  const upcoming: UpcomingVest[] = [];
+  let unvestedValue = 0;
   const result: AccountHoldings[] = accts.map((a) => {
     const holdings = [...positions]
       .filter(([key, p]) => key.startsWith(`${a.id}:`) && p.shares !== 0)
@@ -140,6 +174,25 @@ export function getHoldings(db: DbOrTx, viewer: Actor): HoldingsSummary {
         const s = secs.get(securityId)!;
         const last = series.get(securityId)?.at(-1) ?? null;
         const value = last ? sharesValueCents(p.shares, last.close) : 0;
+        const future = (pending.get(key) ?? []).filter((v) => v.date > today);
+        // Shares sold or moved out can't leave more unvested than is held.
+        const unvestedShares = Math.min(
+          p.shares,
+          future.reduce((sum, v) => sum + v.shares, 0),
+        );
+        if (last) unvestedValue += sharesValueCents(unvestedShares, last.close);
+        for (const v of unvestedShares > 0 ? future : []) {
+          upcoming.push({
+            investmentTxnId: v.investmentTxnId,
+            accountId: a.id,
+            securityId,
+            symbol: s.symbol,
+            date: v.date,
+            shares: v.shares,
+            value: last ? sharesValueCents(v.shares, last.close) : 0,
+          });
+        }
+        const next = unvestedShares > 0 ? future.sort((x, y) => (x.date < y.date ? -1 : 1))[0] : undefined;
         return {
           securityId,
           symbol: s.symbol,
@@ -152,6 +205,8 @@ export function getHoldings(db: DbOrTx, viewer: Actor): HoldingsSummary {
           cost: p.cost,
           gain: value - p.cost,
           costKnown: p.costKnown,
+          unvestedShares,
+          nextVest: next ? { date: next.date, shares: next.shares } : null,
         };
       })
       .sort((x, y) => y.value - x.value);
@@ -175,7 +230,9 @@ export function getHoldings(db: DbOrTx, viewer: Actor): HoldingsSummary {
       cost,
       gain,
       costUnknownValue: holdingsValue - known.reduce((s, h) => s + h.value, 0),
+      unvestedValue,
     },
+    vesting: upcoming.sort((x, y) => (x.date < y.date ? -1 : x.date > y.date ? 1 : x.symbol.localeCompare(y.symbol))),
   };
 }
 

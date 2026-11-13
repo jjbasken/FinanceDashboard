@@ -113,6 +113,13 @@
       "when": 1792626033877,
       "tag": "0015_budget_only_account",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1794600332733,
+      "tag": "0016_vesting",
+      "breakpoints": true
     }
   ]
 }

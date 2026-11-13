@@ -317,6 +317,87 @@ describe("prices", () => {
   });
 });
 
+describe("vesting", () => {
+  // One vest in the past and three far in the future, so "today" doesn't matter.
+  const schedule = [
+    { date: "2026-02-01", shares: 25 * SH },
+    { date: "2090-02-01", shares: 25 * SH },
+    { date: "2091-02-01", shares: 25 * SH },
+    { date: "2092-02-01", shares: 25 * SH },
+  ];
+
+  test("a buy with a schedule shows unvested shares, the next vest and upcoming vests", async () => {
+    const { c, txn, holdings, position } = await setUp();
+    const buy = await txn({ date: "2026-01-05", action: "buy", shares: 100 * SH, price: $(20), vesting: schedule });
+    const p = (await position())!;
+    expect(p).toMatchObject({ shares: 100 * SH, value: 200_000, unvestedShares: 75 * SH });
+    expect(p.nextVest).toEqual({ date: "2090-02-01", shares: 25 * SH });
+    const summary = await holdings();
+    expect(summary.totals.unvestedValue).toBe(150_000);
+    expect(summary.totals.value).toBe(1_000_000); // unvested shares still count in the total
+    expect(summary.vesting.map((v) => [v.date, v.shares, v.value])).toEqual([
+      ["2090-02-01", 25 * SH, 50_000],
+      ["2091-02-01", 25 * SH, 50_000],
+      ["2092-02-01", 25 * SH, 50_000],
+    ]);
+    expect(summary.vesting[0]).toMatchObject({ investmentTxnId: buy.id, symbol: "VTI" });
+    const [listed] = (await c.get("/api/investments/transactions")).json as InvestmentTxn[];
+    expect(listed!.vesting).toEqual(schedule);
+  });
+
+  test("splits after the purchase scale the vests still to come", async () => {
+    const { txn, position } = await setUp();
+    await txn({ date: "2026-01-05", action: "buy", shares: 100 * SH, price: $(20), vesting: schedule });
+    await txn({ date: "2026-03-01", action: "split", splitNew: 2, splitOld: 1 });
+    expect(await position()).toMatchObject({
+      shares: 200 * SH,
+      unvestedShares: 150 * SH,
+      nextVest: { date: "2090-02-01", shares: 50 * SH },
+    });
+  });
+
+  test("unvested shares never exceed what's held", async () => {
+    const { txn, position } = await setUp();
+    await txn({ date: "2026-01-05", action: "buy", shares: 100 * SH, price: $(20), vesting: schedule });
+    await txn({ date: "2026-03-01", action: "sell", shares: 90 * SH, price: $(20) });
+    expect(await position()).toMatchObject({ shares: 10 * SH, unvestedShares: 10 * SH });
+  });
+
+  test("schedules are checked, kept on edits that leave them out, and cleared with []", async () => {
+    const { c, brokerage, vti, txn, position } = await setUp();
+    const base = { date: "2026-01-05", action: "buy", shares: 100 * SH, price: $(20) };
+    const tooMany = [...schedule, { date: "2093-02-01", shares: SH }];
+    expect((await txn({ ...base, vesting: tooMany }, 400)).error).toMatch(/more shares/);
+    expect((await txn({ ...base, vesting: [{ date: "2025-12-31", shares: SH }] }, 400)).error).toMatch(/before/);
+    expect((await txn({ ...base, action: "sell", vesting: schedule }, 400)).error).toMatch(/Only buys/);
+
+    const buy = await txn({ ...base, vesting: [schedule[3], schedule[1]] });
+    const put = (body: Record<string, unknown>) =>
+      c.request("PUT", `/api/investments/transactions/${buy.id}`, {
+        accountId: brokerage.id,
+        securityId: vti.id,
+        ...base,
+        ...body,
+      });
+    const listed = async () => ((await c.get("/api/investments/transactions")).json as InvestmentTxn[])[0]!.vesting;
+    expect((await listed()).map((v) => v.date)).toEqual(["2090-02-01", "2092-02-01"]); // sorted
+    expect((await put({ notes: "kept" })).status).toBe(200);
+    expect(await listed()).toHaveLength(2);
+    expect((await put({ shares: 40 * SH })).status).toBe(400); // fewer shares than scheduled
+    expect((await put({ vesting: [] })).status).toBe(200);
+    expect(await listed()).toEqual([]);
+    expect((await position())!.unvestedShares).toBe(0);
+  });
+
+  test("shares moved in can vest, and deleting the transaction removes its schedule", async () => {
+    const { c, txn, holdings } = await setUp();
+    const grant = await txn({ date: "2026-01-05", action: "transfer_in", shares: 100 * SH, amount: 0, vesting: schedule });
+    expect((await holdings()).vesting).toHaveLength(3);
+    expect((await c.delete(`/api/investments/transactions/${grant.id}`)).status).toBe(200);
+    expect((await holdings()).vesting).toEqual([]);
+  });
+});
+
 test("another household can't see or touch our investments", async () => {
   const { app, db, brokerage, vti, txn } = await setUp();
   const buy = await txn({ date: "2026-01-05", action: "buy", shares: 1 * SH, price: $(100) });

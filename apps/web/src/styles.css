@@ -1356,6 +1356,9 @@ select {
 }
 
 /* Investments */
+.block {
+  display: block;
+}
 .small {
   font-size: 12px;
 }
@@ -1568,6 +1571,56 @@ select {
 }
 .manual-price .btn {
   align-self: flex-start;
+}
+.vesting {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.vesting-fill {
+  display: grid;
+  grid-template-columns: 5rem 6rem minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+.vesting-fill input {
+  width: 100%;
+  min-width: 0;
+}
+.vesting-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.vesting-rows li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.vesting-rows input {
+  width: 100%;
+  min-width: 0;
+}
+.vesting-add {
+  align-self: flex-start;
+}
+@media (max-width: 540px) {
+  .vesting-fill {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .vesting-fill > :nth-child(n + 3) {
+    grid-column: 1 / -1;
+  }
+  .vesting-rows li {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) auto;
+    gap: 6px;
+  }
 }
 
 /* Reports */
