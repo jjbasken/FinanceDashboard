@@ -122,6 +122,9 @@ export function InvestmentTxnDialog(props: {
         return setError("The vest dates add up to more shares than this transaction has");
       }
       body.vesting = tranches;
+    } else if (t?.vesting.length) {
+      // Switching a scheduled purchase to another action removes its schedule, as the note says.
+      body.vesting = [];
     }
     if (action === "split") {
       body.splitNew = Number(splitNew);
@@ -256,6 +259,9 @@ export function InvestmentTxnDialog(props: {
         </small>
       )}
       {action === "reinvest" && <small className="muted">A dividend used to buy shares: no cash moves.</small>}
+      {!VESTING_ACTIONS.includes(action) && (t?.vesting.length ?? 0) > 0 && (
+        <small className="muted">Saving as {INVESTMENT_ACTION_LABELS[action].toLowerCase()} removes its vesting schedule.</small>
+      )}
       {VESTING_ACTIONS.includes(action) && (
         <VestingEditor
           on={vesting}

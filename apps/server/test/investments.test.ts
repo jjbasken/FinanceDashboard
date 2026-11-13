@@ -356,11 +356,46 @@ describe("vesting", () => {
     });
   });
 
-  test("unvested shares never exceed what's held", async () => {
-    const { txn, position } = await setUp();
+  test("selling shares reduces the vests that would come last, everywhere they show", async () => {
+    const { txn, position, holdings } = await setUp();
     await txn({ date: "2026-01-05", action: "buy", shares: 100 * SH, price: $(20), vesting: schedule });
     await txn({ date: "2026-03-01", action: "sell", shares: 90 * SH, price: $(20) });
-    expect(await position()).toMatchObject({ shares: 10 * SH, unvestedShares: 10 * SH });
+    expect(await position()).toMatchObject({
+      shares: 10 * SH,
+      unvestedShares: 10 * SH,
+      nextVest: { date: "2090-02-01", shares: 10 * SH },
+    });
+    const summary = await holdings();
+    expect(summary.totals.unvestedValue).toBe(20_000);
+    expect(summary.vesting.map((v) => [v.date, v.shares, v.value])).toEqual([["2090-02-01", 10 * SH, 20_000]]);
+  });
+
+  test("selling out ends a schedule, so a later buy without one is fully vested", async () => {
+    const { txn, position, holdings } = await setUp();
+    await txn({ date: "2026-01-05", action: "buy", shares: 100 * SH, price: $(20), vesting: schedule });
+    await txn({ date: "2026-03-01", action: "sell", shares: 100 * SH, price: $(20) });
+    await txn({ date: "2026-04-01", action: "buy", shares: 100 * SH, price: $(20) });
+    expect(await position()).toMatchObject({ shares: 100 * SH, unvestedShares: 0, nextVest: null });
+    expect((await holdings()).vesting).toEqual([]);
+  });
+
+  test("a vest that a reverse split rounds to nothing is dropped", async () => {
+    const { txn, position, holdings } = await setUp();
+    await txn({
+      date: "2026-01-05",
+      action: "buy",
+      shares: SH,
+      price: $(20),
+      vesting: [
+        { date: "2090-02-01", shares: 1 },
+        { date: "2091-02-01", shares: SH - 1 },
+      ],
+    });
+    await txn({ date: "2026-03-01", action: "split", splitNew: 1, splitOld: 3 });
+    const p = (await position())!;
+    expect(p.nextVest?.date).toBe("2091-02-01");
+    expect(p.unvestedShares).toBe(p.shares);
+    expect((await holdings()).vesting.map((v) => v.date)).toEqual(["2091-02-01"]);
   });
 
   test("schedules are checked, kept on edits that leave them out, and cleared with []", async () => {
@@ -384,6 +419,11 @@ describe("vesting", () => {
     expect((await put({ notes: "kept" })).status).toBe(200);
     expect(await listed()).toHaveLength(2);
     expect((await put({ shares: 40 * SH })).status).toBe(400); // fewer shares than scheduled
+    // Changing to an action that can't vest keeps nothing implicitly: the schedule must be cleared.
+    const reinvest = await put({ action: "reinvest" });
+    expect(reinvest.status).toBe(400);
+    expect(reinvest.json.error).toMatch(/vesting schedule/);
+    expect(await listed()).toHaveLength(2);
     expect((await put({ vesting: [] })).status).toBe(200);
     expect(await listed()).toEqual([]);
     expect((await position())!.unvestedShares).toBe(0);

@@ -122,6 +122,23 @@ export function priceOn(series: { date: string; close: number }[] | undefined, d
 
 type PendingVest = VestingTranche & { investmentTxnId: number };
 
+const byDate = (x: { date: string }, y: { date: string }) => (x.date < y.date ? -1 : x.date > y.date ? 1 : 0);
+
+/**
+ * The vests still to come after `date`, cut down so they never add up to more than the
+ * `held` shares: vests that would come last are reduced first. Empty vests are dropped.
+ */
+function vestsAfter(list: PendingVest[], date: string, held: number): PendingVest[] {
+  const future = list.filter((v) => v.date > date).sort(byDate);
+  let excess = future.reduce((sum, v) => sum + v.shares, 0) - Math.max(held, 0);
+  for (let i = future.length - 1; i >= 0 && excess > 0; i--) {
+    const cut = Math.min(future[i]!.shares, excess);
+    future[i]!.shares -= cut;
+    excess -= cut;
+  }
+  return future.filter((v) => v.shares > 0);
+}
+
 export function getHoldings(db: DbOrTx, viewer: Actor, today: string): HoldingsSummary {
   const { householdId } = viewer;
   const txns = loadTxns(db, householdId, viewer.userId);
@@ -130,7 +147,8 @@ export function getHoldings(db: DbOrTx, viewer: Actor, today: string): HoldingsS
     txns.filter((t) => VESTING_ACTIONS.includes(t.action as never)).map((t) => t.id),
   );
   const positions = new Map<string, Position>();
-  // Vest dates still to come for each holding, scaled by the splits that happen before them.
+  // Vest dates still to come for each holding, scaled by the splits that happen before them and
+  // reduced when shares are sold or moved out.
   const pending = new Map<string, PendingVest[]>();
   for (const t of txns) {
     const key = `${t.accountId}:${t.securityId}`;
@@ -144,10 +162,15 @@ export function getHoldings(db: DbOrTx, viewer: Actor, today: string): HoldingsS
       list.push(...schedule.map((v) => ({ ...v, investmentTxnId: t.id })));
       pending.set(key, list);
     }
+    const list = pending.get(key);
+    if (!list?.length) continue;
     if (t.action === "split" && before > 0) {
-      for (const v of pending.get(key) ?? []) {
+      for (const v of list) {
         if (v.date > t.date) v.shares = Math.round((v.shares * p.shares) / before);
       }
+    }
+    if (t.action === "split" || t.action === "sell" || t.action === "transfer_out") {
+      pending.set(key, vestsAfter(list, t.date, p.shares));
     }
   }
   const series = loadPriceSeries(db, householdId, txns);
@@ -174,14 +197,11 @@ export function getHoldings(db: DbOrTx, viewer: Actor, today: string): HoldingsS
         const s = secs.get(securityId)!;
         const last = series.get(securityId)?.at(-1) ?? null;
         const value = last ? sharesValueCents(p.shares, last.close) : 0;
-        const future = (pending.get(key) ?? []).filter((v) => v.date > today);
-        // Shares sold or moved out can't leave more unvested than is held.
-        const unvestedShares = Math.min(
-          p.shares,
-          future.reduce((sum, v) => sum + v.shares, 0),
-        );
+        // The same remaining vests feed the unvested total, the next vest and the upcoming list.
+        const future = vestsAfter(pending.get(key) ?? [], today, p.shares);
+        const unvestedShares = future.reduce((sum, v) => sum + v.shares, 0);
         if (last) unvestedValue += sharesValueCents(unvestedShares, last.close);
-        for (const v of unvestedShares > 0 ? future : []) {
+        for (const v of future) {
           upcoming.push({
             investmentTxnId: v.investmentTxnId,
             accountId: a.id,
@@ -192,7 +212,7 @@ export function getHoldings(db: DbOrTx, viewer: Actor, today: string): HoldingsS
             value: last ? sharesValueCents(v.shares, last.close) : 0,
           });
         }
-        const next = unvestedShares > 0 ? future.sort((x, y) => (x.date < y.date ? -1 : 1))[0] : undefined;
+        const next = future[0];
         return {
           securityId,
           symbol: s.symbol,

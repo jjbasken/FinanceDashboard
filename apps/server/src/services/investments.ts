@@ -150,12 +150,19 @@ export function loadVesting(db: DbOrTx, txnIds: number[]) {
 
 /**
  * The schedule to keep for a transaction: the one given, or (when it's left out on an update)
- * the existing one. Checks it fits the action, the date and the shares bought.
+ * the existing one. Checks it fits the action, the date and the shares bought. Changing a
+ * scheduled purchase to another action needs `vesting: []`, so a schedule is never dropped
+ * without being asked to.
  */
 function checkVesting(input: InvestmentTxnInput, existing: VestingTranche[]): VestingTranche[] {
-  const canVest = VESTING_ACTIONS.includes(input.action);
-  if (input.vesting?.length && !canVest) throw bad("Only buys and shares moved in can have a vesting schedule");
-  const tranches = canVest ? [...(input.vesting ?? existing)] : [];
+  const tranches = [...(input.vesting ?? existing)];
+  if (tranches.length && !VESTING_ACTIONS.includes(input.action)) {
+    throw bad(
+      input.vesting
+        ? "Only buys and shares moved in can have a vesting schedule"
+        : "Clear this transaction's vesting schedule (send vesting: []) before changing it to another kind of transaction",
+    );
+  }
   tranches.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   if (tranches[0] && tranches[0].date < input.date) throw bad("Vest dates can't be before the transaction date");
   const scheduled = tranches.reduce((sum, t) => sum + t.shares, 0);
