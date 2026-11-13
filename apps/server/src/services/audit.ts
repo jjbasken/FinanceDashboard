@@ -19,6 +19,7 @@ import {
   securities,
   transactions,
   users,
+  vestingTranches,
 } from "../db/schema";
 
 type Row = Record<string, unknown>;
@@ -82,7 +83,23 @@ function loadRow(db: DbOrTx, householdId: number, entity: AuditEntity, id: numbe
   const cols = table as unknown as { id: SQLiteColumn; householdId: SQLiteColumn };
   const where =
     entity === "household" ? eq(cols.id, householdId) : and(eq(cols.id, id), eq(cols.householdId, householdId));
-  return clean(db.select().from(table).where(where).get() as Row | undefined);
+  return withVesting(db, entity, id, clean(db.select().from(table).where(where).get() as Row | undefined));
+}
+
+/**
+ * A purchase's vest dates live in their own table; keep them with the investment row so edits
+ * show them changing and deletes (direct or by undoing an import) record what went.
+ */
+function withVesting(db: DbOrTx, entity: AuditEntity, id: number, row: Row | null): Row | null {
+  if (!row || entity !== "investment") return row;
+  const vesting = db
+    .select({ date: vestingTranches.date, shares: vestingTranches.shares })
+    .from(vestingTranches)
+    .where(eq(vestingTranches.investmentTxnId, id))
+    .orderBy(vestingTranches.date, vestingTranches.id)
+    .all();
+  if (vesting.length) row.vesting = vesting;
+  return row;
 }
 
 function loadBudget(db: DbOrTx, householdId: number, categoryId: number, month: string): Row {
@@ -245,7 +262,7 @@ function affected(db: DbOrTx, householdId: number, entity: AuditEntity, where: S
   const cols = table as unknown as { householdId: SQLiteColumn };
   const rows = db.select().from(table).where(and(eq(cols.householdId, householdId), where)).all() as Row[];
   return rows.map((raw) => {
-    const row = clean(raw)!;
+    const row = withVesting(db, entity, Number(raw.id), clean(raw))!;
     return {
       entity,
       id: Number(raw.id),
@@ -490,7 +507,11 @@ export const auditMiddleware = createMiddleware<AppEnv>(async (c, next) => {
   let alongside: Affected[] = [];
   let why = "";
   if (t.entity === "account" && t.action === "delete" && t.id !== null) {
-    alongside = affected(db, householdId, "transaction", and(eq(transactions.accountId, t.id), isNull(transactions.parentId)));
+    alongside = [
+      ...affected(db, householdId, "transaction", and(eq(transactions.accountId, t.id), isNull(transactions.parentId))),
+      // Its investment transactions (with any vesting schedules) go with it too.
+      ...affected(db, householdId, "investment", eq(investmentTxns.accountId, t.id)),
+    ];
     why = "with its account";
   } else if (t.action === "undo" && t.id !== null) {
     alongside = importedRows(db, householdId, t.id);

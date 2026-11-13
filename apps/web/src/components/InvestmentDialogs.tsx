@@ -4,7 +4,10 @@ import {
   INVESTMENT_ACTION_LABELS,
   SECURITY_TYPES,
   SECURITY_TYPE_LABELS,
+  VESTING_ACTIONS,
+  addMonthsToDate,
   centsToInput,
+  evenVestingSchedule,
   formatCents,
   parseCents,
   parsePrice,
@@ -18,11 +21,12 @@ import {
   type Security,
   type SecurityLookup,
   type SecurityType,
+  type VestingTranche,
 } from "@fd/shared";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../api";
-import { today, useLedgerMutation } from "../ledger";
+import { formatDate, today, useLedgerMutation } from "../ledger";
 import { Dialog } from "./Dialog";
 
 const NEEDS_SHARES: InvestmentAction[] = ["buy", "sell", "reinvest", "transfer_in", "transfer_out"];
@@ -53,6 +57,10 @@ export function InvestmentTxnDialog(props: {
   const [splitNew, setSplitNew] = useState(String(t?.splitNew ?? 2));
   const [splitOld, setSplitOld] = useState(String(t?.splitOld ?? 1));
   const [notes, setNotes] = useState(t?.action === "split" ? "" : (t?.notes ?? ""));
+  const [vests, setVests] = useState<VestRow[]>(
+    (t?.vesting ?? []).map((v) => ({ date: v.date, shares: sharesToString(v.shares) })),
+  );
+  const [vesting, setVesting] = useState(vests.length > 0);
   const [error, setError] = useState<string | null>(null);
 
   const save = useLedgerMutation((body: unknown) =>
@@ -100,6 +108,23 @@ export function InvestmentTxnDialog(props: {
         return setError(action === "dividend" ? "Enter the dividend amount" : "Enter the cost basis");
       }
       body.amount = cents;
+    }
+    if (VESTING_ACTIONS.includes(action)) {
+      const tranches: VestingTranche[] = [];
+      for (const v of vesting ? vests : []) {
+        const micro = parseShares(v.shares);
+        if (!v.date) return setError("Enter a date for each vest");
+        if (!micro) return setError("Enter the shares for each vest, like 25");
+        if (v.date < date) return setError("Vest dates can't be before the transaction date");
+        tranches.push({ date: v.date, shares: micro });
+      }
+      if (sharesMicro && tranches.reduce((sum, v) => sum + v.shares, 0) > sharesMicro) {
+        return setError("The vest dates add up to more shares than this transaction has");
+      }
+      body.vesting = tranches;
+    } else if (t?.vesting.length) {
+      // Switching a scheduled purchase to another action removes its schedule, as the note says.
+      body.vesting = [];
     }
     if (action === "split") {
       body.splitNew = Number(splitNew);
@@ -234,6 +259,20 @@ export function InvestmentTxnDialog(props: {
         </small>
       )}
       {action === "reinvest" && <small className="muted">A dividend used to buy shares: no cash moves.</small>}
+      {!VESTING_ACTIONS.includes(action) && (t?.vesting.length ?? 0) > 0 && (
+        <small className="muted">Saving as {INVESTMENT_ACTION_LABELS[action].toLowerCase()} removes its vesting schedule.</small>
+      )}
+      {VESTING_ACTIONS.includes(action) && (
+        <VestingEditor
+          on={vesting}
+          onToggle={setVesting}
+          rows={vests}
+          onChange={setVests}
+          txnDate={date}
+          totalShares={sharesMicro ?? null}
+          onError={setError}
+        />
+      )}
       <label className="field">
         <span>Notes</span>
         <input value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={1000} />
@@ -252,6 +291,128 @@ export function InvestmentTxnDialog(props: {
         </button>
       )}
     </Dialog>
+  );
+}
+
+interface VestRow {
+  date: string;
+  shares: string;
+}
+
+/**
+ * The vest dates of a buy or shares moved in. "Fill in" spreads the shares evenly (25% a year
+ * for 4 years, say); each date can then be adjusted, removed or added to by hand.
+ */
+function VestingEditor(props: {
+  on: boolean;
+  onToggle: (on: boolean) => void;
+  rows: VestRow[];
+  onChange: (rows: VestRow[]) => void;
+  txnDate: string;
+  totalShares: number | null;
+  onError: (message: string | null) => void;
+}) {
+  const [count, setCount] = useState("4");
+  const [every, setEvery] = useState("12");
+  const [first, setFirst] = useState("");
+  const firstDate = first || (props.txnDate ? addMonthsToDate(props.txnDate, 12) : "");
+
+  const scheduled = props.rows.reduce((sum, r) => sum + (parseShares(r.shares) ?? 0), 0);
+  const set = (i: number, patch: Partial<VestRow>) =>
+    props.onChange(props.rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+
+  function fill() {
+    const n = Number(count);
+    const months = Number(every);
+    if (!props.totalShares) return props.onError("Enter the number of shares first");
+    if (!Number.isInteger(n) || n < 1 || n > 240) return props.onError("Enter how many vests, like 4");
+    if (!Number.isInteger(months) || months < 1 || months > 120) return props.onError("Enter the months between vests, like 12");
+    if (!firstDate) return props.onError("Enter the first vest date");
+    props.onError(null);
+    props.onChange(
+      evenVestingSchedule(props.totalShares, n, firstDate, months).map((v) => ({
+        date: v.date,
+        shares: sharesToString(v.shares),
+      })),
+    );
+  }
+
+  return (
+    <div className="vesting">
+      <label className="checkbox">
+        <input type="checkbox" checked={props.on} onChange={(e) => props.onToggle(e.target.checked)} />
+        <span>
+          These shares vest over time <small className="muted">(company stock, RSUs, restricted shares)</small>
+        </span>
+      </label>
+      {props.on && (
+        <>
+          <div className="vesting-fill">
+            <label className="field">
+              <span>Vests</span>
+              <input value={count} onChange={(e) => setCount(e.target.value)} inputMode="numeric" />
+            </label>
+            <label className="field">
+              <span>Months apart</span>
+              <input value={every} onChange={(e) => setEvery(e.target.value)} inputMode="numeric" />
+            </label>
+            <label className="field">
+              <span>First vest</span>
+              <input type="date" value={firstDate} onChange={(e) => setFirst(e.target.value)} />
+            </label>
+            <button type="button" className="btn" onClick={fill}>
+              {props.rows.length ? "Fill in again" : "Fill in dates"}
+            </button>
+          </div>
+          {props.rows.length > 0 && (
+            <ol className="vesting-rows">
+              {props.rows.map((r, i) => (
+                <li key={i}>
+                  <input
+                    type="date"
+                    aria-label={`Vest ${i + 1} date`}
+                    value={r.date}
+                    onChange={(e) => set(i, { date: e.target.value })}
+                  />
+                  <input
+                    aria-label={`Vest ${i + 1} shares`}
+                    value={r.shares}
+                    onChange={(e) => set(i, { shares: e.target.value })}
+                    inputMode="decimal"
+                    placeholder="Shares"
+                  />
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={`Remove vest ${i + 1}`}
+                    onClick={() => props.onChange(props.rows.filter((_, j) => j !== i))}
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ol>
+          )}
+          <button
+            type="button"
+            className="link-button vesting-add"
+            onClick={() => props.onChange([...props.rows, { date: "", shares: "" }])}
+          >
+            Add a vest date
+          </button>
+          {props.rows.length > 0 && props.totalShares ? (
+            <small className={scheduled > props.totalShares ? "negative" : "muted"}>
+              {sharesToString(scheduled)} of {sharesToString(props.totalShares)} shares scheduled
+              {scheduled > props.totalShares
+                ? ", more than this transaction has."
+                : scheduled < props.totalShares
+                  ? `; the other ${sharesToString(props.totalShares - scheduled)} vest on ${props.txnDate ? formatDate(props.txnDate) : "the transaction date"}.`
+                  : "."}
+            </small>
+          ) : null}
+        </>
+      )}
+    </div>
   );
 }
 

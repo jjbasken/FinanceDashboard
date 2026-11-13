@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type {
   Account,
+  AuditEntry,
+  InvestmentTxn,
+  Page,
   FundImportResult,
   FundStatementPreview,
   HoldingsSummary,
@@ -176,5 +179,20 @@ describe("importing a 529 statement", () => {
     const a = await account();
     expect([a.balance, a.holdingsValue]).toEqual([0, 0]);
     expect((await c.get("/api/investments/securities")).json).toEqual([]);
+  });
+
+  test("undoing the import records the vesting schedule of each purchase it deletes", async () => {
+    const { c, preview, commit } = await setUp();
+    await commit(await preview());
+    const buy = ((await c.get("/api/investments/transactions")).json as InvestmentTxn[]).find((t) => t.action === "buy")!;
+    const vesting = [{ date: "2090-01-01", shares: 1_000_000 }];
+    const { id, transactionId, splitNew, splitOld, ...fields } = buy;
+    const put = await c.request("PUT", `/api/investments/transactions/${id}`, { ...fields, shares: buy.shares, vesting });
+    expect(put.status).toBe(200);
+    const [batch] = (await c.get("/api/import/batches")).json as ImportBatch[];
+    expect((await c.post(`/api/import/batches/${batch!.id}/undo`, {})).status).toBe(200);
+    const entries = ((await c.get("/api/admin/audit?entity=investment")).json as Page<AuditEntry>).items;
+    const deleted = entries.find((e) => e.action === "delete" && e.entityId === id)!;
+    expect((deleted.details?.before as { vesting?: unknown }).vesting).toEqual(vesting);
   });
 });

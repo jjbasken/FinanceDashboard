@@ -6,6 +6,7 @@ import {
   type AccountHoldings,
   type InvestmentTxn,
   type Security,
+  type UpcomingVest,
 } from "@fd/shared";
 import { useMemo } from "react";
 import { Link } from "react-router";
@@ -77,7 +78,17 @@ export function HoldingsTable(props: {
                     <strong>{h.symbol}</strong> <span className="muted truncate">{h.name}</span>
                   </button>
                 </td>
-                <td className="amount">{sharesToString(h.shares)}</td>
+                <td className="amount">
+                  {sharesToString(h.shares)}
+                  {h.unvestedShares > 0 && (
+                    <span
+                      className="muted small block"
+                      title={h.nextVest ? `Next: ${sharesToString(h.nextVest.shares)} on ${formatDate(h.nextVest.date)}` : undefined}
+                    >
+                      {sharesToString(h.unvestedShares)} unvested
+                    </span>
+                  )}
+                </td>
                 <td className="amount" title={h.priceDate ? `As of ${formatDate(h.priceDate)}` : "No price yet"}>
                   {h.price !== null ? formatPrice(h.price) : "–"}
                 </td>
@@ -140,7 +151,15 @@ export function InvestmentTxnTable(props: {
             <tr key={t.id}>
               <td>{formatDate(t.date)}</td>
               {props.accountName && <td>{props.accountName(t.accountId)}</td>}
-              <td>{INVESTMENT_ACTION_LABELS[t.action]}</td>
+              <td>
+                {INVESTMENT_ACTION_LABELS[t.action]}
+                {t.vesting.length > 0 && (
+                  <span className="muted small" title={t.vesting.map((v) => `${formatDate(v.date)}: ${sharesToString(v.shares)}`).join("\n")}>
+                    {" "}
+                    · vests {t.vesting.length}×
+                  </span>
+                )}
+              </td>
               <td>{secById.get(t.securityId)?.symbol}</td>
               <td className="amount">{t.shares ? sharesToString(t.shares) : ""}</td>
               <td className="amount">{t.price ? formatPrice(t.price) : ""}</td>
@@ -150,6 +169,43 @@ export function InvestmentTxnTable(props: {
                   Edit
                 </button>
               </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Vest dates still to come, soonest first. Leave out `accountName` to hide that column. */
+export function VestingTable(props: {
+  vests: UpcomingVest[];
+  accountName?: (accountId: number) => string | undefined;
+  colorOf: (securityId: number) => string | null;
+}) {
+  return (
+    <div className="table-scroll">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Vests on</th>
+            {props.accountName && <th>Account</th>}
+            <th>Security</th>
+            <th className="amount">Shares</th>
+            <th className="amount">Value today</th>
+          </tr>
+        </thead>
+        <tbody>
+          {props.vests.map((v, i) => (
+            <tr key={`${v.investmentTxnId}:${v.date}:${i}`}>
+              <td>{formatDate(v.date)}</td>
+              {props.accountName && <td>{props.accountName(v.accountId)}</td>}
+              <td>
+                <span className="swatch" style={{ background: props.colorOf(v.securityId) ?? NEUTRAL }} />{" "}
+                <strong>{v.symbol}</strong>
+              </td>
+              <td className="amount">{sharesToString(v.shares)}</td>
+              <td className="amount">{v.value ? formatCents(v.value) : "–"}</td>
             </tr>
           ))}
         </tbody>

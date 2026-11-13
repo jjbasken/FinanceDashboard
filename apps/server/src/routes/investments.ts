@@ -28,7 +28,7 @@ const optionalId = (raw: string | undefined) => {
 export const investmentRoutes = new Hono<AppEnv>()
   .use(requireAuth)
 
-  .get("/holdings", (c) => c.json(getHoldings(c.var.db, actorOf(c))))
+  .get("/holdings", (c) => c.json(getHoldings(c.var.db, actorOf(c), localDate())))
 
   .get("/history", (c) => {
     const range = (c.req.query("range") ?? "1y") as HistoryRange;

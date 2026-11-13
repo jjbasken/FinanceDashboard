@@ -15,7 +15,7 @@ import { Navigate, useNavigate, useParams, useSearchParams } from "react-router"
 import { api } from "../api";
 import { QuickEntry } from "../components/QuickEntry";
 import { Dialog } from "../components/Dialog";
-import { HoldingsTable, InvestmentTxnTable, useSecurityColors } from "../components/HoldingsTables";
+import { HoldingsTable, InvestmentTxnTable, useSecurityColors, VestingTable } from "../components/HoldingsTables";
 import { InvestmentTxnDialog, SecurityDialog } from "../components/InvestmentDialogs";
 import { MobileRegister } from "../components/MobileRegister";
 import { Register } from "../components/Register";
@@ -220,6 +220,7 @@ function AccountInvestments(props: { account: Account; accounts: Account[] }) {
     value: account.balance,
   };
   const accountTxns = (txns.data ?? []).filter((t) => t.accountId === account.id);
+  const accountVests = (holdings.data?.vesting ?? []).filter((v) => v.accountId === account.id);
   const shownTxns = accountTxns.filter((t) => filter === null || t.securityId === filter);
   const filtered = securities.data?.find((s) => s.id === filter);
   const filterSymbol = filtered?.symbol;
@@ -254,6 +255,13 @@ function AccountInvestments(props: { account: Account; accounts: Account[] }) {
           </p>
         )}
       </section>
+
+      {accountVests.length > 0 && (
+        <section className="card wide">
+          <h2>Upcoming vesting</h2>
+          <VestingTable vests={accountVests} colorOf={colorOf} />
+        </section>
+      )}
 
       {accountTxns.length > 0 && securities.data && (
         <section className="card wide">

@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import type { Account, HoldingsSummary, InvestmentTxn, Security, Transaction, ValuePoint } from "@fd/shared";
+import type { Account, AuditEntry, HoldingsSummary, Page, InvestmentTxn, Security, Transaction, ValuePoint } from "@fd/shared";
 import { createSession } from "../src/auth/sessions";
-import { users } from "../src/db/schema";
+import { investmentTxns, users } from "../src/db/schema";
 import { SESSION_COOKIE } from "../src/middleware";
+import { getHoldings } from "../src/services/holdings";
 import { createHousehold } from "../src/services/household";
 import { UnknownSymbolError, yahooProvider } from "../src/services/prices";
 import { Client, fakePrices, owner, testApp } from "./helpers";
@@ -314,6 +315,284 @@ describe("prices", () => {
     expect(at("2026-01-31")).toMatchObject({ value: 800_000 + 202_000, invested: 1_000_000 });
     expect(at("2026-02-28")).toMatchObject({ value: 800_000 + 210_000 });
     expect((await c.get("/api/investments/history?range=forever")).status).toBe(400);
+  });
+});
+
+describe("vesting", () => {
+  // One vest in the past and three far in the future, so "today" doesn't matter.
+  const schedule = [
+    { date: "2026-02-01", shares: 25 * SH },
+    { date: "2090-02-01", shares: 25 * SH },
+    { date: "2091-02-01", shares: 25 * SH },
+    { date: "2092-02-01", shares: 25 * SH },
+  ];
+
+  test("a buy with a schedule shows unvested shares, the next vest and upcoming vests", async () => {
+    const { c, txn, holdings, position } = await setUp();
+    const buy = await txn({ date: "2026-01-05", action: "buy", shares: 100 * SH, price: $(20), vesting: schedule });
+    const p = (await position())!;
+    expect(p).toMatchObject({ shares: 100 * SH, value: 200_000, unvestedShares: 75 * SH });
+    expect(p.nextVest).toEqual({ date: "2090-02-01", shares: 25 * SH });
+    const summary = await holdings();
+    expect(summary.totals.unvestedValue).toBe(150_000);
+    expect(summary.totals.value).toBe(1_000_000); // unvested shares still count in the total
+    expect(summary.vesting.map((v) => [v.date, v.shares, v.value])).toEqual([
+      ["2090-02-01", 25 * SH, 50_000],
+      ["2091-02-01", 25 * SH, 50_000],
+      ["2092-02-01", 25 * SH, 50_000],
+    ]);
+    expect(summary.vesting[0]).toMatchObject({ investmentTxnId: buy.id, symbol: "VTI" });
+    const [listed] = (await c.get("/api/investments/transactions")).json as InvestmentTxn[];
+    expect(listed!.vesting).toEqual(schedule);
+  });
+
+  test("splits after the purchase scale the vests still to come", async () => {
+    const { txn, position } = await setUp();
+    await txn({ date: "2026-01-05", action: "buy", shares: 100 * SH, price: $(20), vesting: schedule });
+    await txn({ date: "2026-03-01", action: "split", splitNew: 2, splitOld: 1 });
+    expect(await position()).toMatchObject({
+      shares: 200 * SH,
+      unvestedShares: 150 * SH,
+      nextVest: { date: "2090-02-01", shares: 50 * SH },
+    });
+  });
+
+  test("selling shares reduces the vests that would come last, everywhere they show", async () => {
+    const { txn, position, holdings } = await setUp();
+    await txn({ date: "2026-01-05", action: "buy", shares: 100 * SH, price: $(20), vesting: schedule });
+    await txn({ date: "2026-03-01", action: "sell", shares: 90 * SH, price: $(20) });
+    expect(await position()).toMatchObject({
+      shares: 10 * SH,
+      unvestedShares: 10 * SH,
+      nextVest: { date: "2090-02-01", shares: 10 * SH },
+    });
+    const summary = await holdings();
+    expect(summary.totals.unvestedValue).toBe(20_000);
+    expect(summary.vesting.map((v) => [v.date, v.shares, v.value])).toEqual([["2090-02-01", 10 * SH, 20_000]]);
+  });
+
+  test("selling out ends a schedule, so a later buy without one is fully vested", async () => {
+    const { txn, position, holdings } = await setUp();
+    await txn({ date: "2026-01-05", action: "buy", shares: 100 * SH, price: $(20), vesting: schedule });
+    await txn({ date: "2026-03-01", action: "sell", shares: 100 * SH, price: $(20) });
+    await txn({ date: "2026-04-01", action: "buy", shares: 100 * SH, price: $(20) });
+    expect(await position()).toMatchObject({ shares: 100 * SH, unvestedShares: 0, nextVest: null });
+    expect((await holdings()).vesting).toEqual([]);
+  });
+
+  test("a trade dated after a vest doesn't remove that vest before it happens", async () => {
+    const { txn, position, holdings } = await setUp();
+    await txn({
+      date: "2026-01-05",
+      action: "buy",
+      shares: 100 * SH,
+      price: $(20),
+      vesting: [{ date: "2090-02-01", shares: 100 * SH }],
+    });
+    await txn({ date: "2091-01-01", action: "sell", shares: 1 * SH, price: $(20) });
+    // Holdings already count the later sale, so the vest is shown for the 99 shares held.
+    expect(await position()).toMatchObject({
+      shares: 99 * SH,
+      unvestedShares: 99 * SH,
+      nextVest: { date: "2090-02-01", shares: 99 * SH },
+    });
+    expect((await holdings()).vesting.map((v) => [v.date, v.shares])).toEqual([["2090-02-01", 99 * SH]]);
+  });
+
+  test("a future sellout ends the schedule, so a later buy can't bring it back", async () => {
+    const { txn, position, holdings } = await setUp();
+    const one = [{ date: "2090-02-01", shares: 100 * SH }];
+    await txn({ date: "2026-01-05", action: "buy", shares: 100 * SH, price: $(20), vesting: one });
+    await txn({ date: "2091-01-01", action: "sell", shares: 100 * SH, price: $(20) });
+    expect((await holdings()).vesting).toEqual([]);
+    await txn({ date: "2092-01-01", action: "buy", shares: 100 * SH, price: $(20) });
+    expect(await position()).toMatchObject({ shares: 100 * SH, unvestedShares: 0, nextVest: null });
+    expect((await holdings()).vesting).toEqual([]);
+  });
+
+  test("a future split is shown in the vests ahead of it, like in the share count", async () => {
+    const { txn, position } = await setUp();
+    const one = [{ date: "2090-02-01", shares: 100 * SH }];
+    await txn({ date: "2026-01-05", action: "buy", shares: 100 * SH, price: $(20), vesting: one });
+    await txn({ date: "2091-01-01", action: "split", splitNew: 2, splitOld: 1 });
+    expect(await position()).toMatchObject({ shares: 200 * SH, unvestedShares: 200 * SH });
+  });
+
+  test("deleting the account records each investment and its schedule in Activity", async () => {
+    const { c, brokerage, txn } = await setUp();
+    const grant = await txn({ date: "2026-01-05", action: "transfer_in", shares: 100 * SH, amount: 0, vesting: schedule });
+    expect((await c.delete(`/api/accounts/${brokerage.id}`)).status).toBe(200);
+    const entries = ((await c.get("/api/admin/audit?entity=investment")).json as Page<AuditEntry>).items;
+    const deleted = entries.find((e) => e.action === "delete" && e.entityId === grant.id);
+    expect(deleted?.summary).toMatch(/with its account/);
+    expect((deleted!.details?.before as { vesting?: unknown }).vesting).toEqual(schedule);
+  });
+
+  test("a future sale draws on shares vested by then, the same whichever day you look", async () => {
+    const { db, txn, brokerage } = await setUp();
+    await txn({
+      date: "2090-11-01",
+      action: "buy",
+      shares: 100 * SH,
+      price: $(20),
+      vesting: [
+        { date: "2090-12-01", shares: 50 * SH },
+        { date: "2091-02-01", shares: 50 * SH },
+      ],
+    });
+    await txn({ date: "2091-01-01", action: "sell", shares: 50 * SH, price: $(20) });
+    const user = db.select().from(users).get()!;
+    const on = (today: string) => {
+      const summary = getHoldings(db, { householdId: user.householdId, userId: user.id }, today);
+      const h = summary.accounts.find((a) => a.accountId === brokerage.id)!.holdings[0]!;
+      return { unvested: h.unvestedShares, next: h.nextVest, vests: summary.vesting.map((v) => [v.date, v.shares]) };
+    };
+    // The Jan 1 sale uses the Dec 1 shares, so the Feb 1 vest stays on both sides of Dec 1.
+    const feb = { unvested: 50 * SH, next: { date: "2091-02-01", shares: 50 * SH }, vests: [["2091-02-01", 50 * SH]] };
+    expect(on("2090-11-30")).toEqual(feb);
+    expect(on("2090-12-01")).toEqual(feb);
+    expect(on("2091-01-15")).toEqual(feb);
+    expect(on("2091-02-01")).toEqual({ unvested: 0, next: null, vests: [] });
+  });
+
+  test("selling more than has vested forfeits the shares that would vest last", async () => {
+    const { txn, position } = await setUp();
+    await txn({ date: "2026-01-05", action: "buy", shares: 100 * SH, price: $(20), vesting: schedule.slice(1) });
+    // 25 shares vested on the purchase date; the sale of 40 takes those and 15 unvested.
+    await txn({ date: "2026-03-01", action: "transfer_out", shares: 40 * SH });
+    expect(await position()).toMatchObject({
+      shares: 60 * SH,
+      unvestedShares: 60 * SH,
+      nextVest: { date: "2090-02-01", shares: 25 * SH },
+    });
+  });
+
+  test("reverse-split rounding is spread so the vests add up to the shares held", async () => {
+    const { txn, position, holdings } = await setUp();
+    const tiny = ["2090", "2091", "2092", "2093"].map((y) => ({ date: `${y}-02-01`, shares: 1 }));
+    await txn({ date: "2026-01-05", action: "buy", shares: 4, price: $(20), vesting: tiny });
+    await txn({ date: "2026-03-01", action: "split", splitNew: 1, splitOld: 2 });
+    expect(await position()).toMatchObject({ shares: 2, unvestedShares: 2 });
+    const vests = (await holdings()).vesting;
+    expect(vests.every((v) => v.shares > 0)).toBe(true);
+    expect(vests.reduce((sum, v) => sum + v.shares, 0)).toBe(2);
+  });
+
+  test("shares from an imported split are vested, so a sale uses them before scheduled shares", async () => {
+    const { db, txn, position, brokerage, vti } = await setUp();
+    // GnuCash imports opening shares as a split with no ratio.
+    db.insert(investmentTxns)
+      .values({
+        householdId: db.select().from(users).get()!.householdId,
+        accountId: brokerage.id,
+        securityId: vti.id,
+        date: "2026-01-02",
+        action: "split",
+        shares: 100 * SH,
+      })
+      .run();
+    await txn({
+      date: "2026-01-05",
+      action: "buy",
+      shares: 100 * SH,
+      price: $(20),
+      vesting: [{ date: "2090-02-01", shares: 100 * SH }],
+    });
+    await txn({ date: "2026-03-01", action: "sell", shares: 100 * SH, price: $(20) });
+    expect(await position()).toMatchObject({
+      shares: 100 * SH,
+      unvestedShares: 100 * SH,
+      nextVest: { date: "2090-02-01", shares: 100 * SH },
+    });
+  });
+
+  test("an imported stock split of shares already held doubles the vests too", async () => {
+    const { db, txn, position, holdings, brokerage, vti } = await setUp();
+    // GnuCash imports opening shares and stock splits alike: a zero-cost change with no ratio.
+    const imported = (date: string, shares: number) =>
+      db.insert(investmentTxns)
+        .values({
+          householdId: db.select().from(users).get()!.householdId,
+          accountId: brokerage.id,
+          securityId: vti.id,
+          date,
+          action: "split",
+          shares,
+        })
+        .run();
+    imported("2026-01-02", 100 * SH);
+    await txn({
+      date: "2026-01-05",
+      action: "buy",
+      shares: 100 * SH,
+      price: $(20),
+      vesting: [{ date: "2090-02-01", shares: 100 * SH }],
+    });
+    imported("2026-03-01", 200 * SH); // 2 for 1
+    expect(await position()).toMatchObject({
+      shares: 400 * SH,
+      unvestedShares: 200 * SH,
+      nextVest: { date: "2090-02-01", shares: 200 * SH },
+    });
+    expect((await holdings()).vesting.map((v) => v.shares)).toEqual([200 * SH]);
+  });
+
+  test("a vest that a reverse split rounds to nothing is dropped", async () => {
+    const { txn, position, holdings } = await setUp();
+    await txn({
+      date: "2026-01-05",
+      action: "buy",
+      shares: SH,
+      price: $(20),
+      vesting: [
+        { date: "2090-02-01", shares: 1 },
+        { date: "2091-02-01", shares: SH - 1 },
+      ],
+    });
+    await txn({ date: "2026-03-01", action: "split", splitNew: 1, splitOld: 3 });
+    const p = (await position())!;
+    expect(p.nextVest?.date).toBe("2091-02-01");
+    expect(p.unvestedShares).toBe(p.shares);
+    expect((await holdings()).vesting.map((v) => v.date)).toEqual(["2091-02-01"]);
+  });
+
+  test("schedules are checked, kept on edits that leave them out, and cleared with []", async () => {
+    const { c, brokerage, vti, txn, position } = await setUp();
+    const base = { date: "2026-01-05", action: "buy", shares: 100 * SH, price: $(20) };
+    const tooMany = [...schedule, { date: "2093-02-01", shares: SH }];
+    expect((await txn({ ...base, vesting: tooMany }, 400)).error).toMatch(/more shares/);
+    expect((await txn({ ...base, vesting: [{ date: "2025-12-31", shares: SH }] }, 400)).error).toMatch(/before/);
+    expect((await txn({ ...base, action: "sell", vesting: schedule }, 400)).error).toMatch(/Only buys/);
+
+    const buy = await txn({ ...base, vesting: [schedule[3], schedule[1]] });
+    const put = (body: Record<string, unknown>) =>
+      c.request("PUT", `/api/investments/transactions/${buy.id}`, {
+        accountId: brokerage.id,
+        securityId: vti.id,
+        ...base,
+        ...body,
+      });
+    const listed = async () => ((await c.get("/api/investments/transactions")).json as InvestmentTxn[])[0]!.vesting;
+    expect((await listed()).map((v) => v.date)).toEqual(["2090-02-01", "2092-02-01"]); // sorted
+    expect((await put({ notes: "kept" })).status).toBe(200);
+    expect(await listed()).toHaveLength(2);
+    expect((await put({ shares: 40 * SH })).status).toBe(400); // fewer shares than scheduled
+    // Changing to an action that can't vest keeps nothing implicitly: the schedule must be cleared.
+    const reinvest = await put({ action: "reinvest" });
+    expect(reinvest.status).toBe(400);
+    expect(reinvest.json.error).toMatch(/vesting schedule/);
+    expect(await listed()).toHaveLength(2);
+    expect((await put({ vesting: [] })).status).toBe(200);
+    expect(await listed()).toEqual([]);
+    expect((await position())!.unvestedShares).toBe(0);
+  });
+
+  test("shares moved in can vest, and deleting the transaction removes its schedule", async () => {
+    const { c, txn, holdings } = await setUp();
+    const grant = await txn({ date: "2026-01-05", action: "transfer_in", shares: 100 * SH, amount: 0, vesting: schedule });
+    expect((await holdings()).vesting).toHaveLength(3);
+    expect((await c.delete(`/api/investments/transactions/${grant.id}`)).status).toBe(200);
+    expect((await holdings()).vesting).toEqual([]);
   });
 });
 

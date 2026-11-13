@@ -1,5 +1,6 @@
 import {
   INVESTMENT_ACTION_LABELS,
+  VESTING_ACTIONS,
   formatCents,
   formatPrice,
   sharesToString,
@@ -9,11 +10,20 @@ import {
   type InvestmentTxnInput,
   type Security,
   type UpdateSecurityInput,
+  type VestingTranche,
 } from "@fd/shared";
-import { and, asc, count, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import type { DbOrTx } from "../db";
-import { accounts, households, investmentTxns, prices, securities, transactions } from "../db/schema";
+import {
+  accounts,
+  households,
+  investmentTxns,
+  prices,
+  securities,
+  transactions,
+  vestingTranches,
+} from "../db/schema";
 import { findOrCreatePayee, visibleAccount, type Actor } from "./ledger";
 
 const bad = (message: string) => new HTTPException(400, { message });
@@ -99,7 +109,7 @@ export function setManualPrice(db: DbOrTx, householdId: number, securityId: numb
 
 type Row = typeof investmentTxns.$inferSelect;
 
-function toApi(r: Row): InvestmentTxn {
+function toApi(r: Row, vesting: VestingTranche[] = []): InvestmentTxn {
   return {
     id: r.id,
     accountId: r.accountId,
@@ -114,7 +124,59 @@ function toApi(r: Row): InvestmentTxn {
     notes: r.notes,
     splitNew: r.splitNew,
     splitOld: r.splitOld,
+    vesting,
   };
+}
+
+/** Vest dates for some investment transactions, oldest first. */
+export function loadVesting(db: DbOrTx, txnIds: number[]) {
+  const out = new Map<number, VestingTranche[]>();
+  // Chunked to stay well under SQLite's bound-parameter limit.
+  for (let i = 0; i < txnIds.length; i += 500) {
+    const rows = db
+      .select({ txnId: vestingTranches.investmentTxnId, date: vestingTranches.date, shares: vestingTranches.shares })
+      .from(vestingTranches)
+      .where(inArray(vestingTranches.investmentTxnId, txnIds.slice(i, i + 500)))
+      .orderBy(asc(vestingTranches.date), asc(vestingTranches.id))
+      .all();
+    for (const r of rows) {
+      const list = out.get(r.txnId) ?? [];
+      list.push({ date: r.date, shares: r.shares });
+      out.set(r.txnId, list);
+    }
+  }
+  return out;
+}
+
+/**
+ * The schedule to keep for a transaction: the one given, or (when it's left out on an update)
+ * the existing one. Checks it fits the action, the date and the shares bought. Changing a
+ * scheduled purchase to another action needs `vesting: []`, so a schedule is never dropped
+ * without being asked to.
+ */
+function checkVesting(input: InvestmentTxnInput, existing: VestingTranche[]): VestingTranche[] {
+  const tranches = [...(input.vesting ?? existing)];
+  if (tranches.length && !VESTING_ACTIONS.includes(input.action)) {
+    throw bad(
+      input.vesting
+        ? "Only buys and shares moved in can have a vesting schedule"
+        : "Clear this transaction's vesting schedule (send vesting: []) before changing it to another kind of transaction",
+    );
+  }
+  tranches.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  if (tranches[0] && tranches[0].date < input.date) throw bad("Vest dates can't be before the transaction date");
+  const scheduled = tranches.reduce((sum, t) => sum + t.shares, 0);
+  if (scheduled > (input.shares ?? 0)) throw bad("The vest dates add up to more shares than this transaction has");
+  return tranches;
+}
+
+function saveVesting(db: DbOrTx, txnId: number, tranches: VestingTranche[]) {
+  db.delete(vestingTranches).where(eq(vestingTranches.investmentTxnId, txnId)).run();
+  if (tranches.length) {
+    db.insert(vestingTranches)
+      .values(tranches.map((t) => ({ investmentTxnId: txnId, date: t.date, shares: t.shares })))
+      .run();
+  }
 }
 
 /** Investment transactions in the accounts the viewer can see, newest first. */
@@ -129,14 +191,18 @@ export function listInvestmentTxns(
   ];
   if (filter.accountId) conds.push(eq(investmentTxns.accountId, filter.accountId));
   if (filter.securityId) conds.push(eq(investmentTxns.securityId, filter.securityId));
-  return db
+  const rows = db
     .select({ txn: investmentTxns })
     .from(investmentTxns)
     .innerJoin(accounts, eq(accounts.id, investmentTxns.accountId))
     .where(and(...conds))
     .orderBy(desc(investmentTxns.date), desc(investmentTxns.id))
-    .all()
-    .map((r) => toApi(r.txn));
+    .all();
+  const vesting = loadVesting(
+    db,
+    rows.filter((r) => VESTING_ACTIONS.includes(r.txn.action)).map((r) => r.txn.id),
+  );
+  return rows.map((r) => toApi(r.txn, vesting.get(r.txn.id)));
 }
 
 function getRow(db: DbOrTx, householdId: number, id: number) {
@@ -315,6 +381,7 @@ export function createInvestmentTxn(
 ) {
   if (visibleAccount(db, actor, input.accountId).budgetOnly) throw bad("Investments need a real account");
   const security = getSecurity(db, actor.householdId, input.securityId);
+  const vesting = checkVesting(input, []);
   const n = normalise(input, positionOn(db, input.accountId, input.securityId, input.date));
   const transactionId = syncCash(db, actor, null, { ...input, symbol: security.symbol, ...n });
   if (transactionId && extra.importBatchId) {
@@ -346,6 +413,7 @@ export function createInvestmentTxn(
     })
     .returning()
     .get();
+  saveVesting(db, row.id, vesting);
   settleHolding(db, input.accountId, input.securityId, security.symbol);
   return row.id;
 }
@@ -355,6 +423,7 @@ export function updateInvestmentTxn(db: DbOrTx, actor: Actor, id: number, input:
   visibleAccount(db, actor, existing.accountId);
   if (visibleAccount(db, actor, input.accountId).budgetOnly) throw bad("Investments need a real account");
   const security = getSecurity(db, actor.householdId, input.securityId);
+  const vesting = checkVesting(input, loadVesting(db, [id]).get(id) ?? []);
   const n = normalise(input, positionOn(db, input.accountId, input.securityId, input.date, id));
   const transactionId = syncCash(db, actor, existing.transactionId, { ...input, symbol: security.symbol, ...n });
   db.update(investmentTxns)
@@ -375,6 +444,7 @@ export function updateInvestmentTxn(db: DbOrTx, actor: Actor, id: number, input:
     })
     .where(eq(investmentTxns.id, id))
     .run();
+  saveVesting(db, id, vesting);
   settleHolding(db, input.accountId, input.securityId, security.symbol);
   if (existing.accountId !== input.accountId || existing.securityId !== input.securityId) {
     const old = getSecurity(db, actor.householdId, existing.securityId);
