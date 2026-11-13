@@ -6,7 +6,6 @@ import {
   type HoldingsSummary,
   type UpcomingVest,
   type ValuePoint,
-  type VestingTranche,
 } from "@fd/shared";
 import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
 import type { DbOrTx } from "../db";
@@ -120,24 +119,40 @@ export function priceOn(series: { date: string; close: number }[] | undefined, d
   return found < 0 ? null : series[found]!;
 }
 
-type PendingVest = VestingTranche & { investmentTxnId: number };
+/**
+ * A holding's shares, grouped by when they vest. Shares bought without a schedule are one lot
+ * that vests on the purchase date (`scheduled: false`). The lots always add up to the shares held.
+ */
+type Lot = { vests: string; shares: number; scheduled: boolean; investmentTxnId: number };
 
-const byDate = (x: { date: string }, y: { date: string }) => (x.date < y.date ? -1 : x.date > y.date ? 1 : 0);
+const byVest = (x: Lot, y: Lot) =>
+  x.vests < y.vests ? -1 : x.vests > y.vests ? 1 : Number(x.scheduled) - Number(y.scheduled);
 
 /**
- * Cut the vests after `date` down so they never add up to more than the `held` shares,
- * reducing the vests that would come last first. Vests on or before `date` are kept as they
- * are. Empty vests are dropped. Returns the vests, oldest first.
+ * Remove `shares` from a holding's lots for a sale or shares moved out on `date`. Shares that
+ * have vested by then go first, earliest vest first (a sale draws on vested shares); only if
+ * those run out do unvested shares go, the ones that would vest last first (forfeited, say).
+ * Nothing depends on today's date, so the result is the same whichever day you look.
  */
-function fitVests(list: PendingVest[], date: string, held: number): PendingVest[] {
-  const sorted = [...list].sort(byDate);
-  let excess = sorted.filter((v) => v.date > date).reduce((sum, v) => sum + v.shares, 0) - Math.max(held, 0);
-  for (let i = sorted.length - 1; i >= 0 && excess > 0 && sorted[i]!.date > date; i--) {
-    const cut = Math.min(sorted[i]!.shares, excess);
-    sorted[i]!.shares -= cut;
-    excess -= cut;
+function removeShares(lots: Lot[], shares: number, date: string): Lot[] {
+  let left = shares;
+  const vested = lots.filter((l) => l.vests <= date).sort(byVest);
+  const unvested = lots.filter((l) => l.vests > date).sort(byVest).reverse();
+  for (const l of [...vested, ...unvested]) {
+    if (left <= 0) break;
+    const cut = Math.min(l.shares, left);
+    l.shares -= cut;
+    left -= cut;
   }
-  return sorted.filter((v) => v.shares > 0);
+  return lots.filter((l) => l.shares > 0);
+}
+
+/** Scale every lot for a split so they add up to `total`; rounding goes to the largest lot. */
+function splitLots(lots: Lot[], before: number, total: number): Lot[] {
+  for (const l of lots) l.shares = Math.round((l.shares * total) / before);
+  const diff = total - lots.reduce((sum, l) => sum + l.shares, 0);
+  if (diff && lots.length) lots.reduce((a, b) => (b.shares > a.shares ? b : a)).shares += diff;
+  return lots.filter((l) => l.shares > 0);
 }
 
 export function getHoldings(db: DbOrTx, viewer: Actor, today: string): HoldingsSummary {
@@ -148,34 +163,29 @@ export function getHoldings(db: DbOrTx, viewer: Actor, today: string): HoldingsS
     txns.filter((t) => VESTING_ACTIONS.includes(t.action as never)).map((t) => t.id),
   );
   const positions = new Map<string, Position>();
-  // Vest dates still to come for each holding, scaled by splits and reduced when shares are sold
-  // or moved out. Holdings include trades dated after today, so a trade affects the vests after
-  // its date or after today, whichever is earlier: a vest still ahead of today can't count more
-  // shares than the position the page shows, and a future sellout ends the schedule for good.
-  const pending = new Map<string, PendingVest[]>();
+  // Each holding's lots, replayed through every trade at its own date (including trades dated
+  // after today, as the share counts are).
+  const lots = new Map<string, Lot[]>();
   for (const t of txns) {
     const key = `${t.accountId}:${t.securityId}`;
     const p = positions.get(key) ?? new Position();
     const before = p.shares;
     p.apply(t);
     positions.set(key, p);
-    const schedule = schedules.get(t.id);
-    if (schedule) {
-      const list = pending.get(key) ?? [];
-      list.push(...schedule.map((v) => ({ ...v, investmentTxnId: t.id })));
-      pending.set(key, list);
+    let list = lots.get(key) ?? [];
+    if (t.action === "split") {
+      if (before > 0) list = splitLots(list, before, p.shares);
+    } else if (t.shares > 0) {
+      const schedule = schedules.get(t.id) ?? [];
+      const scheduled = schedule.reduce((sum, v) => sum + v.shares, 0);
+      const base = { investmentTxnId: t.id };
+      if (t.shares > scheduled) list.push({ ...base, vests: t.date, shares: t.shares - scheduled, scheduled: false });
+      for (const v of schedule) list.push({ ...base, vests: v.date, shares: v.shares, scheduled: true });
+    } else if (t.shares < 0) {
+      list = removeShares(list, -t.shares, t.date);
     }
-    const list = pending.get(key);
-    if (!list?.length) continue;
-    const asOf = t.date < today ? t.date : today;
-    if (t.action === "split" && before > 0) {
-      for (const v of list) {
-        if (v.date > asOf) v.shares = Math.round((v.shares * p.shares) / before);
-      }
-    }
-    if (t.action === "split" || t.action === "sell" || t.action === "transfer_out") {
-      pending.set(key, fitVests(list, asOf, p.shares));
-    }
+    if (p.shares <= 0) list = [];
+    lots.set(key, list);
   }
   const series = loadPriceSeries(db, householdId, txns);
   const secs = new Map(
@@ -201,8 +211,8 @@ export function getHoldings(db: DbOrTx, viewer: Actor, today: string): HoldingsS
         const s = secs.get(securityId)!;
         const last = series.get(securityId)?.at(-1) ?? null;
         const value = last ? sharesValueCents(p.shares, last.close) : 0;
-        // The same remaining vests feed the unvested total, the next vest and the upcoming list.
-        const future = fitVests(pending.get(key) ?? [], today, p.shares).filter((v) => v.date > today);
+        // The same lots feed the unvested total, the next vest and the upcoming list.
+        const future = (lots.get(key) ?? []).filter((l) => l.scheduled && l.vests > today).sort(byVest);
         const unvestedShares = future.reduce((sum, v) => sum + v.shares, 0);
         if (last) unvestedValue += sharesValueCents(unvestedShares, last.close);
         for (const v of future) {
@@ -211,7 +221,7 @@ export function getHoldings(db: DbOrTx, viewer: Actor, today: string): HoldingsS
             accountId: a.id,
             securityId,
             symbol: s.symbol,
-            date: v.date,
+            date: v.vests,
             shares: v.shares,
             value: last ? sharesValueCents(v.shares, last.close) : 0,
           });
@@ -230,7 +240,7 @@ export function getHoldings(db: DbOrTx, viewer: Actor, today: string): HoldingsS
           gain: value - p.cost,
           costKnown: p.costKnown,
           unvestedShares,
-          nextVest: next ? { date: next.date, shares: next.shares } : null,
+          nextVest: next ? { date: next.vests, shares: next.shares } : null,
         };
       })
       .sort((x, y) => y.value - x.value);

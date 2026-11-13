@@ -3,6 +3,7 @@ import type { Account, AuditEntry, HoldingsSummary, Page, InvestmentTxn, Securit
 import { createSession } from "../src/auth/sessions";
 import { users } from "../src/db/schema";
 import { SESSION_COOKIE } from "../src/middleware";
+import { getHoldings } from "../src/services/holdings";
 import { createHousehold } from "../src/services/household";
 import { UnknownSymbolError, yahooProvider } from "../src/services/prices";
 import { Client, fakePrices, owner, testApp } from "./helpers";
@@ -425,6 +426,45 @@ describe("vesting", () => {
     const deleted = entries.find((e) => e.action === "delete" && e.entityId === grant.id);
     expect(deleted?.summary).toMatch(/with its account/);
     expect((deleted!.details?.before as { vesting?: unknown }).vesting).toEqual(schedule);
+  });
+
+  test("a future sale draws on shares vested by then, the same whichever day you look", async () => {
+    const { db, txn, brokerage } = await setUp();
+    await txn({
+      date: "2090-11-01",
+      action: "buy",
+      shares: 100 * SH,
+      price: $(20),
+      vesting: [
+        { date: "2090-12-01", shares: 50 * SH },
+        { date: "2091-02-01", shares: 50 * SH },
+      ],
+    });
+    await txn({ date: "2091-01-01", action: "sell", shares: 50 * SH, price: $(20) });
+    const user = db.select().from(users).get()!;
+    const on = (today: string) => {
+      const summary = getHoldings(db, { householdId: user.householdId, userId: user.id }, today);
+      const h = summary.accounts.find((a) => a.accountId === brokerage.id)!.holdings[0]!;
+      return { unvested: h.unvestedShares, next: h.nextVest, vests: summary.vesting.map((v) => [v.date, v.shares]) };
+    };
+    // The Jan 1 sale uses the Dec 1 shares, so the Feb 1 vest stays on both sides of Dec 1.
+    const feb = { unvested: 50 * SH, next: { date: "2091-02-01", shares: 50 * SH }, vests: [["2091-02-01", 50 * SH]] };
+    expect(on("2090-11-30")).toEqual(feb);
+    expect(on("2090-12-01")).toEqual(feb);
+    expect(on("2091-01-15")).toEqual(feb);
+    expect(on("2091-02-01")).toEqual({ unvested: 0, next: null, vests: [] });
+  });
+
+  test("selling more than has vested forfeits the shares that would vest last", async () => {
+    const { txn, position } = await setUp();
+    await txn({ date: "2026-01-05", action: "buy", shares: 100 * SH, price: $(20), vesting: schedule.slice(1) });
+    // 25 shares vested on the purchase date; the sale of 40 takes those and 15 unvested.
+    await txn({ date: "2026-03-01", action: "transfer_out", shares: 40 * SH });
+    expect(await position()).toMatchObject({
+      shares: 60 * SH,
+      unvestedShares: 60 * SH,
+      nextVest: { date: "2090-02-01", shares: 25 * SH },
+    });
   });
 
   test("a vest that a reverse split rounds to nothing is dropped", async () => {
