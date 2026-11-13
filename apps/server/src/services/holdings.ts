@@ -15,6 +15,8 @@ import { listAccounts, type Actor } from "./ledger";
 
 type TxnRow = {
   id: number;
+  /** Set for splits entered here (with a ratio); null for imported ones. */
+  splitNew?: number | null;
   accountId: number;
   securityId: number;
   date: string;
@@ -29,6 +31,7 @@ export function loadTxns(db: DbOrTx, householdId: number, viewerId?: number): Tx
   return db
     .select({
       id: investmentTxns.id,
+      splitNew: investmentTxns.splitNew,
       accountId: investmentTxns.accountId,
       securityId: investmentTxns.securityId,
       date: investmentTxns.date,
@@ -147,12 +150,35 @@ function removeShares(lots: Lot[], shares: number, date: string): Lot[] {
   return lots.filter((l) => l.shares > 0);
 }
 
-/** Scale every lot for a split so they add up to `total`; rounding goes to the largest lot. */
+/**
+ * Scale every lot for a split from `before` to `total` shares. Each lot is rounded down
+ * (exactly, with BigInt), then the shares left over go one each to the lots with the largest
+ * remainders, so no lot goes negative and the lots add up to `total`.
+ */
 function splitLots(lots: Lot[], before: number, total: number): Lot[] {
-  for (const l of lots) l.shares = Math.round((l.shares * total) / before);
-  const diff = total - lots.reduce((sum, l) => sum + l.shares, 0);
-  if (diff && lots.length) lots.reduce((a, b) => (b.shares > a.shares ? b : a)).shares += diff;
+  const den = BigInt(before);
+  const scaled = lots.map((l) => {
+    const num = BigInt(l.shares) * BigInt(total);
+    return { l, floor: Number(num / den), rem: num % den };
+  });
+  let left = total - scaled.reduce((sum, x) => sum + x.floor, 0);
+  scaled.sort((a, b) => (a.rem < b.rem ? 1 : a.rem > b.rem ? -1 : 0));
+  for (const x of scaled) {
+    x.l.shares = x.floor + (left > 0 ? 1 : 0);
+    if (left > 0) left--;
+  }
   return lots.filter((l) => l.shares > 0);
+}
+
+/**
+ * Bring a holding's lots in line with the shares held: any shortfall is a lot vested on
+ * `date` (shares that came in without a schedule), and any excess comes off as a sale would.
+ */
+function reconcileLots(lots: Lot[], held: number, date: string, investmentTxnId: number): Lot[] {
+  if (held <= 0) return [];
+  const diff = held - lots.reduce((sum, l) => sum + l.shares, 0);
+  if (diff > 0) return [...lots, { vests: date, shares: diff, scheduled: false, investmentTxnId }];
+  return diff < 0 ? removeShares(lots, -diff, date) : lots;
 }
 
 export function getHoldings(db: DbOrTx, viewer: Actor, today: string): HoldingsSummary {
@@ -173,8 +199,12 @@ export function getHoldings(db: DbOrTx, viewer: Actor, today: string): HoldingsS
     p.apply(t);
     positions.set(key, p);
     let list = lots.get(key) ?? [];
-    if (t.action === "split") {
-      if (before > 0) list = splitLots(list, before, p.shares);
+    if (t.action === "split" && t.splitNew && before > 0) {
+      list = splitLots(list, before, p.shares);
+    } else if (t.action === "split") {
+      // An imported split has no ratio and can be any zero-cost share change (GnuCash records
+      // opening shares this way), so it adds vested shares or removes shares like a sale. The
+      // reconciliation below does exactly that.
     } else if (t.shares > 0) {
       const schedule = schedules.get(t.id) ?? [];
       const scheduled = schedule.reduce((sum, v) => sum + v.shares, 0);
@@ -184,8 +214,7 @@ export function getHoldings(db: DbOrTx, viewer: Actor, today: string): HoldingsS
     } else if (t.shares < 0) {
       list = removeShares(list, -t.shares, t.date);
     }
-    if (p.shares <= 0) list = [];
-    lots.set(key, list);
+    lots.set(key, reconcileLots(list, p.shares, t.date, t.id));
   }
   const series = loadPriceSeries(db, householdId, txns);
   const secs = new Map(

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Account, AuditEntry, HoldingsSummary, Page, InvestmentTxn, Security, Transaction, ValuePoint } from "@fd/shared";
 import { createSession } from "../src/auth/sessions";
-import { users } from "../src/db/schema";
+import { investmentTxns, users } from "../src/db/schema";
 import { SESSION_COOKIE } from "../src/middleware";
 import { getHoldings } from "../src/services/holdings";
 import { createHousehold } from "../src/services/household";
@@ -464,6 +464,45 @@ describe("vesting", () => {
       shares: 60 * SH,
       unvestedShares: 60 * SH,
       nextVest: { date: "2090-02-01", shares: 25 * SH },
+    });
+  });
+
+  test("reverse-split rounding is spread so the vests add up to the shares held", async () => {
+    const { txn, position, holdings } = await setUp();
+    const tiny = ["2090", "2091", "2092", "2093"].map((y) => ({ date: `${y}-02-01`, shares: 1 }));
+    await txn({ date: "2026-01-05", action: "buy", shares: 4, price: $(20), vesting: tiny });
+    await txn({ date: "2026-03-01", action: "split", splitNew: 1, splitOld: 2 });
+    expect(await position()).toMatchObject({ shares: 2, unvestedShares: 2 });
+    const vests = (await holdings()).vesting;
+    expect(vests.every((v) => v.shares > 0)).toBe(true);
+    expect(vests.reduce((sum, v) => sum + v.shares, 0)).toBe(2);
+  });
+
+  test("shares from an imported split are vested, so a sale uses them before scheduled shares", async () => {
+    const { db, txn, position, brokerage, vti } = await setUp();
+    // GnuCash imports opening shares as a split with no ratio.
+    db.insert(investmentTxns)
+      .values({
+        householdId: db.select().from(users).get()!.householdId,
+        accountId: brokerage.id,
+        securityId: vti.id,
+        date: "2026-01-02",
+        action: "split",
+        shares: 100 * SH,
+      })
+      .run();
+    await txn({
+      date: "2026-01-05",
+      action: "buy",
+      shares: 100 * SH,
+      price: $(20),
+      vesting: [{ date: "2090-02-01", shares: 100 * SH }],
+    });
+    await txn({ date: "2026-03-01", action: "sell", shares: 100 * SH, price: $(20) });
+    expect(await position()).toMatchObject({
+      shares: 100 * SH,
+      unvestedShares: 100 * SH,
+      nextVest: { date: "2090-02-01", shares: 100 * SH },
     });
   });
 
