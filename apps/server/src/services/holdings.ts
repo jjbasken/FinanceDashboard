@@ -125,18 +125,20 @@ type PendingVest = VestingTranche & { investmentTxnId: number };
 const byDate = (x: { date: string }, y: { date: string }) => (x.date < y.date ? -1 : x.date > y.date ? 1 : 0);
 
 /**
- * The vests still to come after `date`, cut down so they never add up to more than the
- * `held` shares: vests that would come last are reduced first. Empty vests are dropped.
+ * Cut the vests after `date` (the shares still unvested then) down so they never add up to
+ * more than the `held` shares, reducing the vests that would come last first. Vests on or
+ * before `date` had already vested by then and are kept as they are: `date` may be later
+ * than today. Empty vests are dropped. Returns the vests, oldest first.
  */
-function vestsAfter(list: PendingVest[], date: string, held: number): PendingVest[] {
-  const future = list.filter((v) => v.date > date).sort(byDate);
-  let excess = future.reduce((sum, v) => sum + v.shares, 0) - Math.max(held, 0);
-  for (let i = future.length - 1; i >= 0 && excess > 0; i--) {
-    const cut = Math.min(future[i]!.shares, excess);
-    future[i]!.shares -= cut;
+function fitVests(list: PendingVest[], date: string, held: number): PendingVest[] {
+  const sorted = [...list].sort(byDate);
+  let excess = sorted.filter((v) => v.date > date).reduce((sum, v) => sum + v.shares, 0) - Math.max(held, 0);
+  for (let i = sorted.length - 1; i >= 0 && excess > 0 && sorted[i]!.date > date; i--) {
+    const cut = Math.min(sorted[i]!.shares, excess);
+    sorted[i]!.shares -= cut;
     excess -= cut;
   }
-  return future.filter((v) => v.shares > 0);
+  return sorted.filter((v) => v.shares > 0);
 }
 
 export function getHoldings(db: DbOrTx, viewer: Actor, today: string): HoldingsSummary {
@@ -170,7 +172,7 @@ export function getHoldings(db: DbOrTx, viewer: Actor, today: string): HoldingsS
       }
     }
     if (t.action === "split" || t.action === "sell" || t.action === "transfer_out") {
-      pending.set(key, vestsAfter(list, t.date, p.shares));
+      pending.set(key, fitVests(list, t.date, p.shares));
     }
   }
   const series = loadPriceSeries(db, householdId, txns);
@@ -198,7 +200,7 @@ export function getHoldings(db: DbOrTx, viewer: Actor, today: string): HoldingsS
         const last = series.get(securityId)?.at(-1) ?? null;
         const value = last ? sharesValueCents(p.shares, last.close) : 0;
         // The same remaining vests feed the unvested total, the next vest and the upcoming list.
-        const future = vestsAfter(pending.get(key) ?? [], today, p.shares);
+        const future = fitVests(pending.get(key) ?? [], today, p.shares).filter((v) => v.date > today);
         const unvestedShares = future.reduce((sum, v) => sum + v.shares, 0);
         if (last) unvestedValue += sharesValueCents(unvestedShares, last.close);
         for (const v of future) {

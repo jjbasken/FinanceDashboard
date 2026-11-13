@@ -379,6 +379,25 @@ describe("vesting", () => {
     expect((await holdings()).vesting).toEqual([]);
   });
 
+  test("a trade dated after a vest doesn't remove that vest before it happens", async () => {
+    const { txn, position, holdings } = await setUp();
+    await txn({
+      date: "2026-01-05",
+      action: "buy",
+      shares: 100 * SH,
+      price: $(20),
+      vesting: [{ date: "2090-02-01", shares: 100 * SH }],
+    });
+    await txn({ date: "2091-01-01", action: "sell", shares: 1 * SH, price: $(20) });
+    // Holdings already count the later sale, so the vest is shown for the 99 shares held.
+    expect(await position()).toMatchObject({
+      shares: 99 * SH,
+      unvestedShares: 99 * SH,
+      nextVest: { date: "2090-02-01", shares: 99 * SH },
+    });
+    expect((await holdings()).vesting.map((v) => [v.date, v.shares])).toEqual([["2090-02-01", 99 * SH]]);
+  });
+
   test("a vest that a reverse split rounds to nothing is dropped", async () => {
     const { txn, position, holdings } = await setUp();
     await txn({
