@@ -61,6 +61,7 @@ export function InvestmentTxnDialog(props: {
     (t?.vesting ?? []).map((v) => ({ date: v.date, shares: sharesToString(v.shares) })),
   );
   const [vesting, setVesting] = useState(vests.length > 0);
+  const [fillPlan, setFillPlan] = useState<FillPlan>({ count: "4", every: "12", first: "" });
   const [error, setError] = useState<string | null>(null);
 
   const save = useLedgerMutation((body: unknown) =>
@@ -110,8 +111,17 @@ export function InvestmentTxnDialog(props: {
       body.amount = cents;
     }
     if (VESTING_ACTIONS.includes(action)) {
+      let rows = vesting ? vests : [];
+      if (vesting && rows.length === 0) {
+        // The box is ticked but "Fill in dates" wasn't clicked: fill them in from the plan rather
+        // than quietly saving no schedule.
+        const filled = fillVests(fillPlan, date, sharesMicro ?? null);
+        if (typeof filled === "string") return setError(filled);
+        rows = filled;
+        setVests(filled);
+      }
       const tranches: VestingTranche[] = [];
-      for (const v of vesting ? vests : []) {
+      for (const v of rows) {
         const micro = parseShares(v.shares);
         if (!v.date) return setError("Enter a date for each vest");
         if (!micro) return setError("Enter the shares for each vest, like 25");
@@ -268,6 +278,8 @@ export function InvestmentTxnDialog(props: {
           onToggle={setVesting}
           rows={vests}
           onChange={setVests}
+          plan={fillPlan}
+          onPlanChange={setFillPlan}
           txnDate={date}
           totalShares={sharesMicro ?? null}
           onError={setError}
@@ -299,6 +311,33 @@ interface VestRow {
   shares: string;
 }
 
+/** The "Fill in dates" settings: how many vests, the months between them and the first date. */
+interface FillPlan {
+  count: string;
+  every: string;
+  first: string;
+}
+
+/** The first vest date to use: the one entered, or a year after the transaction. */
+function firstVestDate(plan: FillPlan, txnDate: string) {
+  return plan.first || (txnDate ? addMonthsToDate(txnDate, 12) : "");
+}
+
+/** Equal vests from a fill plan, or a message saying what's missing. */
+function fillVests(plan: FillPlan, txnDate: string, totalShares: number | null): VestRow[] | string {
+  const n = Number(plan.count);
+  const months = Number(plan.every);
+  const firstDate = firstVestDate(plan, txnDate);
+  if (!totalShares) return "Enter the number of shares first";
+  if (!Number.isInteger(n) || n < 1 || n > 240) return "Enter how many vests, like 4";
+  if (!Number.isInteger(months) || months < 1 || months > 120) return "Enter the months between vests, like 12";
+  if (!firstDate) return "Enter the first vest date";
+  return evenVestingSchedule(totalShares, n, firstDate, months).map((v) => ({
+    date: v.date,
+    shares: sharesToString(v.shares),
+  }));
+}
+
 /**
  * The vest dates of a buy or shares moved in. "Fill in" spreads the shares evenly (25% a year
  * for 4 years, say); each date can then be adjusted, removed or added to by hand.
@@ -308,33 +347,25 @@ function VestingEditor(props: {
   onToggle: (on: boolean) => void;
   rows: VestRow[];
   onChange: (rows: VestRow[]) => void;
+  plan: FillPlan;
+  onPlanChange: (plan: FillPlan) => void;
   txnDate: string;
   totalShares: number | null;
   onError: (message: string | null) => void;
 }) {
-  const [count, setCount] = useState("4");
-  const [every, setEvery] = useState("12");
-  const [first, setFirst] = useState("");
-  const firstDate = first || (props.txnDate ? addMonthsToDate(props.txnDate, 12) : "");
+  const { plan } = props;
+  const setPlan = (patch: Partial<FillPlan>) => props.onPlanChange({ ...plan, ...patch });
+  const firstDate = firstVestDate(plan, props.txnDate);
 
   const scheduled = props.rows.reduce((sum, r) => sum + (parseShares(r.shares) ?? 0), 0);
   const set = (i: number, patch: Partial<VestRow>) =>
     props.onChange(props.rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
   function fill() {
-    const n = Number(count);
-    const months = Number(every);
-    if (!props.totalShares) return props.onError("Enter the number of shares first");
-    if (!Number.isInteger(n) || n < 1 || n > 240) return props.onError("Enter how many vests, like 4");
-    if (!Number.isInteger(months) || months < 1 || months > 120) return props.onError("Enter the months between vests, like 12");
-    if (!firstDate) return props.onError("Enter the first vest date");
+    const filled = fillVests(plan, props.txnDate, props.totalShares);
+    if (typeof filled === "string") return props.onError(filled);
     props.onError(null);
-    props.onChange(
-      evenVestingSchedule(props.totalShares, n, firstDate, months).map((v) => ({
-        date: v.date,
-        shares: sharesToString(v.shares),
-      })),
-    );
+    props.onChange(filled);
   }
 
   return (
@@ -350,15 +381,15 @@ function VestingEditor(props: {
           <div className="vesting-fill">
             <label className="field">
               <span>Vests</span>
-              <input value={count} onChange={(e) => setCount(e.target.value)} inputMode="numeric" />
+              <input value={plan.count} onChange={(e) => setPlan({ count: e.target.value })} inputMode="numeric" />
             </label>
             <label className="field">
               <span>Months apart</span>
-              <input value={every} onChange={(e) => setEvery(e.target.value)} inputMode="numeric" />
+              <input value={plan.every} onChange={(e) => setPlan({ every: e.target.value })} inputMode="numeric" />
             </label>
             <label className="field">
               <span>First vest</span>
-              <input type="date" value={firstDate} onChange={(e) => setFirst(e.target.value)} />
+              <input type="date" value={firstDate} onChange={(e) => setPlan({ first: e.target.value })} />
             </label>
             <button type="button" className="btn" onClick={fill}>
               {props.rows.length ? "Fill in again" : "Fill in dates"}
