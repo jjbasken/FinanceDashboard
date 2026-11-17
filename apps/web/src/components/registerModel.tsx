@@ -1,6 +1,6 @@
 import {
   centsToInput,
-  parseCents,
+  evaluateCents,
   type Account,
   type CategoryGroup,
   type Payee,
@@ -56,8 +56,8 @@ export function amountFields(amount: number) {
 
 /** Deposit minus payment, or null if either field isn't a valid amount. */
 export function amountOf(f: { payment: string; deposit: string }) {
-  const pay = f.payment.trim() ? parseCents(f.payment) : 0;
-  const dep = f.deposit.trim() ? parseCents(f.deposit) : 0;
+  const pay = f.payment.trim() ? evaluateCents(f.payment) : 0;
+  const dep = f.deposit.trim() ? evaluateCents(f.deposit) : 0;
   if (pay === null || dep === null) return null;
   return dep - pay;
 }

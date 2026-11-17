@@ -2,7 +2,7 @@ import { askConfirm } from "./Feedback";
 import {
   centsToInput,
   describeSchedule,
-  parseCents,
+  evaluateCents,
   type BillFrequency,
   type ScheduledBill,
 } from "@fd/shared";
@@ -11,6 +11,7 @@ import { api } from "../api";
 import { today, useAccounts, useCategories, useLedgerMutation, usePayees } from "../ledger";
 import { Autocomplete, type Option } from "./Autocomplete";
 import type { BillPrefill } from "./billPrefill";
+import { AmountInput } from "./AmountInput";
 import { Dialog } from "./Dialog";
 import { createPayee } from "./registerModel";
 
@@ -93,7 +94,7 @@ export function BillDialog(props: {
   const remove = useLedgerMutation((id: number) => api.delete(`/scheduled-bills/${id}`));
 
   function submit() {
-    const cents = amount.trim() ? parseCents(amount) : null;
+    const cents = amount.trim() ? evaluateCents(amount) : null;
     if (!accountId) return setError("Pick an account");
     if (cents === null || cents === 0) return setError("Enter an amount, like 12.34");
     if (!startDate) return setError("Enter the first due date");
@@ -162,14 +163,13 @@ export function BillDialog(props: {
                   Deposit
                 </button>
               </div>
-              <input
+              <AmountInput
                 aria-label="Amount"
                 className="amount"
-                inputMode="decimal"
                 placeholder="0.00"
                 autoFocus={!props.prefill}
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={setAmount}
               />
             </div>
           </div>

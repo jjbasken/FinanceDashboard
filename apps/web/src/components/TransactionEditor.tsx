@@ -3,6 +3,7 @@ import { formatCents, type Account, type Transaction } from "@fd/shared";
 import { useState } from "react";
 import { api } from "../api";
 import { useLedgerMutation } from "../ledger";
+import { AmountInput } from "./AmountInput";
 import { Autocomplete } from "./Autocomplete";
 import { Dialog } from "./Dialog";
 import {
@@ -157,15 +158,14 @@ export function TransactionEditor(props: {
                   {kind === "expense" ? "Expense" : kind === "income" ? "Income" : "Transfer"}
                 </button>)}
               </div>
-              <input
+              <AmountInput
                 aria-label="Amount"
                 className="amount"
                 autoFocus={!t}
                 data-autofocus={!t || undefined}
-                inputMode="decimal"
                 placeholder="0.00"
                 value={sidedText(d, side)}
-                onChange={(e) => set(fromSidedText(e.target.value, side))}
+                onChange={(v) => set(fromSidedText(v, side))}
               />
             </div>
           </div>
@@ -242,13 +242,12 @@ export function TransactionEditor(props: {
                       ) : (
                         <span />
                       )}
-                      <input
+                      <AmountInput
                         aria-label="Split amount"
                         className="amount"
-                        inputMode="decimal"
                         placeholder="0.00"
                         value={sidedText(s, side)}
-                        onChange={(e) => setSplit(s.key, fromSidedText(e.target.value, side))}
+                        onChange={(v) => setSplit(s.key, fromSidedText(v, side))}
                       />
                       <input
                         aria-label="Split notes"

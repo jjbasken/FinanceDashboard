@@ -9,7 +9,7 @@ import {
   centsToInput,
   evenVestingSchedule,
   formatCents,
-  parseCents,
+  evaluateCents,
   parsePrice,
   parseShares,
   priceToString,
@@ -27,6 +27,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../api";
 import { formatDate, today, useLedgerMutation } from "../ledger";
+import { AmountInput } from "./AmountInput";
 import { Dialog } from "./Dialog";
 
 const NEEDS_SHARES: InvestmentAction[] = ["buy", "sell", "reinvest", "transfer_in", "transfer_out"];
@@ -71,7 +72,7 @@ export function InvestmentTxnDialog(props: {
 
   const sharesMicro = shares.trim() ? parseShares(shares) : undefined;
   const priceMicros = price.trim() ? parsePrice(price) : undefined;
-  const feeCents = fees.trim() ? parseCents(fees) : 0;
+  const feeCents = fees.trim() ? evaluateCents(fees) : 0;
   const gross = sharesMicro && priceMicros ? sharesValueCents(sharesMicro, priceMicros) : null;
   const computed =
     gross === null || feeCents === null
@@ -98,13 +99,13 @@ export function InvestmentTxnDialog(props: {
       if (feeCents === null || feeCents < 0) return setError("Enter fees as an amount, like 4.95");
       body.fees = feeCents;
       if (total.trim()) {
-        const exact = parseCents(total);
+        const exact = evaluateCents(total);
         if (exact === null || exact < 0) return setError("Enter the total as an amount, like 1,234.56");
         body.amount = exact;
       }
     }
     if (action === "dividend" || action === "transfer_in") {
-      const cents = parseCents(amount);
+      const cents = evaluateCents(amount);
       if (cents === null || cents < 0 || (action === "dividend" && cents === 0)) {
         return setError(action === "dividend" ? "Enter the dividend amount" : "Enter the cost basis");
       }
@@ -217,12 +218,7 @@ export function InvestmentTxnDialog(props: {
           {action === "transfer_in" && (
             <label className="field">
               <span>Cost basis</span>
-              <input
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                inputMode="decimal"
-                placeholder="0.00"
-              />
+              <AmountInput value={amount} onChange={setAmount} placeholder="0.00" />
             </label>
           )}
         </div>
@@ -231,14 +227,13 @@ export function InvestmentTxnDialog(props: {
         <div className="field-row">
           <label className="field">
             <span>Fees</span>
-            <input value={fees} onChange={(e) => setFees(e.target.value)} inputMode="decimal" placeholder="0.00" />
+            <AmountInput value={fees} onChange={setFees} placeholder="0.00" />
           </label>
           <label className="field">
             <span>{action === "buy" ? "Total paid" : "Total received"}</span>
-            <input
+            <AmountInput
               value={total}
-              onChange={(e) => setTotal(e.target.value)}
-              inputMode="decimal"
+              onChange={setTotal}
               placeholder={computed !== null ? centsToInput(computed) : "0.00"}
             />
           </label>
@@ -247,7 +242,7 @@ export function InvestmentTxnDialog(props: {
       {action === "dividend" && (
         <label className="field">
           <span>Amount received</span>
-          <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder="0.00" />
+          <AmountInput value={amount} onChange={setAmount} placeholder="0.00" />
         </label>
       )}
       {action === "split" && (

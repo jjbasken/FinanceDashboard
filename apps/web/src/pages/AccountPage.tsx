@@ -4,7 +4,7 @@ import {
   accountSection,
   centsToInput,
   formatCents,
-  parseCents,
+  evaluateCents,
   type Account,
   type AccountFolder,
   type InvestmentTxn,
@@ -18,6 +18,7 @@ import { Dialog } from "../components/Dialog";
 import { HoldingsTable, InvestmentTxnTable, useSecurityColors, VestingTable } from "../components/HoldingsTables";
 import { InvestmentTxnDialog, SecurityDialog } from "../components/InvestmentDialogs";
 import { MobileRegister } from "../components/MobileRegister";
+import { AmountInput } from "../components/AmountInput";
 import { Register } from "../components/Register";
 import { PHONE_QUERY, useMediaQuery, useContentWidth } from "../components/useMediaQuery";
 import {
@@ -47,14 +48,14 @@ function ReconcileBar(props: { account: Account; onDone: () => void }) {
   const reconcile = useLedgerMutation((statementBalance: number) =>
     api.post(`/accounts/${props.account.id}/reconcile`, { statementBalance }),
   );
-  const cents = parseCents(statement);
+  const cents = evaluateCents(statement);
   const difference = cents === null ? null : props.account.clearedBalance - cents;
 
   return (
     <div className="reconcile-bar">
       <label className="field inline">
         <span>Statement balance</span>
-        <input value={statement} onChange={(e) => setStatement(e.target.value)} inputMode="decimal" autoFocus />
+        <AmountInput value={statement} onChange={setStatement} autoFocus />
       </label>
       <span>
         Cleared: <strong>{formatCents(props.account.clearedBalance)}</strong>
