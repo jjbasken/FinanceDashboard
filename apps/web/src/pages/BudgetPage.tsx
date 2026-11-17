@@ -8,7 +8,7 @@ import {
   formatMonthMask,
   monthName,
   monthSchema,
-  parseCents,
+  evaluateCents,
   type BudgetCategory,
   type BudgetGroup,
   type BudgetMonth,
@@ -49,7 +49,7 @@ function BudgetInput(props: { initial: number; onDone: (amount: number | null, m
       done.current = true;
       return props.onDone(null, 0);
     }
-    const amount = text.trim() === "" ? 0 : parseCents(text);
+    const amount = text.trim() === "" ? 0 : evaluateCents(text);
     if (amount === null) return setInvalid(true);
     done.current = true;
     props.onDone(amount, move);

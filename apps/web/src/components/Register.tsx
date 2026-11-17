@@ -5,6 +5,7 @@ import { type FocusEvent, type KeyboardEvent, type ReactNode, useEffect, useMemo
 import { useDraftProtection } from "./DraftProtection";
 import { api } from "../api";
 import { formatDate, today, useLedgerMutation, useMembers } from "../ledger";
+import { AmountInput } from "./AmountInput";
 import { Autocomplete } from "./Autocomplete";
 import { BillDialog } from "./BillDialog";
 import { billPrefill } from "./billPrefill";
@@ -170,23 +171,21 @@ function EditRow(props: {
           </div>
         )}
         <div className="cell">
-          <input
+          <AmountInput
             ref={register("payment")}
             className="cell-input amount"
             aria-label="Payment"
-            inputMode="decimal"
             value={d.payment}
-            onChange={(e) => set({ payment: e.target.value, deposit: e.target.value ? "" : d.deposit })}
+            onChange={(v) => set({ payment: v, deposit: v ? "" : d.deposit })}
           />
         </div>
         <div className="cell">
-          <input
+          <AmountInput
             ref={register("deposit")}
             className="cell-input amount"
             aria-label="Deposit"
-            inputMode="decimal"
             value={d.deposit}
-            onChange={(e) => set({ deposit: e.target.value, payment: e.target.value ? "" : d.payment })}
+            onChange={(v) => set({ deposit: v, payment: v ? "" : d.payment })}
           />
         </div>
         <div className="cell amount muted">{!l.account.budgetOnly && props.balance !== undefined ? formatCents(props.balance) : ""}</div>
@@ -250,25 +249,19 @@ function EditRow(props: {
                 />
               </div>
               <div className="cell">
-                <input
+                <AmountInput
                   className="cell-input amount"
                   aria-label="Split payment"
-                  inputMode="decimal"
                   value={s.payment}
-                  onChange={(e) =>
-                    setSplit(s.key, { payment: e.target.value, deposit: e.target.value ? "" : s.deposit })
-                  }
+                  onChange={(v) => setSplit(s.key, { payment: v, deposit: v ? "" : s.deposit })}
                 />
               </div>
               <div className="cell">
-                <input
+                <AmountInput
                   className="cell-input amount"
                   aria-label="Split deposit"
-                  inputMode="decimal"
                   value={s.deposit}
-                  onChange={(e) =>
-                    setSplit(s.key, { deposit: e.target.value, payment: e.target.value ? "" : s.payment })
-                  }
+                  onChange={(v) => setSplit(s.key, { deposit: v, payment: v ? "" : s.payment })}
                 />
               </div>
               <div className="cell" />

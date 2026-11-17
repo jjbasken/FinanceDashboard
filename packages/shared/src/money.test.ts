@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { centsToInput, formatCents, parseCents, rationalToCents } from "./money";
+import { centsToInput, evaluateCents, formatCents, isAmountExpression, parseCents, rationalToCents, settleAmountText } from "./money";
 
 describe("parseCents", () => {
   test.each([
@@ -17,6 +17,61 @@ describe("parseCents", () => {
 
   test.each(["", "abc", "1.234", "1.2.3", "-", "."])("rejects %p", (input) => {
     expect(parseCents(input)).toBeNull();
+  });
+});
+
+describe("evaluateCents", () => {
+  test.each([
+    ["10+5.25", 1525],
+    ["100/3", 3333],
+    ["200/3", 6667],
+    ["19.99*2-5", 3498],
+    ["-5+3", -200],
+    ["1,000 + $5", 100500],
+    ["100*0.0825", 825],
+    ["0.005*1", 1],
+    ["-0.005*1", -1],
+    ["10-20", -1000],
+    ["12.50×3", 3750],
+    ["9÷2", 450],
+    ["2+3*4", 1400],
+  ])("%p -> %p", (input, cents) => {
+    expect(evaluateCents(input)).toBe(cents);
+  });
+
+  test.each(["12", "12.34", "$1,234.56", "-0.05", "(45.10)", ".5", "+7"])("matches parseCents for %p", (input) => {
+    expect(evaluateCents(input)).toBe(parseCents(input));
+  });
+
+  test("reads commas and spaces only where they belong", () => {
+    expect(evaluateCents("1,234.50 + 5")).toBe(123950);
+    expect(evaluateCents("$1,000 - $5")).toBe(99500);
+  });
+
+  test.each([
+    "5/0", "5+", "*5", "5++", "", "abc", "1.2.3+1", "--5",
+    // malformed operands must not collapse into bigger numbers
+    "12 34 + 5", "1,23+5", "12,34+5", "1,2345+1",
+    // no operator: same rules as parseCents
+    "1.234", "-1.234",
+    // too long to evaluate
+    "1/3+".repeat(30) + "1",
+  ])("rejects %p", (input) => {
+    expect(evaluateCents(input)).toBeNull();
+  });
+
+  test("settleAmountText", () => {
+    expect(settleAmountText("12.50*3")).toBe("37.50");
+    expect(settleAmountText("12.5")).toBe("12.5");
+    expect(settleAmountText("5+")).toBe("5+");
+    expect(settleAmountText("1.234")).toBe("1.234");
+  });
+
+  test("isAmountExpression", () => {
+    expect(isAmountExpression("10-3")).toBe(true);
+    expect(isAmountExpression("-10+2")).toBe(true);
+    expect(isAmountExpression("-10")).toBe(false);
+    expect(isAmountExpression("10")).toBe(false);
   });
 });
 

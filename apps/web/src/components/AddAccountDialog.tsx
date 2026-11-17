@@ -1,8 +1,9 @@
-import { ACCOUNT_TYPES, ACCOUNT_TYPE_LABELS, defaultOnBudget, parseCents, type Account, type AccountType } from "@fd/shared";
+import { ACCOUNT_TYPES, ACCOUNT_TYPE_LABELS, defaultOnBudget, evaluateCents, type Account, type AccountType } from "@fd/shared";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { api } from "../api";
 import { today, useLedgerMutation } from "../ledger";
+import { AmountInput } from "./AmountInput";
 import { Dialog } from "./Dialog";
 
 export function AddAccountDialog(props: { onClose: () => void }) {
@@ -22,7 +23,7 @@ export function AddAccountDialog(props: { onClose: () => void }) {
   const importing = importNext && type === "investment";
 
   function submit() {
-    const startingBalance = importing || balance.trim() === "" ? 0 : parseCents(balance);
+    const startingBalance = importing || balance.trim() === "" ? 0 : evaluateCents(balance);
     if (startingBalance === null) return setError("Enter the balance as a number, like 1,234.56");
     setError(null);
     create.mutate(
@@ -83,12 +84,7 @@ export function AddAccountDialog(props: { onClose: () => void }) {
         <div className="field-row">
           <label className="field">
             <span>Current balance</span>
-            <input
-              value={balance}
-              onChange={(e) => setBalance(e.target.value)}
-              placeholder="0.00"
-              inputMode="decimal"
-            />
+            <AmountInput value={balance} onChange={setBalance} placeholder="0.00" />
           </label>
           <label className="field">
             <span>As of</span>
