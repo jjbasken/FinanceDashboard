@@ -39,8 +39,9 @@ function sidedText(f: { payment: string; deposit: string }, side: Side) {
 }
 
 function fromSidedText(text: string, side: Side) {
-  // A whole expression like "-10+2" stays on this side as typed; it's settled (and moved if negative) on blur.
-  const negative = text.trim().startsWith("-") && !isAmountExpression(text);
+  // Only a plain "-12.34" (or a lone "-" while typing) moves to the other side. An expression like "-10+2",
+  // or anything with parentheses like "-(5)", stays here exactly as shown; it's settled on blur and checked on save.
+  const negative = text.trim().startsWith("-") && !isAmountExpression(text) && !text.includes("(");
   const value = negative ? text.trim().slice(1) : text;
   return { [negative ? other(side) : side]: value, [negative ? side : other(side)]: "" } as Record<Side, string>;
 }
@@ -106,8 +107,19 @@ export function TransactionEditor(props: {
     set({ split: false, splits: [] });
   }
 
+  /** The problem with the amount as shown in the field, judged against the chosen direction, or null. */
+  function amountError() {
+    const text = sidedText(d, side);
+    if (!text.trim()) return null;
+    const cents = evaluateCents(text);
+    if (cents === null) return "Enter amounts as numbers, like 12.34";
+    if (cents < 0) return "Enter a positive amount and choose Expense or Income.";
+    return null;
+  }
+
   function save() {
-    if ((evaluateCents(sidedText(d, side)) ?? 0) < 0) return setError("Enter a positive amount and choose Expense or Income.");
+    const bad = amountError();
+    if (bad) return setError(bad);
     if (transferMode && !l.payeeById.get(d.payeeId ?? -1)?.transferAccountId) return setError("Choose a destination account");
     if (!original && amountOf(d) === 0 && !d.payeeName && !d.payeeId) return setError("Enter an amount");
     const built = buildBody(d, original);
@@ -120,6 +132,8 @@ export function TransactionEditor(props: {
 
   /** Save any changes, then hand the saved transaction over to make a recurring bill from it. */
   function makeRecurring() {
+    const bad = amountError();
+    if (bad) return setError(bad);
     const built = buildBody(d, original);
     if (built.error !== null) return setError(built.error);
     if (Object.keys(built.body).length === 0) return props.onMakeRecurring!(t!);
