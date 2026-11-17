@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { centsToInput, evaluateCents, formatCents, parseCents, rationalToCents, settleAmountText } from "./money";
+import { centsToInput, evaluateCents, formatCents, isAmountExpression, parseCents, rationalToCents, settleAmountText } from "./money";
 
 describe("parseCents", () => {
   test.each([
@@ -43,7 +43,20 @@ describe("evaluateCents", () => {
     expect(evaluateCents(input)).toBe(parseCents(input));
   });
 
-  test.each(["5/0", "5+", "*5", "5++", "", "abc", "1.2.3+1", "--5"])("rejects %p", (input) => {
+  test("reads commas and spaces only where they belong", () => {
+    expect(evaluateCents("1,234.50 + 5")).toBe(123950);
+    expect(evaluateCents("$1,000 - $5")).toBe(99500);
+  });
+
+  test.each([
+    "5/0", "5+", "*5", "5++", "", "abc", "1.2.3+1", "--5",
+    // malformed operands must not collapse into bigger numbers
+    "12 34 + 5", "1,23+5", "12,34+5", "1,2345+1",
+    // no operator: same rules as parseCents
+    "1.234", "-1.234",
+    // too long to evaluate
+    "1/3+".repeat(30) + "1",
+  ])("rejects %p", (input) => {
     expect(evaluateCents(input)).toBeNull();
   });
 
@@ -51,6 +64,14 @@ describe("evaluateCents", () => {
     expect(settleAmountText("12.50*3")).toBe("37.50");
     expect(settleAmountText("12.5")).toBe("12.5");
     expect(settleAmountText("5+")).toBe("5+");
+    expect(settleAmountText("1.234")).toBe("1.234");
+  });
+
+  test("isAmountExpression", () => {
+    expect(isAmountExpression("10-3")).toBe(true);
+    expect(isAmountExpression("-10+2")).toBe(true);
+    expect(isAmountExpression("-10")).toBe(false);
+    expect(isAmountExpression("10")).toBe(false);
   });
 });
 

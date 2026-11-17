@@ -1,5 +1,5 @@
 import { askConfirm } from "./Feedback";
-import { formatCents, type Account, type Transaction } from "@fd/shared";
+import { evaluateCents, formatCents, isAmountExpression, type Account, type Transaction } from "@fd/shared";
 import { useState } from "react";
 import { api } from "../api";
 import { useLedgerMutation } from "../ledger";
@@ -39,7 +39,8 @@ function sidedText(f: { payment: string; deposit: string }, side: Side) {
 }
 
 function fromSidedText(text: string, side: Side) {
-  const negative = text.trim().startsWith("-");
+  // A whole expression like "-10+2" stays on this side as typed; it's settled (and moved if negative) on blur.
+  const negative = text.trim().startsWith("-") && !isAmountExpression(text);
   const value = negative ? text.trim().slice(1) : text;
   return { [negative ? other(side) : side]: value, [negative ? side : other(side)]: "" } as Record<Side, string>;
 }
@@ -106,7 +107,7 @@ export function TransactionEditor(props: {
   }
 
   function save() {
-    if (sidedText(d, side).trim().startsWith("-")) return setError("Enter a positive amount and choose Expense or Income.");
+    if ((evaluateCents(sidedText(d, side)) ?? 0) < 0) return setError("Enter a positive amount and choose Expense or Income.");
     if (transferMode && !l.payeeById.get(d.payeeId ?? -1)?.transferAccountId) return setError("Choose a destination account");
     if (!original && amountOf(d) === 0 && !d.payeeName && !d.payeeId) return setError("Enter an amount");
     const built = buildBody(d, original);
